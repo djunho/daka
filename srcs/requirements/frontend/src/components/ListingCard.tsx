@@ -1,13 +1,14 @@
-import type { Category, Listing } from '../types/listing'
+import { CATEGORY_BY_ID, type CategoryId, type Listing } from '../types/listing'
 
 // Photo placeholder background per category, until the user uploads a real photo.
-const TINT: Record<Category, string> = {
-  roupa:       '#e9d8c6',
-  móveis:      '#d8e0da',
-  cartas:      '#dcd6ec',
-  livros:      '#e6d3d0',
-  plantas:     '#cfe3d2',
-  eletrónica:  '#d2dee8',
+const TINT: Record<CategoryId, string> = {
+  roupa:         '#e9d8c6',
+  eletronica:    '#d2dee8',
+  casa:          '#d8e0da',
+  livros:        '#e6d3d0',
+  plantas:       '#cfe3d2',
+  colecionaveis: '#dcd6ec',
+  outros:        '#e4e2dd',
 }
 
 export default function ListingCard({ listing }: { listing: Listing }) {
@@ -17,7 +18,8 @@ export default function ListingCard({ listing }: { listing: Listing }) {
     <article className="card">
       <div className="card-media" style={{ ['--tint' as string]: TINT[category] }}>
         <span className="badge">{condition}</span>
-        <span className="card-cat">{category}</span>
+        {/* show the human-facing label, not the code id */}
+        <span className="card-cat">{CATEGORY_BY_ID[category].label}</span>
       </div>
 
       <div className="card-body">

@@ -2,11 +2,11 @@ import { useState } from 'react'
 import Header from '../components/Header'
 import ListingCard from '../components/ListingCard'
 import { mockListings } from '../data/mockListings'
-import { CATEGORIES, type Category } from '../types/listing'
+import { CATEGORIES, CATEGORY_BY_ID, type CategoryId } from '../types/listing'
 
 export default function Home() {
-  // Category filter — client-side state only, no backend.
-  const [active, setActive] = useState<Category | null>(null)
+  // Category filter — we store the category id, client-side only, no backend.
+  const [active, setActive] = useState<CategoryId | null>(null)
 
   const listings = active
     ? mockListings.filter((l) => l.category === active)
@@ -30,12 +30,12 @@ export default function Home() {
         <nav className="chips" aria-label="Filtrar por categoria">
           {CATEGORIES.map((cat) => (
             <button
-              key={cat}
+              key={cat.id}
               className="chip"
-              aria-pressed={active === cat}
-              onClick={() => setActive(active === cat ? null : cat)}
+              aria-pressed={active === cat.id}
+              onClick={() => setActive(active === cat.id ? null : cat.id)}
             >
-              {cat}
+              {cat.label}
             </button>
           ))}
         </nav>
@@ -43,7 +43,7 @@ export default function Home() {
         <section className="feed">
           <p className="feed-count">
             {listings.length} {listings.length === 1 ? 'anúncio' : 'anúncios'}
-            {active ? ` em ${active}` : ''}
+            {active ? ` em ${CATEGORY_BY_ID[active].label}` : ''}
           </p>
 
           {listings.length === 0 ? (
