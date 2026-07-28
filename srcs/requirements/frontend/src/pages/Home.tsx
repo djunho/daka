@@ -21,9 +21,10 @@ export default function Home() {
           <h1 className="hero-title">
             Não compres. <span className="swap-word">Troca.</span>
           </h1>
-          <p className="hero-sub">
-            Dá aquilo que já não usas e recebe algo que precisas. Sem dinheiro — só toma-lá-dá-cá.
-          </p>
+      <p className="hero-sub">
+        Dá aquilo que já não usas e recebe algo que precisas.<br/>
+        <span className="hero-tagline">Sem dinheiro: só toma-lá-dá-cá.</span>
+      </p>
         </section>
 
         <nav className="chips" aria-label="Filtrar por categoria">

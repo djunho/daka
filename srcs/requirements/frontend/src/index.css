@@ -52,6 +52,10 @@ button { font: inherit; cursor: pointer; }
   letter-spacing: -.02em;
   color: var(--ink);
 }
+.hero-tagline {
+  color: var(--brand);
+  font-weight: 600;
+}
 .wordmark b { color: var(--brand); }
 .search {
   flex: 1; max-width: 420px;
