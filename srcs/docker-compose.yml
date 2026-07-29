@@ -1,0 +1,84 @@
+services:
+  # ---- Database (MariaDB) -------------------------------------------------
+  db:
+    build:
+      context: ./requirements/mariadb
+    image: daka_db
+    container_name: daka_db
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - daka
+
+  # ---- Backend (Python + FastAPI) -----------------------------------------
+  backend:
+    build:
+      context: ./requirements/backend
+    image: daka_backend
+    container_name: daka_backend
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./requirements/backend:/app
+    networks:
+      - daka
+
+  # ---- Frontend (React + Vite) --------------------------------------------
+  frontend:
+    build:
+      context: ./requirements/frontend
+    image: daka_frontend
+    container_name: daka_frontend
+    restart: unless-stopped
+    volumes:
+      - ./requirements/frontend:/app
+      - /app/node_modules
+    networks:
+      - daka
+
+  # ---- Nginx (TLS + reverse proxy) ----------------------------------------
+  nginx:
+    build:
+      context: ./requirements/nginx
+    image: daka_nginx
+    container_name: daka_nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT}:443"
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - daka
+
+  # ---- Monitoring (Devops module — to be wired later) ---------------------
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: daka_prometheus
+  #   volumes:
+  #     - ./requirements/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+  #   networks:
+  #     - daka
+  #
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: daka_grafana
+  #   networks:
+  #     - daka
+
+volumes:
+  db_data:
+
+networks:
+  daka:
+    driver: bridge
