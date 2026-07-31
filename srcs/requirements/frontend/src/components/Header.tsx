@@ -1,13 +1,14 @@
+import { Link } from 'react-router-dom'
 import Logo from './Logo'
 
-// Reusable header. The buttons are stubs for now — they wire up to nothing
-// until we have authentication and the "publish" page.
+// Reusable header. <Link> changes the page without a full reload — that's the
+// whole point of the router. A plain <a> would reload and lose that.
 export default function Header() {
   return (
     <header className="app-header">
-      <a className="brand" href="/" aria-label="Daka — página inicial">
+      <Link className="brand" to="/" aria-label="Daka — página inicial">
         <Logo height={34} />
-      </a>
+      </Link>
       <input
         className="search"
         type="search"
@@ -15,8 +16,8 @@ export default function Header() {
         aria-label="Procurar anúncios"
       />
       <div className="header-actions">
-        <button className="btn">Entrar</button>
-        <button className="btn btn-primary">Publicar</button>
+        <Link className="btn" to="/login">Entrar</Link>
+        <Link className="btn btn-primary" to="/login">Publicar</Link>
       </div>
     </header>
   )
