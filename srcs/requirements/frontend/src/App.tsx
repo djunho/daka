@@ -12,7 +12,12 @@ import NotFound from './pages/NotFound'
 // URLs are in English; the visible text stays in Portuguese.
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <Routes>
         <Route element={<Layout />}>
           {/* ---- Public routes ---- */}
