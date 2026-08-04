@@ -7,6 +7,7 @@
 ---
 
 # Commit Types
+>OBS: Same types as branch types. More information at `development/branches.md`.
 
 | Type | Usage |
 |-|-|
