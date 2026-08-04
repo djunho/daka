@@ -1,6 +1,6 @@
 # Meeting NN / SPRINT NN
 
-**Date:**
+**Date:** DD-MM-YYYY
 
 **Participants:**
 
