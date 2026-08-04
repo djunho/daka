@@ -34,10 +34,11 @@ Files must follow this format:
 `NNNN-short-description.md`
 
 Examples:
-
-`0001-record-architecture-decisions.md`
-`0002-css-framework-choice.md`
-`0003-database-selection.md`
+```
+0001-record-architecture-decisions.md
+0002-css-framework-choice.md
+0003-database-selection.md
+```
 
 The number represents the chronological order in which decisions were made.
 
