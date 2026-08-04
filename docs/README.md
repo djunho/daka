@@ -39,9 +39,3 @@ Location: `docs/development/`
 
 
 ---
-
-## Specifications
-
-Contains project requirements, features, and domain information.
-
-Location: `docs/specifications/`
