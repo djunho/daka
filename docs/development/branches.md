@@ -22,7 +22,23 @@ Purpose:
 
 ---
 
-# Feature Branches
+# All Branche types
+
+| Type | Usage |
+|-|-|
+| FEAT | New feature |
+| FIX | Bug fix |
+| DOCS | Documentation |
+| STYLE | Formatting |
+| REFACTOR | Code improvement |
+| TEST | Tests |
+| CHORE | Maintenance |
+
+---
+
+# Branche Examples
+
+### Feature Branchs:
 
 Naming convention: `FEAT/short-feature-name`
 
@@ -33,10 +49,7 @@ Examples:
 - `FEAT/user-authentication`
 - `FEAT/profile-picture`
 
-
----
-
-# Bug Fix Branches
+### Bug Fix Branches
 
 Naming convention: `FIX/bug-to-fix`
 
