@@ -1,2 +1,3 @@
 FROM mariadb:11
-# Room for our own conf/ and tools/ when we need them.
+
+COPY tools/ /docker-entrypoint-initdb.d/
