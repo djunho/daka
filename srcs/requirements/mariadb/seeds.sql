@@ -21,7 +21,7 @@ VALUES
 	('Fair'),
 	('Needs Repair');
 
-INSERT INTO item_states (state_name)
+INSERT INTO listings_states (state_name)
 VALUES
 	('Available'),
 	('Removed'),

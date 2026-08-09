@@ -1,9 +1,6 @@
-CREATE DATABASE daka;
-USE daka;
-
 CREATE TABLE users (
 	id 				INT AUTO_INCREMENT PRIMARY KEY,
-	username 		VARCHAR(100) NOT NULL,
+	user_name	 	VARCHAR(100) NOT NULL,
 	email 			VARCHAR(255) NOT NULL UNIQUE,
 	pass_hash 		VARCHAR(255) NOT NULL,
 	avatar 			VARCHAR(255),
@@ -24,7 +21,7 @@ CREATE TABLE conditions
     condition_name 	VARCHAR(50) NOT NULL
 );
 
-CREATE TABLE item_states
+CREATE TABLE listings_states
 (
     id 				INT AUTO_INCREMENT PRIMARY KEY,
     state_name 		VARCHAR(50) NOT NULL
@@ -36,17 +33,19 @@ CREATE TABLE offer_states
     state_name 		VARCHAR(50) NOT NULL
 );
 
-CREATE TABLE items (
-	id 				INT AUTO_INCREMENT PRIMARY KEY,
-	user_id 		INT NOT NULL,
-	category_id 	INT NOT NULL,
-	condition_id 	INT NOT NULL,
-	state_id 		INT NOT NULL,
-	title 			VARCHAR(150) NOT NULL,
-	item_dsc	 	TEXT,
-	item_location	VARCHAR(100),
-	created_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	updated_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- Esses sao os anuncios cadastrados
+CREATE TABLE listings (
+	id 					INT AUTO_INCREMENT PRIMARY KEY,
+	user_id 			INT NOT NULL,
+	category_id 		INT NOT NULL,
+	condition_id 		INT NOT NULL,
+	state_id 			INT NOT NULL,
+	title 				VARCHAR(150) NOT NULL,
+	listing_dsc	 		TEXT,
+	listing_location	VARCHAR(100),
+	wish				TEXT,
+	created_at 			TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at 			TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
 
     FOREIGN KEY (user_id)
@@ -56,41 +55,42 @@ CREATE TABLE items (
     FOREIGN KEY (condition_id)
         REFERENCES conditions(id),
     FOREIGN KEY (state_id)
-        REFERENCES item_states(id)
+        REFERENCES listings_states(id)
 );
 
 CREATE TABLE images (
 	id 				INT AUTO_INCREMENT PRIMARY KEY,
-	item_id 		INT NOT NULL,
+	listing_id 		INT NOT NULL,
 	image_path		VARCHAR(150) NOT NULL,
 	is_primary		BOOLEAN NOT NULL DEFAULT FALSE,
 
-	FOREIGN KEY (item_id)
-		REFERENCES items(id)
+	FOREIGN KEY (listing_id)
+		REFERENCES listings(id)
 );
 
+-- Aqui guardamos as negociacoes
 CREATE TABLE offers (
-	id 					INT AUTO_INCREMENT PRIMARY KEY,
-	item_requested_id	INT NOT NULL,
-	sender_id 			INT NOT NULL,
-	offered_item_id		INT,
-	offer_state_id		INT NOT NULL,
-	initial_msg			VARCHAR(250) NOT NULL,
-	created_at 			TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	updated_at	 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	id 						INT AUTO_INCREMENT PRIMARY KEY,
+	listing_requested_id	INT NOT NULL,
+	sender_id 				INT NOT NULL,
+	offered_listing_id		INT,
+	offer_state_id			INT NOT NULL,
+	initial_msg				VARCHAR(250) NOT NULL,
+	created_at 				TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at	 			TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
 
-	FOREIGN KEY (item_requested_id)
-		REFERENCES items(id),
+	FOREIGN KEY (listing_requested_id)
+		REFERENCES listings(id),
 	FOREIGN KEY (sender_id)
 		REFERENCES users(id),
-	FOREIGN KEY (offered_item_id)
-		REFERENCES items(id),
+	FOREIGN KEY (offered_listing_id)
+		REFERENCES listings(id),
 	FOREIGN KEY (offer_state_id)
     	REFERENCES offer_states(id)
 );
 
---  aqui guardam-se os registros do chat
+--  Aqui guardam-se os registros do chat
 CREATE TABLE messages (
 	id 				INT AUTO_INCREMENT PRIMARY KEY,
 	offer_id		INT NOT NULL,
@@ -104,30 +104,30 @@ CREATE TABLE messages (
         REFERENCES users(id)
 );
 
---  questionavel (reclamacao depende de admin)
+--  Questionavel (reclamacao depende de admin)
 CREATE TABLE reports (
-	id 					INT AUTO_INCREMENT PRIMARY KEY,
-	reporter_id			INT NOT NULL,
-	reported_item_id	INT,
-	reported_user_id	INT,
-	reason				VARCHAR(250) NOT NULL,
-	created_at 			TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	id 						INT AUTO_INCREMENT PRIMARY KEY,
+	reporter_id				INT NOT NULL,
+	reported_listings_id	INT,
+	reported_user_id		INT,
+	reason					VARCHAR(250) NOT NULL,
+	created_at 				TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (reporter_id)
         REFERENCES users(id),
     FOREIGN KEY (reported_user_id)
         REFERENCES users(id),
-    FOREIGN KEY (reported_item_id)
-        REFERENCES items(id)
+    FOREIGN KEY (reported_listings_id)
+        REFERENCES listings(id)
 );
 
 CREATE TABLE favorites (
 	user_id			INT NOT NULL,
-	item_id			INT NOT NULL,
+	listing_id			INT NOT NULL,
 
-	PRIMARY KEY (user_id, item_id),
+	PRIMARY KEY (user_id, listing_id),
 	FOREIGN KEY (user_id)
 		REFERENCES users(id),
-	FOREIGN KEY (item_id)
-		REFERENCES items(id)
+	FOREIGN KEY (listing_id)
+		REFERENCES listings(id)
 );
