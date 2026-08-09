@@ -1,0 +1,85 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: daka
+    environment: dev
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  # ---- 1. Prometheus scraping itself -------------------------------------
+  - job_name: prometheus
+    basic_auth:
+      username: daka
+      password_file: /etc/prometheus/scrape_password
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ---- 2. Host metrics ---------------------------------------------------
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # ---- 3. Per-container metrics ------------------------------------------
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    metric_relabel_configs:
+      - source_labels: [__name__, container_label_com_docker_compose_service]
+        regex: "container_fs_.*;"
+        action: drop
+      - source_labels: [container_label_com_docker_compose_project]
+        regex: "srcs|daka|"
+        action: keep
+
+  # ---- 4. MariaDB --------------------------------------------------------
+  - job_name: mysqld
+    static_configs:
+      - targets: ["mysqld-exporter:9104"]
+
+  # ---- 5. The application itself -----------------------------------------
+  - job_name: backend
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:8000"]
+
+  # ---- 6. Blackbox exporter's own health ---------------------------------
+  - job_name: blackbox-exporter
+    static_configs:
+      - targets: ["blackbox:9115"]
+
+  # ---- 7. Blackbox PROBES (black-box view of the public endpoint) --------
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://nginx/healthz
+          - https://nginx/api/health
+          - https://nginx/
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # ---- 8. Alertmanager ---------------------------------------------------
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
+  # ---- 9. Grafana --------------------------------------------------------
+  - job_name: grafana
+    static_configs:
+      - targets: ["grafana:3000"]
