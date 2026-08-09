@@ -65,7 +65,6 @@ services:
       - daka_edge
       - daka_obs
 
-
   # ---- Frontend (React + Vite) --------------------------------------------
   frontend:
     build:
@@ -95,6 +94,12 @@ services:
         condition: service_healthy
       frontend:
         condition: service_started
+      grafana:
+        condition: service_started
+      prometheus:
+        condition: service_started
+      alertmanager:
+        condition: service_started
     volumes:
       - certs:/etc/nginx/certs:ro
     healthcheck:
@@ -106,7 +111,6 @@ services:
     networks:
       - daka_edge
       - daka_obs
-
 
   # =========================================================================
   # OBSERVABILITY
@@ -170,6 +174,8 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      PROM_USER: ${PROM_USER}
+      PROM_PASSWORD: ${PROM_PASSWORD}
       GF_SERVER_ROOT_URL: https://${DOMAIN:-localhost}:${NGINX_PORT}/grafana/
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_ANALYTICS_REPORTING_ENABLED: "false"

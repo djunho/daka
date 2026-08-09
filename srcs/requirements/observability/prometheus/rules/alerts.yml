@@ -1,0 +1,87 @@
+groups:
+  # -----------------------------------------------------------------------
+  - name: availability
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Target {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} (job {{ $labels.job }}) has failed scrapes for >1m."
+
+      - alert: EndpointProbeFailed
+        expr: probe_success == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Probe failed for {{ $labels.instance }}"
+          description: "Blackbox probe of {{ $labels.instance }} has failed for >1m."
+
+      - alert: MariaDBDown
+        expr: mysql_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MariaDB is unreachable"
+          description: "mysqld-exporter reports the database has been down for >1m."
+
+  # -----------------------------------------------------------------------
+  - name: saturation
+    rules:
+      - alert: HostHighCPU
+        expr: >
+          100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU on {{ $labels.instance }}"
+          description: "CPU above 85% for >5m (current: {{ printf \"%.0f\" $value }}%)."
+
+      - alert: HostHighMemory
+        expr: >
+          100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory on {{ $labels.instance }}"
+          description: "Memory above 90% for >5m (current: {{ printf \"%.0f\" $value }}%)."
+
+      - alert: HostLowDisk
+        expr: >
+          100 * (node_filesystem_avail_bytes{mountpoint="/",fstype!=""}
+                 / node_filesystem_size_bytes{mountpoint="/",fstype!=""}) < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk on {{ $labels.instance }}"
+          description: "Less than 15% free on / for >5m (current: {{ printf \"%.0f\" $value }}% free)."
+
+      - alert: ContainerHighMemory
+        expr: >
+          (container_memory_working_set_bytes{name!=""}
+           / (container_spec_memory_limit_bytes{name!=""} > 0)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} near memory limit"
+          description: "{{ $labels.name }} above 90% of its memory limit for >5m."
+
+  # -----------------------------------------------------------------------
+  - name: tls
+    rules:
+      - alert: TLSCertExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 14
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "TLS cert for {{ $labels.instance }} expiring soon"
+          description: "Certificate expires in {{ printf \"%.0f\" $value }} days."
