@@ -36,12 +36,18 @@ status:
 
 validate: secrets
 	$(COMPOSE) config -q && echo "compose config: OK"
-	docker run --rm -v $(CURDIR)/srcs/requirements/observability/prometheus:/etc/prometheus:ro $(PROM_IMG) \
-		promtool check config /etc/prometheus/prometheus.yml
-	docker run --rm -v $(CURDIR)/srcs/requirements/observability/prometheus:/etc/prometheus:ro $(PROM_IMG) \
-		promtool check rules /etc/prometheus/rules/alerts.yml
-	docker run --rm -v $(CURDIR)/srcs/requirements/observability/alertmanager:/etc/alertmanager:ro $(AM_IMG) \
-		amtool check-config /etc/alertmanager/alertmanager.yml
+	# --entrypoint is REQUIRED: these images default to the server binary
+	# (prometheus / alertmanager), so without overriding it the tool name is
+	# swallowed as an argument -> "unexpected promtool".
+	docker run --rm --entrypoint promtool \
+		-v $(CURDIR)/srcs/requirements/observability/prometheus:/etc/prometheus:ro \
+		$(PROM_IMG) check config /etc/prometheus/prometheus.yml
+	docker run --rm --entrypoint promtool \
+		-v $(CURDIR)/srcs/requirements/observability/prometheus:/etc/prometheus:ro \
+		$(PROM_IMG) check rules /etc/prometheus/rules/alerts.yml
+	docker run --rm --entrypoint amtool \
+		-v $(CURDIR)/srcs/requirements/observability/alertmanager:/etc/alertmanager:ro \
+		$(AM_IMG) check-config /etc/alertmanager/alertmanager.yml
 	@echo "validate: all config OK"
 
 clean:
