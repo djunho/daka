@@ -48,7 +48,7 @@ user=${EXP_USER}
 password=${EXP_PASSWORD}
 CNF
 
-chmod 600 "${OBS}/prometheus/web.yml" \
+chmod 644 "${OBS}/prometheus/web.yml" \
           "${OBS}/prometheus/scrape_password" \
           "${OBS}/mysqld-exporter/.my.cnf"
 
