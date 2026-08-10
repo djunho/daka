@@ -31,7 +31,7 @@ erDiagram
         VARCHAR state_name
     }
 
-    OFFER_STATES {
+    TRADE_STATES {
         INT id PK
         VARCHAR state_name
     }
@@ -50,12 +50,12 @@ erDiagram
         TIMESTAMP updated_at
     }
 
-    OFFERS {
+    TRADES {
         INT id PK
         INT listing_requested_id FK
         INT sender_id FK
-        INT offered_listing_id FK
-        INT offer_state_id FK
+        INT listing_offered_id FK
+        INT trade_state_id FK
         VARCHAR initial_msg
         TIMESTAMP created_at
         TIMESTAMP updated_at
@@ -66,10 +66,10 @@ erDiagram
     CONDITIONS ||--o{ LISTINGS : condition
     LISTINGS_STATES ||--o{ LISTINGS : state
 
-    USERS ||--o{ OFFERS : creates
-    LISTINGS ||--o{ OFFERS : requested_listings
-    LISTINGS ||--o| OFFERS : offered_listings
-    OFFER_STATES ||--o{ OFFERS : status
+    USERS ||--o{ TRADES : creates
+    LISTINGS ||--o{ TRADES : requested_listings
+    LISTINGS ||--o| TRADES : offered_listings
+    TRADE_STATES ||--o{ TRADES : status
 ```
 <br>
 <br>
@@ -88,7 +88,7 @@ erDiagram
 
     MESSAGES {
         INT id PK
-        INT offer_id FK
+        INT trade_id FK
         INT msg_sender FK
         VARCHAR msg
         TIMESTAMP created_at
@@ -133,12 +133,12 @@ erDiagram
         TIMESTAMP updated_at
     }
 
-    OFFERS {
+    TRADES {
         INT id PK
         INT listing_requested_id FK
         INT sender_id FK
-        INT offered_listing_id FK
-        INT offer_state_id FK
+        INT listing_offered_id FK
+        INT trade_state_id FK
         VARCHAR initial_msg
         TIMESTAMP created_at
         TIMESTAMP updated_at
@@ -146,7 +146,7 @@ erDiagram
 
     LISTINGS ||--o{ IMAGES : contains
 
-    OFFERS ||--o{ MESSAGES : contains
+    TRADES ||--o{ MESSAGES : contains
     USERS ||--o{ MESSAGES : sends
 
     USERS ||--o{ REPORTS : reports
