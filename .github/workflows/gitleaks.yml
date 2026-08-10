@@ -1,0 +1,37 @@
+name: gitleaks
+
+on:
+  pull_request:
+    branches: [main, dev]
+
+concurrency:
+  group: gitleaks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan PR commits for secrets
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # --redact: never print the secret itself into public CI logs.
+          # --log-opts: restrict the scan to this PR's commit range.
+          # Pin the tag to match the pre-commit hook version for parity.
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
+            detect \
+              --source /repo \
+              --config /repo/.gitleaks.toml \
+              --redact \
+              --verbose \
+              --log-opts="${BASE}..${HEAD}"
