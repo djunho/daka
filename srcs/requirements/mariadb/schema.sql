@@ -27,7 +27,7 @@ CREATE TABLE listings_states
     state_name 		VARCHAR(50) NOT NULL
 );
 
-CREATE TABLE offer_states
+CREATE TABLE trade_states
 (
     id 				INT AUTO_INCREMENT PRIMARY KEY,
     state_name 		VARCHAR(50) NOT NULL
@@ -69,12 +69,12 @@ CREATE TABLE images (
 );
 
 -- Aqui guardamos as negociacoes
-CREATE TABLE offers (
+CREATE TABLE trades (
 	id 						INT AUTO_INCREMENT PRIMARY KEY,
 	listing_requested_id	INT NOT NULL,
 	sender_id 				INT NOT NULL,
-	offered_listing_id		INT,
-	offer_state_id			INT NOT NULL,
+	listing_offered_id		INT,
+	trade_state_id			INT NOT NULL,
 	initial_msg				VARCHAR(250) NOT NULL,
 	created_at 				TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at	 			TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -84,22 +84,22 @@ CREATE TABLE offers (
 		REFERENCES listings(id),
 	FOREIGN KEY (sender_id)
 		REFERENCES users(id),
-	FOREIGN KEY (offered_listing_id)
+	FOREIGN KEY (listing_offered_id)
 		REFERENCES listings(id),
-	FOREIGN KEY (offer_state_id)
-    	REFERENCES offer_states(id)
+	FOREIGN KEY (trade_state_id)
+    	REFERENCES trade_states(id)
 );
 
 --  Aqui guardam-se os registros do chat
 CREATE TABLE messages (
 	id 				INT AUTO_INCREMENT PRIMARY KEY,
-	offer_id		INT NOT NULL,
+	trade_id		INT NOT NULL,
 	msg_sender		INT NOT NULL,
 	msg				VARCHAR(250) NOT NULL,
 	created_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (offer_id)
-        REFERENCES offers(id),
+    FOREIGN KEY (trade_id)
+        REFERENCES trades(id),
     FOREIGN KEY (msg_sender)
         REFERENCES users(id)
 );

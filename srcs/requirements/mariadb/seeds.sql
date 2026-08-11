@@ -27,7 +27,7 @@ VALUES
 	('Removed'),
 	('Expired');
 
-INSERT INTO offer_states (state_name)
+INSERT INTO trade_states (state_name)
 VALUES
 	('Open'),
 	('Finished'),
