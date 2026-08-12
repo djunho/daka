@@ -1,0 +1,2 @@
+basic_auth_users:
+  __PROM_USER__: "__PROM_BCRYPT__"
