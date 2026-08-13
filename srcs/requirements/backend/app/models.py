@@ -28,7 +28,13 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_name: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(255), unique=True)
-    pass_hash: Mapped[str] = mapped_column(String(255))
+    # Nullable: a Google-only account never picks a password, so there is
+    # nothing to hash. The API refuses to create an email/password account
+    # without one -- the database cannot tell the two signup paths apart.
+    pass_hash: Mapped[str | None] = mapped_column(String(255))
+    # Google's permanent user id. Unused until the OAuth module lands; the
+    # column exists now so adding it later does not require wiping the volume.
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
     # Nullable columns are written as ``Mapped[str | None]``.
     avatar: Mapped[str | None] = mapped_column(String(255))
     user_location: Mapped[str | None] = mapped_column(String(100))
@@ -42,6 +48,34 @@ class User(Base):
     # One-to-many: a user publishes many listings. ``back_populates`` links this
     # to Listing.owner so both sides stay consistent in memory.
     listings: Mapped[list["Listing"]] = relationship(back_populates="owner")
+    # One-to-many: one row per device the user is logged in on.
+    # ``cascade="all, delete-orphan"`` is the ORM-side twin of the SQL
+    # ON DELETE CASCADE: deleting a User through the ORM also deletes their
+    # sessions. Both sides are declared because either can do the delete.
+    sessions: Mapped[list["UserSession"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class UserSession(Base):
+    """One active login. Deleting the row is what logging out means.
+
+    Named ``UserSession`` and not ``Session`` on purpose: SQLAlchemy already
+    exports a class called ``Session`` (the database connection handle we pass
+    around as ``db``). Two different things called Session in the same file is
+    a bug waiting to happen, so the table stays ``sessions`` and the class gets
+    a distinct name.
+    """
+
+    __tablename__ = "sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="sessions")
 
 
 class Category(Base):
