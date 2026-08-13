@@ -1,23 +1,24 @@
-import { Link } from 'react-router-dom'
+import { useState, useRef, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 
+import { useAuth } from '../context/AuthContext'
+
+// Site header. Now aware of the session: logged-out shows "Sign in" + "Post";
+// logged-in swaps "Sign in" for an avatar that opens a small menu with logout.
+// "Post" stays in both states.
 export default function Header() {
+  const { user, logout } = useAuth()
+
   return (
     <header className="sticky top-0 z-10 flex items-center gap-4 px-6 py-3 bg-surface/90 backdrop-blur-md border-b border-line">
 
-      {/* --- Brand: teal square with the swap arrows + Fraunces wordmark --- */}
-      <Link
-        to="/"
-        aria-label="Daka — home"
-        className="flex items-center gap-2.5 shrink-0"
-      >
+      {/* --- Brand --- */}
+      <Link to="/" aria-label="Daka — home" className="flex items-center gap-2.5 shrink-0">
         <LogoMark />
         <span className="font-display text-2xl font-semibold text-ink">daka</span>
       </Link>
 
-      {/* --- Search, centered and flexible (as in the Figma) --- */}
-      {/* mx-auto pushes it to the visual center; max-width keeps it from
-          stretching edge to edge on wide screens. It is a plain input for now
-          -- wiring it to the advanced-search module is a separate feature. */}
+      {/* --- Search --- */}
       <input
         type="search"
         placeholder="Search trades…"
@@ -25,22 +26,21 @@ export default function Header() {
         className="flex-1 max-w-[440px] mx-auto px-4 py-2.5 bg-paper border border-line rounded-full text-ink placeholder:text-muted focus:border-brand focus:outline-none transition-colors"
       />
 
-      {/* --- Right side actions --- */}
-      {/* shrink-0 stops the buttons from being squeezed by the search field. */}
+      {/* --- Right side --- */}
       <div className="flex items-center gap-2.5 shrink-0">
+        {/* The one branch that changes with the session: a "Sign in" link when
+            logged out, the avatar menu when logged in. */}
+        {user === null ? (
+          <Link
+            to="/login"
+            className="px-4 py-2 rounded-full font-medium text-ink hover:bg-paper transition-colors"
+          >
+            Sign in
+          </Link>
+        ) : (
+          <UserMenu name={user.user_name} avatar={user.avatar} onLogout={logout} />
+        )}
 
-        {/* LOGGED-OUT: a quiet "Entrar" link. When AuthContext lands, this is
-            the element that gets swapped for the user's avatar + menu. */}
-        <Link
-          to="/login"
-          className="px-4 py-2 rounded-full font-medium text-ink hover:bg-paper transition-colors"
-        >
-          Sign in
-        </Link>
-
-        {/* "+ Publicar": the primary action, teal pill. Points at /login while
-            publishing is gated behind auth; it becomes /publish once that page
-            and the auth guard exist. */}
         <Link
           to="/login"
           className="flex items-center gap-1 px-4 py-2 rounded-full font-semibold bg-brand text-surface hover:opacity-95 transition-opacity"
@@ -53,9 +53,102 @@ export default function Header() {
   )
 }
 
-// The logo mark: teal rounded square holding the two swap arrows (white
-// pointing right = "has", coral pointing left = "wants"). Same mark used on the
-// login screen, so the two line up exactly.
+// The avatar button plus its dropdown menu.
+function UserMenu({
+  name,
+  avatar,
+  onLogout,
+}: {
+  name: string
+  avatar: string | null
+  onLogout: () => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
+
+  // Close the menu when the user clicks anywhere outside it. Without this the
+  // dropdown would stay open until you clicked the avatar again, which feels
+  // broken. We attach the listener only while the menu is open.
+  useEffect(() => {
+    if (!open) return
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [open])
+
+  async function handleLogout() {
+    setOpen(false)
+    await onLogout()
+    // Send the now-logged-out user to the home page.
+    navigate('/')
+  }
+
+  return (
+    <div ref={menuRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Account menu"
+        aria-expanded={open}
+        className="flex items-center justify-center w-9 h-9 rounded-full bg-paper border border-line hover:border-brand transition-colors overflow-hidden"
+      >
+        {avatar ? (
+          // A real profile picture, once uploads exist. alt is empty because
+          // the button already has an aria-label naming its purpose.
+          <img src={avatar} alt="" className="w-full h-full object-cover" />
+        ) : (
+          // No photo yet (the common case at first): a generic person icon.
+          <PersonIcon />
+        )}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 mt-2 w-52 bg-surface border border-line rounded-xl shadow-lg py-1"
+        >
+          {/* The name lives inside the menu rather than in the header bar, so
+              the bar stays compact. */}
+          <div className="px-4 py-2 border-b border-line">
+            <p className="text-sm font-medium text-ink truncate">{name}</p>
+          </div>
+          <Link
+            to="/profile"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2.5 text-sm text-ink hover:bg-paper transition-colors"
+          >
+            Profile
+          </Link>
+          <Link
+            to="/trades"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2.5 text-sm text-ink hover:bg-paper transition-colors"
+          >
+            My trades
+          </Link>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleLogout}
+            className="block w-full text-left px-4 py-2.5 text-sm text-accent hover:bg-paper transition-colors"
+          >
+            Log out
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// --- Icons ------------------------------------------------------------------
+
 function LogoMark() {
   return (
     <span className="inline-flex items-center justify-center w-9 h-9 bg-brand rounded-[10px]">
@@ -66,5 +159,15 @@ function LogoMark() {
         <path d="M10 12 L7 15 L10 18" stroke="#DF3D31" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </span>
+  )
+}
+
+// Generic person silhouette, shown when a user has no avatar uploaded.
+function PersonIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" stroke="var(--color-muted)" strokeWidth="1.8" />
+      <path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" stroke="var(--color-muted)" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
   )
 }
