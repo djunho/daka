@@ -3,8 +3,6 @@
 Mounted under /auth by app/main.py. Because nginx forwards /api/ to this
 service, the public URLs are /api/auth/register and /api/auth/login.
 
-User-facing messages here are in Portuguese: they are shown directly in the
-UI, so they count as application content rather than code.
 """
 import secrets
 
@@ -97,7 +95,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> User:
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe uma conta com este email.",
+            detail="An account with this email already exists.",
         )
 
     user = User(
@@ -114,7 +112,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> User:
         #
         # Between the lookup above and this commit, another request could have
         # inserted the same email -- two people registering simultaneously, or
-        # one person double-clicking "Criar conta". The check-then-insert
+        # one person double-clicking "Create account". The check-then-insert
         # pattern has a gap between the two steps, and no amount of extra
         # checking closes it. The UNIQUE constraint on users.email does: the
         # database refuses the second write, and we translate that refusal into
@@ -125,7 +123,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> User:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe uma conta com este email.",
+            detail="An account with this email already exists.",
         )
 
     # Reload the row so the columns the database filled in (id, created_at)
@@ -160,7 +158,7 @@ def login(
     if not verify_password(payload.password, stored_hash) or user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email ou palavra-passe incorretos.",
+            detail="Incorrect email or password.",
         )
 
     _open_session(db, user, response)
