@@ -1,0 +1,28 @@
+name: validate
+
+on:
+  pull_request:
+    branches: [main, dev]
+
+concurrency:
+  group: validate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Provide env for config lint
+        run: cp .env.example srcs/.env
+
+      - name: Install htpasswd
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends apache2-utils
+
+      - name: make validate
+        run: make validate

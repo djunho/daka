@@ -1,0 +1,15 @@
+title = "daka"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented placeholders and example/template files"
+paths = [
+  '''\.env\.example$''',
+  '''.*\.template$''',
+]
+regexes = [
+  '''change_me_[a-z_]+''',
+  '''__PROM_(USER|BCRYPT)__''',
+]
