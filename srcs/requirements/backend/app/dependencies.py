@@ -1,0 +1,72 @@
+"""Shared FastAPI dependencies.
+
+A "dependency" is a function FastAPI runs before a route, injecting its result
+as an argument. ``get_current_user`` lives here rather than inside
+app/routers/auth.py because every protected route in the app -- listings,
+trades, chat, profile -- will need it, not just the auth routes. Keeping it in
+a neutral module avoids a circular import once those routers also import it.
+"""
+from fastapi import Cookie, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models import User, UserSession
+from app.security import hash_session_token, utcnow
+
+# The cookie name must match the one auth.py sets. It is duplicated as a plain
+# string here on purpose: importing it from auth.py would make this module
+# depend on the router, and the router already depends on this module (once it
+# uses get_current_user), which is a circular import. A short constant repeated
+# in two files is the lesser evil.
+SESSION_COOKIE_NAME = "daka_session"
+
+
+def get_current_user(
+    daka_session: str | None = Cookie(default=None),
+    db: Session = Depends(get_db),
+) -> User:
+    """Resolve the logged-in user from the session cookie, or reject with 401.
+
+    ``Cookie(default=None)`` tells FastAPI to pull the value out of the cookie
+    named ``daka_session``. The parameter name has to match the cookie name
+    (underscores and hyphens are interchangeable to FastAPI), which is why it
+    is spelled ``daka_session`` even though the constant uses the same text.
+
+    The steps, in order, each failing the same way so the response never hints
+    at which one failed:
+      1. no cookie at all           -> 401
+      2. cookie present but no matching session row -> 401
+      3. row found but already expired -> 401 (and delete the dead row)
+    """
+    if daka_session is None:
+        raise _unauthorised()
+
+    # We stored the SHA-256 of the token, never the token itself, so we hash the
+    # incoming cookie the same way and look the row up by that hash.
+    token_hash = hash_session_token(daka_session)
+    session = (
+        db.query(UserSession).filter(UserSession.token_hash == token_hash).first()
+    )
+
+    if session is None:
+        raise _unauthorised()
+
+    # Expiry is enforced here, server-side. The cookie's own max-age is only a
+    # hint to the browser; the row's expires_at is the real deadline. Comparing
+    # against utcnow() (naive UTC) matches how the column was written.
+    if session.expires_at < utcnow():
+        # Tidy up: a session past its deadline is useless, so drop it. This
+        # keeps the table from filling with dead rows over time.
+        db.delete(session)
+        db.commit()
+        raise _unauthorised()
+
+    return session.user
+
+
+def _unauthorised() -> HTTPException:
+    """The single 401 every failure path raises, worded identically."""
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated.",
+    )
