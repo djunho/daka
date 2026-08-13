@@ -3,7 +3,6 @@
 Mounted under /auth by app/main.py. Because nginx forwards /api/ to this
 service, the public URLs are /api/auth/register and /api/auth/login.
 
-User-facing messages here are in English, matching the rest of the site.
 """
 import secrets
 

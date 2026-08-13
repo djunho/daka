@@ -1,4 +1,8 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+
+import { useAuth } from '../context/AuthContext'
+import { ApiError } from '../lib/api'
 
 // The authentication screen, now with real state and client-side validation.
 //
@@ -53,6 +57,21 @@ export default function Login() {
   // Whether the password is shown as text or dots.
   const [showPassword, setShowPassword] = useState(false)
 
+  // True while a request is in flight, so we can disable the button and show
+  // "Signing in…" instead of letting the user submit twice.
+  const [submitting, setSubmitting] = useState(false)
+
+  // A form-level error (as opposed to per-field): the message the SERVER sends
+  // back, like "An account with this email already exists." or "Incorrect
+  // email or password." Field errors catch mistakes before we call the API;
+  // this catches what only the server can know.
+  const [formError, setFormError] = useState<string | null>(null)
+
+  // From the context: the login/register actions that also update who is
+  // logged in app-wide. navigate sends the user to the home page on success.
+  const { login, register } = useAuth()
+  const navigate = useNavigate()
+
   const isSignup = tab === 'signup'
 
   // Switching tabs clears whatever errors were on screen, so the sign-up rules
@@ -61,6 +80,7 @@ export default function Login() {
   function switchTab(next: 'signin' | 'signup') {
     setTab(next)
     setErrors({})
+    setFormError(null)
   }
 
   // Runs on submit. Returns the errors it found (empty object = all good) so
@@ -91,18 +111,36 @@ export default function Login() {
     return found
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
+    // Clear any leftover server error from a previous attempt.
+    setFormError(null)
+
     const found = validate()
     setErrors(found)
-
-    // Object.keys(...).length === 0 means "no errors". Stop here if any.
     if (Object.keys(found).length > 0) return
 
-    // Placeholder for step 8. For now, prove the form gathered the right data.
-    const payload = isSignup
-      ? { user_name: fullName.trim(), email: email.trim(), password }
-      : { email: email.trim(), password }
-    console.log('valid submit ->', payload)
+    setSubmitting(true)
+    try {
+      if (isSignup) {
+        // register() creates the account and logs in, per our choice.
+        await register(fullName.trim(), email.trim(), password)
+      } else {
+        await login(email.trim(), password)
+      }
+      // On success the context now holds the user; send them to the home page.
+      navigate('/')
+    } catch (err) {
+      // The API layer throws ApiError with the server's message in .message.
+      // Anything else is unexpected, but still worth showing something for.
+      setFormError(
+        err instanceof ApiError
+          ? err.message
+          : 'Something went wrong. Please try again.',
+      )
+    } finally {
+      // Runs whether we succeeded or failed, so the button never stays stuck.
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -221,11 +259,30 @@ export default function Login() {
               </div>
             </Field>
 
+            {/* Server-level error: shown when the API rejects the request
+                (duplicate email, wrong password). role="alert" so it is
+                announced; distinct from the per-field errors above. */}
+            {formError && (
+              <p
+                role="alert"
+                className="text-sm text-accent bg-accent/10 border border-accent/30 rounded-lg px-4 py-3"
+              >
+                {formError}
+              </p>
+            )}
+
             <button
               type="submit"
-              className="w-full py-3 bg-brand text-surface font-semibold rounded-xl hover:opacity-95 transition-opacity mt-2"
+              disabled={submitting}
+              className="w-full py-3 bg-brand text-surface font-semibold rounded-xl hover:opacity-95 transition-opacity mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {isSignup ? 'Create free account' : 'Sign in to Daka'}
+              {submitting
+                ? isSignup
+                  ? 'Creating account…'
+                  : 'Signing in…'
+                : isSignup
+                  ? 'Create free account'
+                  : 'Sign in to Daka'}
             </button>
           </form>
         </div>
