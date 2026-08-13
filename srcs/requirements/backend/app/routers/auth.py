@@ -3,15 +3,17 @@
 Mounted under /auth by app/main.py. Because nginx forwards /api/ to this
 service, the public URLs are /api/auth/register and /api/auth/login.
 
+User-facing messages here are in English, matching the rest of the site.
 """
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.dependencies import SESSION_COOKIE_NAME, get_current_user
 from app.models import User, UserSession
 from app.schemas import LoginIn, RegisterIn, UserOut
 from app.security import (
@@ -24,9 +26,8 @@ from app.security import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Name of the cookie carrying the session token. Defined here because this is
-# the module that creates it; app/dependencies.py will read the same constant.
-SESSION_COOKIE_NAME = "daka_session"
+# The cookie name now lives in app/dependencies.py (imported above), since both
+# this module and the dependency need it. One definition, one source of truth.
 
 # A throwaway bcrypt hash of a random string nobody knows, built once when the
 # module loads. It exists purely so that a login attempt with an unknown email
@@ -163,3 +164,67 @@ def login(
 
     _open_session(db, user, response)
     return user
+
+
+@router.get(
+    "/me",
+    response_model=UserOut,
+    summary="Return the currently logged-in user",
+)
+def me(current_user: User = Depends(get_current_user)) -> User:
+    """Report who the session cookie belongs to.
+
+    The whole job is done by the get_current_user dependency: if the cookie is
+    missing, unknown or expired, it raises 401 before this function runs, so
+    reaching the body at all means there is a valid user. The frontend calls
+    this once on page load to decide whether someone is logged in -- that is
+    what keeps a session alive across a browser refresh.
+    """
+    return current_user
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Log out and invalidate the current session",
+)
+def logout(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> None:
+    """Delete the current session row and clear the cookie.
+
+    Deliberately NOT protected by get_current_user. Logout must succeed no
+    matter the state of the cookie: an expired or unknown session should still
+    end up logged out, not throw a 401. So we look the row up directly and
+    delete it if present, and either way we tell the browser to drop the
+    cookie.
+
+    This delete is exactly what "logout invalidates the session" means: the
+    token in the user's cookie now matches no row, so it can never authenticate
+    again -- unlike a stateless JWT, which would stay valid until it expired.
+    """
+    raw_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if raw_token:
+        token_hash = hash_session_token(raw_token)
+        session = (
+            db.query(UserSession)
+            .filter(UserSession.token_hash == token_hash)
+            .first()
+        )
+        if session is not None:
+            db.delete(session)
+            db.commit()
+
+    # Clearing the cookie must use the SAME attributes it was set with (path,
+    # samesite, secure, httponly), or some browsers keep the old one around.
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+    # 204 No Content: success, nothing to send back.
+    return None

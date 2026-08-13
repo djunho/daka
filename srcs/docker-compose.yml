@@ -34,10 +34,9 @@ services:
       - db_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      start_period: 300s
       interval: 5s
       timeout: 5s
-      retries: 15
+      retries: 10
     networks:
       - daka_data
 
