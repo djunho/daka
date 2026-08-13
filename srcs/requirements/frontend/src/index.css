@@ -1,32 +1,64 @@
 @import 'tailwindcss';
 
-/* ============ Design tokens ============ */
-:root {
-  --paper:      #f5f7f6;   /* fundo */
-  --surface:    #ffffff;   /* cartões, header */
-  --ink:        #1a2b29;   /* texto principal */
-  --muted:      #6b7975;   /* texto secundário */
-  --brand:      #12776c;   /* teal — a marca, o lado "tem" */
-  --brand-soft: #dcebe8;   /* fundo de chips/badges teal */
-  --accent:     #e8654f;   /* coral — o lado "quer" */
-  --line:       #e2e5e3;   /* bordas finas */
+/* ============================================================================
+   MIGRATION NOTE
+   ----------------------------------------------------------------------------
+   This file is in a deliberate in-between state. We are moving the frontend
+   from hand-written prototype CSS (the ".card", ".btn", ".chip" classes) to
+   Tailwind utilities driven by design tokens. Rebuilding every page at once
+   would leave the site broken for days, so the two styles live side by side
+   here and pages migrate one at a time.
 
-  --radius:   14px;
-  --gap:      20px;
-  --shadow:   0 1px 2px rgba(26,43,41,.05), 0 6px 20px rgba(26,43,41,.06);
+   1. @theme  -- the NEW system. Tokens from docs/design/design-system.md.
+      Pages built the Tailwind way read these as utility classes:
+      bg-brand, text-ink, border-line, ...
 
-  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
-  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+   2. Legacy component CSS -- the OLD system. The prototype's .card / .btn /
+      .chip classes, kept alive so Home, ListingCard and the old Header still
+      render while we port them. Delete each block the day its page is rebuilt
+      in Tailwind. When the last one is gone, so is this note.
+
+   The legacy :root variables are re-pointed at the new design-system colours,
+   so old pages already show the NEW palette -- no two different teals during
+   the migration.
+   ========================================================================= */
+
+
+/* ============================================================================
+   1. NEW SYSTEM -- Tailwind v4 design tokens
+   ========================================================================= */
+@theme {
+  /* --- Brand --- */
+  --color-brand:       #246C5E;   /* buttons, logo background, "has" text */
+  --color-accent:      #DF3D31;   /* the "wants" side of every trade */
+
+  /* --- Surfaces --- */
+  --color-paper:       #F2F9F7;   /* page background */
+  --color-surface:     #FFFFFF;   /* cards, header, inputs */
+  --color-footer:      #15231F;   /* dark footer band */
+
+  /* --- Ink (text) --- */
+  --color-ink:         #15231F;   /* primary text + logo wordmark */
+  --color-muted:       #598E86;   /* secondary text, placeholders */
+  --color-label:       #314A46;   /* category labels, unselected toggle text */
+
+  /* --- Lines --- */
+  --color-line:        #BCD7D1;   /* borders and outlines */
+
+  /* --- Typefaces --- */
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Outfit', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
+
 
 /* ============ Base ============ */
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
 body {
   margin: 0;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-body);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -34,8 +66,33 @@ img { display: block; max-width: 100%; }
 button { font: inherit; cursor: pointer; }
 
 :focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--color-brand);
   outline-offset: 2px;
+}
+
+
+/* ============================================================================
+   2. LEGACY SYSTEM -- prototype component CSS (being phased out)
+   ----------------------------------------------------------------------------
+   Kept only so not-yet-migrated pages keep rendering. Delete each section as
+   its page is rebuilt in Tailwind. Old variable names are aliased to the new
+   tokens right below, so these classes already use the new palette.
+   ========================================================================= */
+
+:root {
+  --paper:      var(--color-paper);
+  --surface:    var(--color-surface);
+  --ink:        var(--color-ink);
+  --muted:      var(--color-muted);
+  --brand:      var(--color-brand);
+  --brand-soft: #dcebe8;               /* prototype-only, no new equivalent */
+  --accent:     var(--color-accent);
+  --line:       var(--color-line);
+
+  --radius:   14px;
+  --gap:      20px;
+  --shadow:   0 1px 2px rgba(21,35,31,.05), 0 6px 20px rgba(21,35,31,.06);
+  --font-body: 'Outfit', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* ============ Header ============ */
@@ -115,7 +172,7 @@ button { font: inherit; cursor: pointer; }
   overflow: hidden; box-shadow: var(--shadow);
   transition: transform .15s ease, box-shadow .15s ease;
 }
-.card:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(26,43,41,.10); }
+.card:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(21,35,31,.10); }
 
 .card-media {
   position: relative; aspect-ratio: 4 / 3;
