@@ -12,9 +12,9 @@ import { ApiError } from '../lib/api'
 //   - the form is validated when you submit, and errors show under each field
 //   - the password eye shows / hides the characters
 //
-// What it still does NOT do: talk to the backend. On a valid submit it only
-// logs the payload. Wiring it to POST /api/auth/register and /login, and
-// storing the session, is the next step.
+// What it does: talk to the backend via useAuth() (register/login) and rely on
+// the backend to set the httpOnly session cookie on success. Client-side
+// validation here is only for fast feedback; the backend still validates too.
 //
 // The validation rules here MIRROR the backend (app/schemas.py) on purpose.
 // Client-side checks are for fast, friendly feedback; the backend repeats them
