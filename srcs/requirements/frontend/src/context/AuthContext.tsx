@@ -83,6 +83,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // logged out -- a failed logout should not trap someone in a signed-in UI.
     try {
       await apiLogout()
+    } catch {
+      // Network/server failure: still log out locally.
     } finally {
       setUser(null)
     }
