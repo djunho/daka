@@ -15,7 +15,7 @@ a deliberately different way:
   for no security gain at all.
 
 Nothing in this file touches the database or FastAPI. Keeping it dependency-free
-means it can be unit-tested on its own (see ``tests/test_security.py``).
+means it can be unit-tested on its own.
 """
 import hashlib
 import secrets
