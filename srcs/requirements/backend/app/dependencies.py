@@ -20,7 +20,7 @@ SESSION_COOKIE_NAME = "daka_session"
 
 
 def get_current_user(
-    daka_session: str | None = Cookie(default=None),
+    daka_session: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
     db: Session = Depends(get_db),
 ) -> User:
     """Resolve the logged-in user from the session cookie, or reject with 401.
