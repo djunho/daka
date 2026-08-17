@@ -13,11 +13,9 @@ from app.database import get_db
 from app.models import User, UserSession
 from app.security import hash_session_token, utcnow
 
-# The cookie name must match the one auth.py sets. It is duplicated as a plain
-# string here on purpose: importing it from auth.py would make this module
-# depend on the router, and the router already depends on this module (once it
-# uses get_current_user), which is a circular import. A short constant repeated
-# in two files is the lesser evil.
+# Single source of truth for the session cookie name. Routers import this
+# constant, and dependencies use it as the Cookie() alias so changing the name
+# is a one-line edit.
 SESSION_COOKIE_NAME = "daka_session"
 
 
