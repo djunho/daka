@@ -71,7 +71,7 @@ class UserSession(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    token_hash: Mapped[str] = mapped_column(CHAR(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
