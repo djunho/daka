@@ -1,0 +1,149 @@
+"""Pydantic schemas: the shape of what goes in and out of the API.
+
+Two jobs, and it helps to keep them apart in your head:
+
+* **Input schemas** (``RegisterIn``, ``LoginIn``) are the backend half of the
+  "validate on the frontend AND the backend" requirement. FastAPI runs them
+  before our route function is even called, so a malformed body never reaches
+  our code -- it comes back as a 422 with a description of what was wrong. The
+  frontend checks are there to give fast feedback; these are the ones that
+  actually protect the database, because anyone can bypass a browser form with
+  a single curl command.
+
+* **Output schemas** (``UserOut``) decide what the API is allowed to send back.
+  This is the safety net that stops us leaking ``pass_hash`` to the browser: a
+  field that is not listed here is not serialised, no matter what the ORM
+  object happens to be carrying.
+
+SQLAlchemy models describe rows in a table. These describe messages on the
+wire. They look similar and are deliberately not the same thing.
+"""
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from app.security import MAX_PASSWORD_BYTES
+
+# Short enough to be memorable, long enough that brute force is hopeless. The
+# 42 subject does not fix a number; 8 is the common floor and NIST's minimum.
+MIN_PASSWORD_LENGTH = 8
+
+
+# ---------------------------------------------------------------------------
+# Shared pieces
+# ---------------------------------------------------------------------------
+def _normalise_email(value: str) -> str:
+    """Lowercase and trim an email so one person cannot own two accounts.
+
+    Without this, "Ana@daka.pt" and "ana@daka.pt" are different strings and
+    would both be accepted -- then the user picks the wrong one at login and
+    swears the site is broken. The domain part of an email is defined as
+    case-insensitive anyway, and no mail provider in practice treats the local
+    part as case-sensitive.
+
+    Note this is belt and braces: our MariaDB columns use a case-insensitive
+    collation, so the UNIQUE constraint would catch it too. We normalise
+    anyway, because the stored value should be predictable and because that
+    collation is a database setting someone could change later.
+    """
+    return value.strip().lower()
+
+
+# ---------------------------------------------------------------------------
+# Input
+# ---------------------------------------------------------------------------
+class RegisterIn(BaseModel):
+    """Body of POST /api/auth/register."""
+
+    # min_length/max_length are enforced by Pydantic before our code runs.
+    # The 100 matches users.user_name VARCHAR(100) -- if the schema ever
+    # allowed more than the column, MariaDB would truncate silently.
+    user_name: str = Field(min_length=2, max_length=100)
+    # EmailStr does the actual parsing (there is an "@", the domain is
+    # plausible). It is worth the extra dependency: a hand-written regex for
+    # emails is famously easy to get wrong.
+    email: EmailStr = Field(max_length=255)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH)
+
+    @field_validator("user_name")
+    @classmethod
+    def strip_user_name(cls, value: str) -> str:
+        """Trim surrounding whitespace and refuse a name that is only spaces.
+
+        Field(min_length=2) counts characters, so "  " passes it. We strip
+        first and check again, otherwise the site ends up with blank-looking
+        profiles.
+        """
+        cleaned = value.strip()
+        if len(cleaned) < 2:
+            raise ValueError("name must have at least 2 visible characters")
+        return cleaned
+
+    @field_validator("email")
+    @classmethod
+    def normalise_email(cls, value: str) -> str:
+        return _normalise_email(value)
+
+    @field_validator("password")
+    @classmethod
+    def check_password_bytes(cls, value: str) -> str:
+        """Enforce bcrypt's 72-byte ceiling here, at the edge of the system.
+
+        app/security.py raises on anything longer, but a raised ValueError deep
+        inside a route becomes a 500 -- a server error, implying WE broke. It
+        is the user's input that is out of range, so it belongs in validation,
+        where it becomes a 422 that explains itself.
+
+        BYTES, not characters: "ã" costs 2 bytes in UTF-8 and an emoji costs 4,
+        so a 50-character password can still be over the limit.
+        """
+        if len(value.encode("utf-8")) > MAX_PASSWORD_BYTES:
+            raise ValueError(
+                f"password must not exceed {MAX_PASSWORD_BYTES} bytes "
+                "(accented letters and emoji count as more than one)"
+            )
+        return value
+
+
+class LoginIn(BaseModel):
+    """Body of POST /api/auth/login.
+
+    Looser than RegisterIn on purpose. The rules for what makes a *good* new
+    password have no business here: someone who registered before we tightened
+    them must still be able to log in. All we need is a well-formed email and
+    a non-empty password -- whether it is right is decided by bcrypt, not by
+    Pydantic.
+    """
+
+    email: EmailStr
+    password: str = Field(min_length=1)
+
+    @field_validator("email")
+    @classmethod
+    def normalise_email(cls, value: str) -> str:
+        return _normalise_email(value)
+
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+class UserOut(BaseModel):
+    """A user as the API is willing to describe them.
+
+    Compare this with models.User: pass_hash and google_sub are missing, and
+    that is the entire point. FastAPI serialises exactly these fields and drops
+    everything else, so a careless ``return user`` cannot leak a password hash.
+    """
+
+    # from_attributes lets Pydantic build this straight from a SQLAlchemy
+    # object by reading its attributes (user.id, user.email, ...) instead of
+    # requiring a dict. Without it, every route would need to unpack the model
+    # by hand.
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_name: str
+    email: EmailStr
+    avatar: str | None
+    user_location: str | None
+    created_at: datetime
