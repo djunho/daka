@@ -1,5 +1,6 @@
 """Entry point of the Daka API."""
 from fastapi import Depends, FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,17 @@ app = FastAPI(title="Daka API", version="0.1.0", root_path="/api")
 # /api/auth from outside. Routes live in their own modules so main.py stays a
 # table of contents instead of growing into a thousand-line file.
 app.include_router(auth.router)
+
+# --- Prometheus metrics -----------------------------------------------------
+# Prometheus scrapes GET backend:8000/metrics (job "backend" in prometheus.yml).
+# Without this endpoint the scrape gets a 404, so up{job="backend"} == 0 and
+# Grafana shows the backend as DOWN even while the container is healthy.
+# instrument(app): adds middleware that times and counts every HTTP request.
+# expose(app):     mounts /metrics in the Prometheus text exposition format.
+# include_in_schema=False hides /metrics from the /api/docs OpenAPI page.
+# Note: root_path does not alter the real served path, so /metrics stays at
+# backend:8000/metrics, exactly where Prometheus looks for it.
+Instrumentator().instrument(app).expose(app, include_in_schema=False)
 
 
 @app.get("/health")
