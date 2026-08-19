@@ -31,7 +31,7 @@ jobs:
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
             detect \
               --source /repo \
-              --config /repo/.gitleaks.toml \
+              --config /repo/srcs/gitleaks.toml \
               --redact \
               --verbose \
               --log-opts="${BASE}..${HEAD}"
