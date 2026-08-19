@@ -81,5 +81,6 @@ scrape_configs:
 
   # ---- 9. Grafana --------------------------------------------------------
   - job_name: grafana
+    metrics_path: /grafana/metrics
     static_configs:
       - targets: ["grafana:3000"]
