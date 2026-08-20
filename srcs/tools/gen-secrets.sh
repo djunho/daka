@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OBS="${ROOT}/requirements/observability"
+OBS="${ROOT}/services/observability"
 ENV_FILE="${1:-${ROOT}/.env}"
 
 die() { echo "gen-secrets: $*" >&2; exit 1; }

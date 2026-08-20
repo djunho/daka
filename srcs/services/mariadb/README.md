@@ -33,7 +33,7 @@ docker compose -f srcs/docker-compose.yml up -d --build db
 Build image manually
 
 ```bash
-cd srcs/requirements/mariadb
+cd srcs/services/mariadb
 docker build -t daka_db .
 ```
 
@@ -41,8 +41,8 @@ Loading schema & seed data
 Option A — copy files into the running container and run them there:
 
 ```bash
-docker cp srcs/requirements/mariadb/schema.sql daka_db:/schema.sql
-docker cp srcs/requirements/mariadb/seeds.sql daka_db:/seeds.sql
+docker cp srcs/services/mariadb/schema.sql daka_db:/schema.sql
+docker cp srcs/services/mariadb/seeds.sql daka_db:/seeds.sql
 docker exec -it daka_db sh -c 'mysql -u root -p"$MYSQL_ROOT_PASSWORD" < /schema.sql'
 docker exec -it daka_db sh -c 'mysql -u root -p"$MYSQL_ROOT_PASSWORD" daka < /seeds.sql'
 ```
@@ -51,8 +51,8 @@ Option B — feed SQL from the host shell (substitute the password or export it)
 
 ```bash
 export MYSQL_ROOT_PASSWORD=$(grep MYSQL_ROOT_PASSWORD srcs/.env | cut -d'=' -f2)
-docker exec -i daka_db mysql -u root -p"${MYSQL_ROOT_PASSWORD}" < srcs/requirements/mariadb/schema.sql
-docker exec -i daka_db mysql -u root -p"${MYSQL_ROOT_PASSWORD}" daka < srcs/requirements/mariadb/seeds.sql
+docker exec -i daka_db mysql -u root -p"${MYSQL_ROOT_PASSWORD}" < srcs/services/mariadb/schema.sql
+docker exec -i daka_db mysql -u root -p"${MYSQL_ROOT_PASSWORD}" daka < srcs/services/mariadb/seeds.sql
 ```
 
 Notes

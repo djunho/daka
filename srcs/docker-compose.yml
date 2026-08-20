@@ -25,7 +25,7 @@ services:
   # ---- Database (MariaDB) -------------------------------------------------
   db:
     build:
-      context: ./requirements/mariadb
+      context: ./services/mariadb
     image: daka_db
     container_name: daka_db
     restart: unless-stopped
@@ -44,7 +44,7 @@ services:
   # ---- Backend (Python + FastAPI) -----------------------------------------
   backend:
     build:
-      context: ./requirements/backend
+      context: ./services/backend
     image: daka_backend
     container_name: daka_backend
     restart: unless-stopped
@@ -53,7 +53,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./requirements/backend:/app
+      - ./services/backend:/app
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
@@ -69,12 +69,12 @@ services:
   # ---- Frontend (React + Vite) --------------------------------------------
   frontend:
     build:
-      context: ./requirements/frontend
+      context: ./services/frontend
     image: daka_frontend
     container_name: daka_frontend
     restart: unless-stopped
     volumes:
-      - ./requirements/frontend:/app
+      - ./services/frontend:/app
       - /app/node_modules
     networks:
       - daka_edge
@@ -82,7 +82,7 @@ services:
   # ---- Nginx (TLS + reverse proxy) ----------------------------------------
   nginx:
     build:
-      context: ./requirements/nginx
+      context: ./services/nginx
     image: daka_nginx
     container_name: daka_nginx
     restart: unless-stopped
@@ -130,7 +130,7 @@ services:
       - --web.route-prefix=/
       - --web.config.file=/etc/prometheus/web.yml
     volumes:
-      - ./requirements/observability/prometheus:/etc/prometheus:ro
+      - ./services/observability/prometheus:/etc/prometheus:ro
       - prometheus_data:/prometheus
     healthcheck:
       test: >-
@@ -156,7 +156,7 @@ services:
       - --web.external-url=https://${DOMAIN:-localhost}:${NGINX_PORT}/alertmanager/
       - --web.route-prefix=/
     volumes:
-      - ./requirements/observability/alertmanager:/etc/alertmanager:ro
+      - ./services/observability/alertmanager:/etc/alertmanager:ro
       - alertmanager_data:/alertmanager
     healthcheck:
       test: "wget -q -O /dev/null http://localhost:9093/-/healthy || exit 1"
@@ -182,8 +182,8 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     volumes:
-      - ./requirements/observability/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./requirements/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./services/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./services/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     depends_on:
       prometheus:
@@ -205,7 +205,7 @@ services:
     command:
       - --config.file=/etc/blackbox/blackbox.yml
     volumes:
-      - ./requirements/observability/blackbox:/etc/blackbox:ro
+      - ./services/observability/blackbox:/etc/blackbox:ro
     healthcheck:
       test: "wget -q -O /dev/null http://localhost:9115/-/healthy || exit 1"
       interval: 15s
@@ -271,7 +271,7 @@ services:
       - --collect.global_status
       - --collect.global_variables
     volumes:
-      - ./requirements/observability/mysqld-exporter/.my.cnf:/cfg/.my.cnf:ro
+      - ./services/observability/mysqld-exporter/.my.cnf:/cfg/.my.cnf:ro
     depends_on:
       db:
         condition: service_healthy

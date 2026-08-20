@@ -1,7 +1,7 @@
 """SQLAlchemy models for Daka.
 
 These classes mirror the tables defined in
-``srcs/requirements/mariadb/schema.sql``, which is the single source of truth
+``srcs/services/mariadb/schema.sql``, which is the single source of truth
 for our database schema. The tables themselves are created on the MariaDB side
 (the SQL file runs automatically the first time an empty database boots), so we
 deliberately do NOT call ``Base.metadata.create_all()`` in production. These

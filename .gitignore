@@ -1,8 +1,8 @@
 # --- secrets & env (NEVER commit) ---------------------------------------
 srcs/.env
-srcs/requirements/observability/prometheus/web.yml
-srcs/requirements/observability/prometheus/scrape_password
-srcs/requirements/observability/mysqld-exporter/.my.cnf
+srcs/services/observability/prometheus/web.yml
+srcs/services/observability/prometheus/scrape_password
+srcs/services/observability/mysqld-exporter/.my.cnf
 
 # --- node / frontend -----------------------------------------------------
 node_modules/
