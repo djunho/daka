@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { CATEGORY_BY_ID, type CategoryId, type Listing } from '../types/listing'
 
 // Photo placeholder background per category, until the user uploads a real photo.
@@ -12,10 +13,10 @@ const TINT: Record<CategoryId, string> = {
 }
 
 export default function ListingCard({ listing }: { listing: Listing }) {
-  const { title, wants, category, condition, location, owner } = listing
+  const { id, title, wants, category, condition, location, owner } = listing
 
   return (
-    <article className="card">
+    <Link to={`/listing/${id}`} className="card block text-inherit no-underline">
       <div className="card-media" style={{ ['--tint' as string]: TINT[category] }}>
         <span className="badge">{condition}</span>
         {/* show the human-facing label, not the code id */}
@@ -37,6 +38,6 @@ export default function ListingCard({ listing }: { listing: Listing }) {
           <span>@{owner}</span>
         </div>
       </div>
-    </article>
+    </Link>
   )
 }
