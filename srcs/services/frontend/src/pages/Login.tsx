@@ -90,22 +90,22 @@ export default function Login() {
 
     // Name: only exists and only matters on the sign-up tab.
     if (isSignup && fullName.trim().length < MIN_NAME_LENGTH) {
-      found.fullName = 'Enter your name.'
+      found.fullName = 'Introduz o teu nome.'
     }
 
     // Email: required on both tabs, and must look like an address.
     if (!email.trim()) {
-      found.email = 'Enter your email.'
+      found.email = 'Introduz o teu email.'
     } else if (!looksLikeEmail(email)) {
-      found.email = 'Enter a valid email address.'
+      found.email = 'Introduz um endereço de email válido.'
     }
 
     // Password: on sign-up it must meet the strength rule; on sign-in we only
     // require that it is not empty (an old, shorter password must still work).
     if (!password) {
-      found.password = 'Enter your password.'
+      found.password = 'Introduz a tua palavra-passe.'
     } else if (isSignup && password.length < MIN_PASSWORD_LENGTH) {
-      found.password = `Use at least ${MIN_PASSWORD_LENGTH} characters.`
+      found.password = `Utiliza pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`
     }
 
     return found
@@ -135,7 +135,7 @@ export default function Login() {
       setFormError(
         err instanceof ApiError
           ? err.message
-          : 'Something went wrong. Please try again.',
+          : 'Algo correu mal. Por favor, tenta novamente.',
       )
     } finally {
       // Runs whether we succeeded or failed, so the button never stays stuck.
@@ -165,7 +165,7 @@ export default function Login() {
                 (!isSignup ? 'bg-surface text-ink shadow-sm' : 'text-label')
               }
             >
-              Sign in
+              Entrar
             </button>
             <button
               type="button"
@@ -175,7 +175,7 @@ export default function Login() {
                 (isSignup ? 'bg-surface text-ink shadow-sm' : 'text-label')
               }
             >
-              Create account
+              Criar conta
             </button>
           </div>
 
@@ -185,13 +185,13 @@ export default function Login() {
             className="w-full flex items-center justify-center gap-3 py-3 border border-line rounded-xl text-ink font-medium hover:bg-paper transition-colors"
           >
             <GoogleIcon />
-            {isSignup ? 'Sign up with Google' : 'Sign in with Google'}
+            {isSignup ? 'Registar com o Google' : 'Entrar com o Google'}
           </button>
 
           {/* --- divider --- */}
           <div className="flex items-center gap-3 my-6">
             <span className="flex-1 h-px bg-line" />
-            <span className="text-xs text-muted">or</span>
+            <span className="text-xs text-muted">ou</span>
             <span className="flex-1 h-px bg-line" />
           </div>
 
@@ -211,7 +211,7 @@ export default function Login() {
             {isSignup && (
               <Field
                 id="fullName"
-                label="Full name"
+                label="Nome completo"
                 error={errors.fullName}
               >
                 <input
@@ -219,7 +219,7 @@ export default function Login() {
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Your name"
+                  placeholder="Teu nome"
                   className={inputClass(!!errors.fullName)}
                 />
               </Field>
@@ -236,7 +236,7 @@ export default function Login() {
               />
             </Field>
 
-            <Field id="password" label="Password" error={errors.password}>
+            <Field id="password" label="Palavra-passe" error={errors.password}>
               {/* The eye button sits inside the field, so the input is wrapped
                   in a relative container and gets right padding to leave room. */}
               <div className="relative">
@@ -251,7 +251,7 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink transition-colors"
                 >
                   {showPassword ? <EyeOffIcon /> : <EyeIcon />}
@@ -278,24 +278,24 @@ export default function Login() {
             >
               {submitting
                 ? isSignup
-                  ? 'Creating account…'
-                  : 'Signing in…'
+                  ? 'A criar conta…'
+                  : 'A entrar…'
                 : isSignup
-                  ? 'Create free account'
-                  : 'Sign in to Daka'}
+                  ? 'Criar conta gratuita'
+                  : 'Entrar no Daka'}
             </button>
           </form>
         </div>
 
         {/* Footer line: flips the tab rather than navigating anywhere. */}
         <p className="text-center text-sm text-muted mt-6">
-          {isSignup ? 'Already have an account? ' : "Don't have an account? "}
+          {isSignup ? 'Já tens conta? ' : 'Ainda não tens conta? '}
           <button
             type="button"
             onClick={() => switchTab(isSignup ? 'signin' : 'signup')}
             className="text-brand font-semibold hover:underline"
           >
-            {isSignup ? 'Sign in' : 'Sign up free'}
+            {isSignup ? 'Entrar' : 'Regista-te grátis'}
           </button>
         </p>
       </div>

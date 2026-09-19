@@ -21,8 +21,8 @@ export default function Header() {
       {/* --- Search --- */}
       <input
         type="search"
-        placeholder="Search trades…"
-        aria-label="Search listings"
+        placeholder="Pesquisar trocas…"
+        aria-label="Pesquisar trocas disponíveis"
         className="flex-1 max-w-[440px] mx-auto px-4 py-2.5 bg-paper border border-line rounded-full text-ink placeholder:text-muted focus:border-brand focus:outline-none transition-colors"
       />
 
@@ -35,7 +35,7 @@ export default function Header() {
             to="/login"
             className="px-4 py-2 rounded-full font-medium text-ink hover:bg-paper transition-colors"
           >
-            Sign in
+            Entrar
           </Link>
         ) : (
           <UserMenu name={user.user_name} avatar={user.avatar} onLogout={logout} />
@@ -46,7 +46,7 @@ export default function Header() {
           className="flex items-center gap-1 px-4 py-2 rounded-full font-semibold bg-brand text-surface hover:opacity-95 transition-opacity"
         >
           <span aria-hidden="true" className="text-lg leading-none">+</span>
-          Post
+          Publicar
         </Link>
       </div>
     </header>
@@ -93,7 +93,7 @@ function UserMenu({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label="Account menu"
+        aria-label="Menu da conta"
         aria-expanded={open}
         className="flex items-center justify-center w-9 h-9 rounded-full bg-paper border border-line hover:border-brand transition-colors overflow-hidden"
       >
@@ -123,7 +123,7 @@ function UserMenu({
             onClick={() => setOpen(false)}
             className="block px-4 py-2.5 text-sm text-ink hover:bg-paper transition-colors"
           >
-            Profile
+            Perfil
           </Link>
           <Link
             to="/trades"
@@ -131,7 +131,7 @@ function UserMenu({
             onClick={() => setOpen(false)}
             className="block px-4 py-2.5 text-sm text-ink hover:bg-paper transition-colors"
           >
-            My trades
+            Minhas trocas
           </Link>
           <button
             type="button"
@@ -139,7 +139,7 @@ function UserMenu({
             onClick={handleLogout}
             className="block w-full text-left px-4 py-2.5 text-sm text-accent hover:bg-paper transition-colors"
           >
-            Log out
+            Encerrar sessão
           </button>
         </div>
       )}
