@@ -4,6 +4,7 @@ CREATE TABLE users (
 	email 			VARCHAR(255) NOT NULL UNIQUE,
 	pass_hash 		VARCHAR(255),
 	google_sub		VARCHAR(255) UNIQUE,
+	user_role		VARCHAR(20) NOT NULL DEFAULT 'user',
 	avatar 			VARCHAR(255),
 	user_location 	VARCHAR(100),
 	created_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
