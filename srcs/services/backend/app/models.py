@@ -35,6 +35,8 @@ class User(Base):
     # Google's permanent user id. Unused until the OAuth module lands; the
     # column exists now so adding it later does not require wiping the volume.
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
+    # The user's role in the system.
+    user_role: Mapped[str] = mapped_column(String(20), default="user")
     # Nullable columns are written as ``Mapped[str | None]``.
     avatar: Mapped[str | None] = mapped_column(String(255))
     user_location: Mapped[str | None] = mapped_column(String(100))

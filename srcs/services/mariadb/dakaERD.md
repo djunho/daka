@@ -10,6 +10,8 @@ erDiagram
         VARCHAR user_name
         VARCHAR email
         VARCHAR pass_hash
+        VARCHAR	google_sub
+        VARCHAR user_role
         VARCHAR avatar
         VARCHAR user_location
         TIMESTAMP created_at
@@ -113,6 +115,8 @@ erDiagram
         VARCHAR user_name
         VARCHAR email
         VARCHAR pass_hash
+        VARCHAR	google_sub
+        VARCHAR user_role
         VARCHAR avatar
         VARCHAR user_location
         TIMESTAMP created_at
