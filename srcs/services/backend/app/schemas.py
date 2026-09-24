@@ -20,7 +20,14 @@ wire. They look similar and are deliberately not the same thing.
 """
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.security import MAX_PASSWORD_BYTES
 
@@ -122,6 +129,41 @@ class LoginIn(BaseModel):
     @classmethod
     def normalise_email(cls, value: str) -> str:
         return _normalise_email(value)
+
+
+class ProfileUpdate(BaseModel):
+    """Fields that an authenticated user may change on their profile.
+
+    All fields are optional so the client can update only one value at a time.
+    ``avatar`` and ``user_location`` also accept ``None`` to clear them.
+    """
+
+    user_name: str | None = Field(default=None, min_length=2, max_length=100)
+    avatar: str | None = Field(default=None, max_length=255)
+    user_location: str | None = Field(default=None, max_length=100)
+
+    @field_validator("user_name", "avatar", "user_location")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("user_name")
+    @classmethod
+    def validate_user_name(cls, value: str | None) -> str | None:
+        if value is None:
+            raise ValueError("name cannot be cleared")
+        if len(value) < 2:
+            raise ValueError("name must have at least 2 visible characters")
+        return value
+
+    @model_validator(mode="after")
+    def require_a_change(self) -> "ProfileUpdate":
+        if not self.model_fields_set:
+            raise ValueError("at least one profile field is required")
+        return self
 
 
 # ---------------------------------------------------------------------------
