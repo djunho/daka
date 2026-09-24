@@ -14,7 +14,7 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import SESSION_COOKIE_NAME, get_current_user
 from app.models import User, UserSession
-from app.schemas import LoginIn, RegisterIn, UserOut
+from app.schemas import LoginIn, ProfileUpdate, RegisterIn, UserOut
 from app.security import (
     generate_session_token,
     hash_password,
@@ -179,6 +179,25 @@ def me(current_user: User = Depends(get_current_user)) -> User:
     this once on page load to decide whether someone is logged in -- that is
     what keeps a session alive across a browser refresh.
     """
+    return current_user
+
+
+@router.patch(
+    "/me",
+    response_model=UserOut,
+    summary="Update the currently logged-in user's profile",
+)
+def update_me(
+    payload: ProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Update only the profile fields included in the request body."""
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(current_user, field, value)
+
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 
