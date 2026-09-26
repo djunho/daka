@@ -6,7 +6,10 @@ service, the public URLs are /api/auth/register and /api/auth/login.
 """
 import secrets
 
+from authlib.integrations.base_client import OAuthError
+from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from starlette.responses import RedirectResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -35,6 +38,119 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # password" would take a quarter of a second -- and that difference is enough
 # for an attacker to discover which emails have accounts here, by timing alone.
 _DUMMY_HASH = hash_password(secrets.token_urlsafe(32))
+
+oauth = OAuth()
+if settings.google_client_id and settings.google_client_secret:
+    oauth.register(
+        name="google",
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+        server_metadata_url=(
+            "https://accounts.google.com/.well-known/openid-configuration"
+        ),
+        client_kwargs={"scope": "openid email profile"},
+    )
+
+
+@router.get(
+    "/google/login",
+    summary="Start Google OAuth login",
+)
+async def google_login(request: Request):
+    """Redirect the browser to Google's consent screen."""
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google authentication is not configured.",
+        )
+
+    return await oauth.google.authorize_redirect(
+        request,
+        settings.google_redirect_uri,
+    )
+
+
+@router.get(
+    "/google/callback",
+    summary="Complete Google OAuth login",
+)
+async def google_callback(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Validate Google's response, create a local session, and redirect."""
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google authentication is not configured.",
+        )
+
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except OAuthError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google authentication was not completed.",
+        )
+
+    google_user = token.get("userinfo")
+    if not google_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google did not return user information.",
+        )
+
+    google_sub = google_user.get("sub")
+    email = google_user.get("email")
+    if isinstance(email, str):
+        email = email.strip().lower()
+    if not google_sub or not email or google_user.get("email_verified") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google account information could not be verified.",
+        )
+
+    user = db.query(User).filter(User.google_sub == google_sub).first()
+    if user is None:
+        existing_email = db.query(User).filter(User.email == email).first()
+        if existing_email is not None:
+            if existing_email.google_sub is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This email is linked to another Google account.",
+                )
+            existing_email.google_sub = google_sub
+            user = existing_email
+        else:
+            user_name = google_user.get("name") or email.split("@", 1)[0]
+            user_name = user_name.strip()[:100] or "Google user"
+            user = User(
+                user_name=user_name,
+                email=email,
+                google_sub=google_sub,
+                avatar=google_user.get("picture"),
+            )
+            db.add(user)
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This Google account is already registered.",
+                )
+            db.refresh(user)
+
+    response = RedirectResponse(url=settings.frontend_url, status_code=302)
+    try:
+        _open_session(db, user, response)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This Google account is already registered.",
+        )
+    return response
 
 
 def _open_session(db: Session, user: User, response: Response) -> None:
