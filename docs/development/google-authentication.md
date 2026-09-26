@@ -180,6 +180,25 @@ The existing data is preserved, including the name, avatar, location, password, 
 
 If the account is already linked to another `google_sub`, the backend returns `409 Conflict` and does not replace the existing link.
 
+### Concurrent account-linking protection
+
+The email lookup uses a row lock with SQLAlchemy's `with_for_update()`:
+
+```python
+existing_email = (
+        db.query(User)
+        .filter(User.email == email)
+        .with_for_update()
+        .first()
+)
+```
+
+This translates to a database row lock similar to `SELECT ... FOR UPDATE`. It prevents two concurrent Google callbacks from both observing an empty `google_sub` and assigning different Google subjects to the same local account.
+
+The first transaction links the account and commits. A concurrent transaction waits for that lock, then reads the updated `google_sub` and returns `409 Conflict` instead of replacing the existing association.
+
+For accounts that do not exist yet, the `UNIQUE` constraints on `email` and `google_sub`, together with `IntegrityError` handling, protect against duplicate account creation.
+
 ### New account
 
 If there is no user with the `google_sub` and no account with the email, a new account is created:
@@ -374,5 +393,5 @@ Implemented in the backend:
 - automatic account creation;
 - linking to an existing local account;
 - Daka local session;
-- protection against duplicate associations;
+- transactional protection against duplicate associations;
 - environment variable configuration.
