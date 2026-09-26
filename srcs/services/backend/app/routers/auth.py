@@ -123,7 +123,15 @@ async def google_callback(
     # fallback used to link an existing local account after Google verifies it.
     user = db.query(User).filter(User.google_sub == google_sub).first()
     if user is None:
-        existing_email = db.query(User).filter(User.email == email).first()
+        # Lock the matched account until this transaction commits. Without
+        # this lock, concurrent callbacks could both observe an empty
+        # google_sub and the later commit could overwrite the first link.
+        existing_email = (
+            db.query(User)
+            .filter(User.email == email)
+            .with_for_update()
+            .first()
+        )
         if existing_email is not None:
             # Never replace an existing Google link. A different subject with
             # the same email must not take over an already-linked account.
