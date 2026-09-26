@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     # hurt an attacker, fast enough that logging in still feels instant.
     bcrypt_rounds: int = 12
 
+    # Google OAuth credentials. They remain optional until Google login is
+    # enabled, so the existing email/password authentication still works when
+    # these variables are not configured.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = "https://localhost:8443/api/auth/google/callback"
+    oauth_state_secret: str | None = None
+    frontend_url: str = "https://localhost:8443"
+
     @property
     def database_url(self) -> str:
         """Connection string in the format SQLAlchemy expects."""
