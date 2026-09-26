@@ -39,6 +39,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # for an attacker to discover which emails have accounts here, by timing alone.
 _DUMMY_HASH = hash_password(secrets.token_urlsafe(32))
 
+# Register the Google client only when its credentials exist. This keeps the
+# email/password routes usable in environments where Google OAuth is disabled.
 oauth = OAuth()
 if settings.google_client_id and settings.google_client_secret:
     oauth.register(
@@ -64,6 +66,9 @@ async def google_login(request: Request):
             detail="Google authentication is not configured.",
         )
 
+    # Authlib generates the OAuth state and stores it in the signed session
+    # cookie; the callback will reject a response with a missing or invalid
+    # state, preventing an unsolicited authorization response from being used.
     return await oauth.google.authorize_redirect(
         request,
         settings.google_redirect_uri,
@@ -85,6 +90,8 @@ async def google_callback(
             detail="Google authentication is not configured.",
         )
 
+    # Exchange Google's one-time authorization code for verified token data.
+    # Authlib also checks the state saved by google_login before returning.
     try:
         token = await oauth.google.authorize_access_token(request)
     except OAuthError:
@@ -93,6 +100,8 @@ async def google_callback(
             detail="Google authentication was not completed.",
         )
 
+    # The OpenID Connect userinfo claim contains the identity fields requested
+    # by the client: Google's stable subject id, email, name, and picture.
     google_user = token.get("userinfo")
     if not google_user:
         raise HTTPException(
@@ -110,10 +119,14 @@ async def google_callback(
             detail="Google account information could not be verified.",
         )
 
+    # The stable Google subject is the primary lookup. Email is only the
+    # fallback used to link an existing local account after Google verifies it.
     user = db.query(User).filter(User.google_sub == google_sub).first()
     if user is None:
         existing_email = db.query(User).filter(User.email == email).first()
         if existing_email is not None:
+            # Never replace an existing Google link. A different subject with
+            # the same email must not take over an already-linked account.
             if existing_email.google_sub is not None:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -122,6 +135,8 @@ async def google_callback(
             existing_email.google_sub = google_sub
             user = existing_email
         else:
+            # First-time Google users receive a local account without a
+            # password; future requests still use Daka's own session cookie.
             user_name = google_user.get("name") or email.split("@", 1)[0]
             user_name = user_name.strip()[:100] or "Google user"
             user = User(
@@ -141,6 +156,8 @@ async def google_callback(
                 )
             db.refresh(user)
 
+    # Create the same server-side session used by password login before
+    # redirecting, so the frontend is authenticated immediately after return.
     response = RedirectResponse(url=settings.frontend_url, status_code=302)
     try:
         _open_session(db, user, response)

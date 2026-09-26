@@ -14,6 +14,9 @@ from app.routers import auth
 # root_path="/api": nginx forwards /api/ here, so the auto-generated docs
 # (at /api/docs) build their links with the correct prefix.
 app = FastAPI(title="Daka API", version="0.1.0", root_path="/api")
+# Authlib stores the temporary OAuth state in this signed, short-lived cookie.
+# It is separate from daka_session, which is created only after Google login
+# succeeds and identifies the user on subsequent API requests.
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.oauth_state_secret or secrets.token_urlsafe(32),

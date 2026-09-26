@@ -26,8 +26,11 @@ class Settings(BaseSettings):
     # these variables are not configured.
     google_client_id: str | None = None
     google_client_secret: str | None = None
+    # Google must redirect to this exact public URL after authorization.
     google_redirect_uri: str = "https://localhost:8443/api/auth/google/callback"
+    # Used to sign the temporary cookie that protects the OAuth state.
     oauth_state_secret: str | None = None
+    # Destination after the backend creates the local Daka session.
     frontend_url: str = "https://localhost:8443"
 
     @property
