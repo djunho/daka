@@ -55,7 +55,7 @@ export default function Profile() {
     setIsEditing(false)
   }
 
-  // Save: validate and send the updated data to the backend (not implemented yet)
+  // Save: validate and send the updated data to the backend
   async function handleSave() {
     setError(null)
 
@@ -90,7 +90,6 @@ export default function Profile() {
 
     setSaving(true)
     try {
-      // Simulate a save operation (not implemented yet)
       await updateProfile({
         user_name: trimmedName,
         user_location: trimmedLocation || null,
@@ -158,8 +157,10 @@ export default function Profile() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  disabled={saving}
                   onClick={handleCancel}
-                  className="text-xs font-medium text-muted hover:text-ink px-2.5 py-1 rounded-lg transition-colors"
+                  className={"text-xs font-medium text-muted hover:text-ink px-2.5 py-1 rounded-lg transition-colors" +
+                            " disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted"}
                 >
                   Cancelar
                 </button>
@@ -167,7 +168,8 @@ export default function Profile() {
                   type="button"
                   onClick={handleSave}
                   disabled={saving}
-                  className="text-xs font-semibold bg-brand text-surface px-3 py-1.5 rounded-lg hover:opacity-95 transition-opacity"
+                  className={"text-xs font-semibold bg-brand text-surface px-3 py-1.5 rounded-lg hover:opacity-95 transition-opacity" +
+                            " disabled:opacity-40 disabled:cursor-not-allowed"}
                 >
                   {saving ? 'A guardar...' : 'Guardar alterações'}
                 </button>
@@ -180,7 +182,7 @@ export default function Profile() {
             id="user_name"
             label="Nome de utilizador"
             value={formData.user_name}
-            readOnly={!isEditing}
+            readOnly={!isEditing || saving}
             onChange={(e) => setFormData({ ...formData, user_name: e.target.value })}
           />
 
@@ -189,7 +191,7 @@ export default function Profile() {
             id="email"
             label="Email"
             value={formData.email}
-            //readOnly={!isEditing}
+            //readOnly={!isEditing || saving}
             readOnly={true} // Email is not editable for now
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
           />
@@ -200,7 +202,7 @@ export default function Profile() {
             label="Localização"
             value={formData.user_location || ''}
             placeholder="Sem localização definida"
-            readOnly={!isEditing}
+            readOnly={!isEditing || saving}
             onChange={(e) => setFormData({ ...formData, user_location: e.target.value })}
           />
         </div>
