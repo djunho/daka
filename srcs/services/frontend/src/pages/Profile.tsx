@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import ProfileField from '../components/ProfileField'
@@ -8,24 +8,33 @@ import { ApiError } from '../lib/api'
 export default function Profile() {
   const { user, updateProfile } = useAuth()
 
-  if (!user) {
-    return (
-      <main className="page">
-        <h1 className="page-title">Erro ao carregar dados do utilizador</h1>
-        <Link className="btn" to="/">Voltar ao início</Link>
-      </main>
-    )
-  }
-
   const [isEditing, setIsEditing] = useState(false)
   const [formData, setFormData] = useState({
-      user_name: user.user_name,
-      user_location: user.user_location || '',
-      email: user.email,
+      user_name: user?.user_name || '',
+      user_location: user?.user_location || '',
+      email: user?.email || '',
   })
-
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        user_name: user.user_name,
+        user_location: user.user_location || '',
+        email: user.email,
+      })
+    }
+  }, [user])
+
+  if (!user) {
+      return (
+          <main className="page">
+          <h1 className="page-title">Erro ao carregar dados do utilizador</h1>
+          <Link className="btn" to="/">Voltar ao início</Link>
+          </main>
+      )
+  }
 
   // Format date: "setembro de 2026"
   const memberSince = new Date(user.created_at).toLocaleDateString('pt-PT', {
