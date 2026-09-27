@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import ProfileField from '../components/ProfileField'
 import Avatar from '../components/Avatar'
+import { ApiError } from '../lib/api'
 
 export default function Profile() {
-  const { user } = useAuth()
+  const { user, updateProfile } = useAuth()
 
   if (!user) {
     return (
@@ -23,6 +24,9 @@ export default function Profile() {
       email: user.email,
   })
 
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   // Format date: "setembro de 2026"
   const memberSince = new Date(user.created_at).toLocaleDateString('pt-PT', {
     month: 'long',
@@ -38,17 +42,75 @@ export default function Profile() {
       user_location: user.user_location || '',
       email: user.email,
     })
+    setError(null)
     setIsEditing(false)
   }
 
   // Save: validate and send the updated data to the backend (not implemented yet)
-  function handleSave() {
-    setIsEditing(false)
-    alert('Funcionalidade de guardar ainda não implementada. (Simulação concluída.)')
+  async function handleSave() {
+    setError(null)
+
+    // Do some validation
+    const trimmedName = formData.user_name.trim()
+    const trimmedLocation = formData.user_location.trim()
+
+    if (trimmedName.length < 2) {
+      setError('O nome de utilizador deve ter pelo menos 2 caracteres visíveis.')
+      return
+    }
+
+    // 100 is defined on backend (database)
+    if (trimmedName.length > 100) {
+      setError('O nome de utilizador não pode ter mais de 100 caracteres.')
+      return
+    }
+
+    if (trimmedLocation.length > 100) {
+      setError('A localização não pode ter mais de 100 caracteres.')
+      return
+    }
+
+    // Check if some change was made
+    const hasNameChanged = trimmedName !== user?.user_name
+    const hasLocationChanged = (trimmedLocation || null) !== (user?.user_location || null)
+
+    if (!hasNameChanged && !hasLocationChanged) {
+      setIsEditing(false)
+      return
+    }
+
+    setSaving(true)
+    try {
+      // Simulate a save operation (not implemented yet)
+      await updateProfile({
+        user_name: trimmedName,
+        user_location: trimmedLocation || null,
+        // TODO: Add avatar when enabled
+      })
+      setIsEditing(false)
+    } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Erro desconhecido ao guardar alterações. Por favor, tente novamente.')
+    } finally {
+        setSaving(false)
+    }
   }
 
   return (
     <main className="max-w-xl mx-auto px-4 py-8">
+      {/* Error Banner if exists */}
+      { error && 
+        <div className="fixed top-6 right-6 z-50 flex items-center gap-3 bg-surface border border-accent/40 text-accent px-4 py-3 rounded-xl shadow-xl max-w-sm" role="alert">
+          <span className="block sm:inline">{error}</span>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="text-muted hover:text-ink text-xs font-bold p-1 ml-auto transition-colors"
+            aria-label="Fechar alerta"
+          >
+            ✕
+          </button>
+        </div>
+      }
       <div className="bg-surface border border-line rounded-2xl p-6 shadow-sm">
         <div className="flex items-center gap-4 pb-6 border-b border-line">
           <Avatar
@@ -95,9 +157,10 @@ export default function Profile() {
                 <button
                   type="button"
                   onClick={handleSave}
+                  disabled={saving}
                   className="text-xs font-semibold bg-brand text-surface px-3 py-1.5 rounded-lg hover:opacity-95 transition-opacity"
                 >
-                  Guardar alterações
+                  {saving ? 'A guardar...' : 'Guardar alterações'}
                 </button>
               </div>
             )}
@@ -117,7 +180,8 @@ export default function Profile() {
             id="email"
             label="Email"
             value={formData.email}
-            readOnly={!isEditing}
+            //readOnly={!isEditing}
+            readOnly={true} // Email is not editable for now
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
           />
 

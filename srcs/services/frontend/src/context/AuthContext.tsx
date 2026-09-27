@@ -12,6 +12,8 @@ import {
   apiLogout,
   apiMe,
   apiRegister,
+  apiUpdateProfile,
+  type UpdateProfileData,
   type ApiUser,
 } from '../lib/api'
 
@@ -30,6 +32,7 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  updateProfile: (data: UpdateProfileData) => Promise<void>
 }
 
 // createContext needs a default. We pass null and guard against it in the hook
@@ -77,6 +80,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(me)
   }
 
+  async function updateProfile(data: UpdateProfileData) {
+    // Update the user profile
+    const updated = await apiUpdateProfile(data)
+    setUser(updated)
+  }
+
+
   async function logout() {
     // Tell the server to delete the session row, then forget the user locally.
     // We clear user even if the request fails, because the intent is to be
@@ -91,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateProfile }}>
       {children}
     </AuthContext.Provider>
   )
