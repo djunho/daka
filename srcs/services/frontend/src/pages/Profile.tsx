@@ -59,22 +59,24 @@ export default function Profile() {
   async function handleSave() {
     setError(null)
 
-    // Do some validation
+    // Trim values and count Unicode code points to match Python's len() in backend
     const trimmedName = formData.user_name.trim()
     const trimmedLocation = formData.user_location.trim()
+    const nameLength = [...trimmedName].length
+    const locationLength = [...trimmedLocation].length
 
-    if (trimmedName.length < 2) {
+    if (nameLength < 2) {
       setError('O nome de utilizador deve ter pelo menos 2 caracteres visíveis.')
       return
     }
 
     // 100 is defined on backend (database)
-    if (trimmedName.length > 100) {
+    if (nameLength > 100) {
       setError('O nome de utilizador não pode ter mais de 100 caracteres.')
       return
     }
 
-    if (trimmedLocation.length > 100) {
+    if (locationLength > 100) {
       setError('A localização não pode ter mais de 100 caracteres.')
       return
     }
