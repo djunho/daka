@@ -109,3 +109,16 @@ export function apiLogout() {
 export function apiMe() {
   return request<ApiUser>('/auth/me')
 }
+
+export type UpdateProfileData = {
+  user_name?: string
+  user_location?: string | null
+  avatar?: string | null
+}
+
+export function apiUpdateProfile(data: UpdateProfileData) {
+  return request<ApiUser>('/auth/me', {
+    method: 'PATCH',
+    body: data,
+  })
+}
