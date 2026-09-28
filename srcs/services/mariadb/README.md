@@ -17,6 +17,17 @@ Use the repo's `.env` (see `srcs/.env` or `.env.example`) to provide the databas
 - `MYSQL_ROOT_PASSWORD` — root password for MariaDB.
 - `DB_HOST` / `DB_PORT` — used by the backend to connect (in Compose, `DB_HOST=db`).
 
+Google authentication
+The complete Google OAuth setup and testing instructions are documented in [`docs/development/google-authentication.md`](../../../docs/development/google-authentication.md).
+
+Before testing Google authentication:
+- Configure the OAuth consent screen and add the test account in Google Cloud Console.
+- Create a Web application OAuth client with the exact redirect URI documented in the guide.
+- Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `OAUTH_STATE_SECRET`, and `FRONTEND_URL` in `srcs/.env`.
+- Rebuild the backend so it loads the OAuth dependencies and environment variables.
+
+Use the linked guide for the complete login flow, account linking rules, security details, troubleshooting steps, and MariaDB verification queries.
+
 Quickstart (Docker Compose)
 From the repository root you can start the whole stack (recommended):
 
