@@ -189,3 +189,60 @@ class UserOut(BaseModel):
     avatar: str | None
     user_location: str | None
     created_at: datetime
+
+# ==========================================================================
+# LISTINGS SCHEMAS
+# ==========================================================================
+# --- Lookup schemas (simple, for displaying category/condition names) ---
+class CategoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    category_name: str
+
+class ConditionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    condition_name: str
+
+# --- Images ---
+class ImageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    image_path: str
+    is_primary: bool
+
+# --- Ad Entries ---
+class ListingCreateIn(BaseModel):
+    title: str = Field(min_length=3, max_length=150)
+    category_id: int
+    condition_id: int
+    listing_dsc: str | None = Field(default=None, max_length=2000)
+    listing_location: str | None = Field(default=None, max_length=100)
+    wish: str | None = Field(default=None, max_length=1000)
+
+class ListingUpdateIn(BaseModel):
+    title: str | None = Field(default=None, min_length=3, max_length=150)
+    category_id: int | None = None
+    condition_id: int | None = None
+    listing_dsc: str | None = Field(default=None, max_length=2000)
+    listing_location: str | None = Field(default=None, max_length=100)
+    wish: str | None = Field(default=None, max_length=1000)
+
+# --- Saídas de Anúncios ---
+class ListingSummaryOut(BaseModel):
+    """Lightweight, condensed version for showcase, feed, search, and autocomplete."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    title: str
+    category: CategoryOut
+    condition: ConditionOut
+    listing_location: str | None
+    wish: str | None
+    owner: UserOut
+    created_at: datetime
+
+class ListingDetailOut(ListingSummaryOut):
+    """Detailed version with full description and images."""
+    listing_dsc: str | None
+    images: list[ImageOut] = Field(default_factory=list)
+    is_favorited: bool = False
