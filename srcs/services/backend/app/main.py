@@ -5,16 +5,20 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.routers import auth
+from app.routers import auth, listings
+
 
 # root_path="/api": nginx forwards /api/ here, so the auto-generated docs
 # (at /api/docs) build their links with the correct prefix.
 app = FastAPI(title="Daka API", version="0.1.0", root_path="/api")
 
-# Everything in app/routers/auth.py becomes reachable under /auth, which is
-# /api/auth from outside. Routes live in their own modules so main.py stays a
+# Everything in app/routers/ becomes reachable under their respective paths.
+# For example, app/routers/auth.py becomes reachable under /auth, which is
+# /api/auth from outside and /app/routers/listings.py becomes reachable under /listings, which is
+# /api/listings from outside. Routes live in their own modules so main.py stays a
 # table of contents instead of growing into a thousand-line file.
 app.include_router(auth.router)
+app.include_router(listings.router)
 
 # --- Prometheus metrics -----------------------------------------------------
 # Prometheus scrapes GET backend:8000/metrics (job "backend" in prometheus.yml).
