@@ -27,7 +27,13 @@ export default function ListingDetail() {
       </p>
       <p className="page-text">
         {CATEGORY_BY_ID[listing.category].label} · {listing.condition} ·{' '}
-        {listing.location} · @{listing.owner}
+        {listing.location} ·{' '}
+        <Link
+          to={`/users/${encodeURIComponent(listing.owner)}`}
+          className="text-brand font-medium hover:underline"
+        >
+          @{listing.owner}
+        </Link>
       </p>
       <p className="page-text">
         (Página de detalhe em construção — o botão de propor troca entra aqui.)

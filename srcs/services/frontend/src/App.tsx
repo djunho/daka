@@ -5,6 +5,7 @@ import RequireAuth from './components/RequireAuth'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Profile from './pages/Profile'
+import UserProfile from './pages/UserProfile'
 import ListingDetail from './pages/ListingDetail'
 import Privacy from './pages/Privacy'
 import Terms from './pages/Terms'
@@ -34,6 +35,11 @@ export default function App() {
             <Route path="/profile" element={
                 <RequireAuth>
                     <Profile />
+                </RequireAuth>
+            } />
+            <Route path="/users/:id" element={
+                <RequireAuth>
+                    <UserProfile />
                 </RequireAuth>
             } />
             <Route path="/listing/:id" element={<ListingDetail />} />

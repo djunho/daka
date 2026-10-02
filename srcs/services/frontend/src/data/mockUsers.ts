@@ -1,0 +1,81 @@
+import type { PublicUser } from '../types/user'
+
+export const mockUsers: PublicUser[] = [
+  {
+    id: 1,
+    user_name: 'djunho',
+    avatar: null,
+    user_location: 'Lisboa',
+    created_at: '2026-09-01T12:00:00Z',
+  },
+  {
+    id: 2,
+    user_name: 'rita',
+    avatar: null,
+    user_location: 'Braga',
+    created_at: '2026-01-15T10:00:00Z',
+  },
+  {
+    id: 3,
+    user_name: 'tiago',
+    avatar: null,
+    user_location: 'Guimarães',
+    created_at: '2026-02-20T14:30:00Z',
+  },
+  {
+    id: 4,
+    user_name: 'nuno',
+    avatar: null,
+    user_location: 'Porto',
+    created_at: '2026-03-05T09:15:00Z',
+  },
+  {
+    id: 5,
+    user_name: 'sofia',
+    avatar: null,
+    user_location: 'Braga',
+    created_at: '2026-04-12T11:45:00Z',
+  },
+  {
+    id: 6,
+    user_name: 'ana',
+    avatar: null,
+    user_location: 'Lisboa',
+    created_at: '2026-05-01T16:20:00Z',
+  },
+  {
+    id: 7,
+    user_name: 'joão',
+    avatar: null,
+    user_location: 'Porto',
+    created_at: '2026-05-18T18:00:00Z',
+  },
+  {
+    id: 8,
+    user_name: 'pedro',
+    avatar: null,
+    user_location: 'Braga',
+    created_at: '2026-06-10T12:00:00Z',
+  },
+  {
+    id: 9,
+    user_name: 'marta',
+    avatar: null,
+    user_location: 'Lisboa',
+    created_at: '2026-07-22T08:30:00Z',
+  },
+  {
+    id: 10,
+    user_name: 'rui',
+    avatar: null,
+    user_location: 'Coimbra',
+    created_at: '2026-08-14T15:10:00Z',
+  },
+  {
+    id: 11,
+    user_name: 'clara',
+    avatar: null,
+    user_location: 'Aveiro',
+    created_at: '2026-09-02T19:40:00Z',
+  },
+]
