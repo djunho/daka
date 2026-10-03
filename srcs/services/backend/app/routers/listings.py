@@ -8,11 +8,11 @@ define the expected paths, dependencies and response schemas.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import User
+from app.models import Category, Condition, Listing, ListingState, User
 from app.schemas import (
     CategoryOut,
     ConditionOut,
@@ -86,10 +86,7 @@ def list_categories(
     The frontend can use this endpoint to populate category filters and
     selection controls when creating or searching listings.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Category listing is not implemented yet.",
-    )
+    return db.query(Category).order_by(Category.category_name).all()
 
 
 @router.get(
@@ -105,10 +102,7 @@ def list_conditions(
     The frontend can use this endpoint to populate condition filters and
     selection controls when creating or editing a listing.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Condition listing is not implemented yet.",
-    )
+    return db.query(Condition).order_by(Condition.id).all()
 
 
 @router.get(
@@ -172,10 +166,64 @@ def create_listing(
     Authentication is required. The request body is validated by
     ListingCreateIn before this function is called.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Listing creation is not implemented yet.",
+    # IDs are valid positive integers after Pydantic validation, but only the
+    # database can tell whether they refer to a category/condition that exists.
+    category = db.get(Category, payload.category_id)
+    if category is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The selected category does not exist.",
+        )
+
+    condition = db.get(Condition, payload.condition_id)
+    if condition is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The selected condition does not exist.",
+        )
+
+    # State is server-owned: a client must never be able to publish an ad as
+    # Removed or Expired just by choosing a different state_id in the request.
+    available_state = (
+        db.query(ListingState)
+        .filter(ListingState.state_name == "Available")
+        .first()
     )
+    if available_state is None:
+        # This is a deployment/configuration problem (the required seed row is
+        # missing), rather than invalid input from the user.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Listing states are not configured.",
+        )
+
+    listing = Listing(
+        user_id=current_user.id,
+        category_id=category.id,
+        condition_id=condition.id,
+        state_id=available_state.id,
+        title=payload.title,
+        listing_dsc=payload.listing_dsc,
+        listing_location=payload.listing_location,
+        wish=payload.wish,
+    )
+    db.add(listing)
+    db.commit()
+
+    # Re-read with the relationships required by ListingDetailOut. This keeps
+    # the endpoint independent of SQLAlchemy's lazy-loading configuration.
+    created_listing = (
+        db.query(Listing)
+        .options(
+            joinedload(Listing.owner),
+            joinedload(Listing.category),
+            joinedload(Listing.condition),
+            selectinload(Listing.images),
+        )
+        .filter(Listing.id == listing.id)
+        .one()
+    )
+    return created_listing
 
 
 @router.patch(

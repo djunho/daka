@@ -216,11 +216,26 @@ class ImageOut(BaseModel):
 # --- Ad Entries ---
 class ListingCreateIn(BaseModel):
     title: str = Field(min_length=3, max_length=150)
-    category_id: int
-    condition_id: int
+    category_id: int = Field(gt=0)
+    condition_id: int = Field(gt=0)
     listing_dsc: str | None = Field(default=None, max_length=2000)
     listing_location: str | None = Field(default=None, max_length=100)
     wish: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 3:
+            raise ValueError("title must have at least 3 visible characters")
+        return cleaned
+
+    @field_validator("listing_dsc", "listing_location", "wish")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
 
 class ListingUpdateIn(BaseModel):
     title: str | None = Field(default=None, min_length=3, max_length=150)
