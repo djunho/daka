@@ -386,42 +386,41 @@ def delete_me(
         .all()
     ]
 
-    # Remove every row that references the user's account or listings before
-    # deleting the parent rows. All operations share this transaction.
-    db.query(Message).filter(
-        or_(
-            Message.msg_sender == user_id,
-            Message.trade_id.in_(trade_ids),
-        )
-    ).delete(synchronize_session=False)
-    db.query(Report).filter(
-        or_(
-            Report.reporter_id == user_id,
-            Report.reported_user_id == user_id,
-            Report.reported_listings_id.in_(listing_ids),
-        )
-    ).delete(synchronize_session=False)
-    db.query(Favorite).filter(
-        or_(
-            Favorite.user_id == user_id,
-            Favorite.listing_id.in_(listing_ids),
-        )
-    ).delete(synchronize_session=False)
-    db.query(Trade).filter(Trade.id.in_(trade_ids)).delete(
-        synchronize_session=False
-    )
-    db.query(Image).filter(Image.listing_id.in_(listing_ids)).delete(
-        synchronize_session=False
-    )
-    db.query(Listing).filter(Listing.id.in_(listing_ids)).delete(
-        synchronize_session=False
-    )
-    db.query(UserSession).filter(UserSession.user_id == user_id).delete(
-        synchronize_session=False
-    )
-    db.query(User).filter(User.id == user_id).delete(synchronize_session=False)
-
     try:
+        # Remove every row that references the user's account or listings before
+        # deleting the parent rows. All operations share this transaction.
+        db.query(Message).filter(
+            or_(
+                Message.msg_sender == user_id,
+                Message.trade_id.in_(trade_ids),
+            )
+        ).delete(synchronize_session=False)
+        db.query(Report).filter(
+            or_(
+                Report.reporter_id == user_id,
+                Report.reported_user_id == user_id,
+                Report.reported_listings_id.in_(listing_ids),
+            )
+        ).delete(synchronize_session=False)
+        db.query(Favorite).filter(
+            or_(
+                Favorite.user_id == user_id,
+                Favorite.listing_id.in_(listing_ids),
+            )
+        ).delete(synchronize_session=False)
+        db.query(Trade).filter(Trade.id.in_(trade_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(Image).filter(Image.listing_id.in_(listing_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(Listing).filter(Listing.id.in_(listing_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(UserSession).filter(UserSession.user_id == user_id).delete(
+            synchronize_session=False
+        )
+        db.query(User).filter(User.id == user_id).delete(synchronize_session=False)
         db.commit()
     except IntegrityError:
         db.rollback()
