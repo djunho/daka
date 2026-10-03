@@ -9,7 +9,7 @@ Toma-la dáka! This is under the scope of our 42 transcendence project.
 # Resources
 
 Google authentication
-The complete Google OAuth setup and testing instructions are documented in [`docs/development/google-authentication.md`](../../../docs/development/google-authentication.md).
+The complete Google OAuth setup and testing instructions are documented in [`docs/development/google-authentication.md`](docs/development/google-authentication.md).
 
 Before testing Google authentication:
 - Configure the OAuth consent screen and add the test account in Google Cloud Console.
