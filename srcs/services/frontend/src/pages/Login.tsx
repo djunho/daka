@@ -76,6 +76,12 @@ export default function Login() {
   // Where to send the user after login (defaults to home page)
   const from = (location.state as { from?: string } | null)?.from || '/'
 
+  // Preserve destination in Google login URL so it survives the OAuth redirect flow
+  const googleLoginUrl =
+    from && from !== '/'
+      ? `/api/auth/google/login?dest=${encodeURIComponent(from)}`
+      : '/api/auth/google/login'
+
   // If already authenticated (e.g. returning from Google OAuth or navigating to /login while logged in), redirect
   useEffect(() => {
     if (user) {
@@ -242,7 +248,7 @@ export default function Login() {
 
           {/* --- Google button --- */}
           <a
-            href="/api/auth/google/login"
+            href={googleLoginUrl}
             className="w-full flex items-center justify-center gap-3 py-3 border border-line rounded-xl text-ink font-medium hover:bg-paper transition-colors"
           >
             <GoogleIcon />
