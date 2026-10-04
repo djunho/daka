@@ -366,6 +366,7 @@ def update_me(
     db.refresh(current_user)
     return current_user
 
+
 @router.put(
     "/me/avatar",
     response_model=UserOut,
@@ -424,6 +425,7 @@ def delete_avatar(
     delete_image(old_avatar)
     db.refresh(current_user)
     return current_user
+
 
 @router.delete(
     "/me",
@@ -505,7 +507,7 @@ def delete_me(
 
     # The rows are gone; now the uploaded avatar file can go too.
     delete_image(avatar)
-    
+
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
         path="/",
