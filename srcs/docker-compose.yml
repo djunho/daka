@@ -54,6 +54,9 @@ services:
         condition: service_healthy
     volumes:
       - ./services/backend:/app
+      # Uploaded images (avatars, listing photos). Kept outside /app, which is
+      # the repository itself, so uploads never end up in git.
+      - media:/data/media
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
@@ -103,6 +106,8 @@ services:
         condition: service_started
     volumes:
       - certs:/etc/nginx/certs:ro
+      # Same volume as the backend, read-only: nginx only serves the files.
+      - media:/data/media:ro
     healthcheck:
       test: "wget -q -O /dev/null --no-check-certificate https://localhost/healthz || exit 1"
       interval: 10s
@@ -115,7 +120,7 @@ services:
   # =========================================================================
   # OBSERVABILITY
   # =========================================================================
- 
+
   # ---- Prometheus ---------------------------------------------------------
   prometheus:
     image: prom/prometheus:v3.1.0
@@ -143,7 +148,7 @@ services:
       start_period: 20s
     networks:
       - daka_obs
- 
+
   # ---- Alertmanager -------------------------------------------------------
   alertmanager:
     image: prom/alertmanager:v0.28.0
@@ -165,7 +170,7 @@ services:
       retries: 5
     networks:
       - daka_obs
- 
+
   # ---- Grafana ------------------------------------------------------------
   grafana:
     image: grafana/grafana:11.5.1
@@ -196,7 +201,7 @@ services:
       start_period: 30s
     networks:
       - daka_obs
- 
+
   # ---- Blackbox exporter (probes the public endpoint from outside) --------
   blackbox:
     image: prom/blackbox-exporter:v0.26.0
@@ -213,7 +218,7 @@ services:
       retries: 5
     networks:
       - daka_obs
- 
+
   # ---- node-exporter (HOST-level metrics) ---------------------------------
   node-exporter:
     image: prom/node-exporter:v1.8.2
@@ -232,7 +237,7 @@ services:
       - /:/host/root:ro,rslave
     networks:
       - daka_obs
- 
+
   # ---- cAdvisor (PER-CONTAINER metrics) -----------------------------------
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
@@ -258,7 +263,7 @@ services:
       start_period: 30s
     networks:
       - daka_obs
- 
+
   # ---- mysqld-exporter ----------------------------------------------------
   mysqld-exporter:
     image: prom/mysqld-exporter:v0.16.0
@@ -278,14 +283,15 @@ services:
     networks:
       - daka_data
       - daka_obs
- 
+
 volumes:
   db_data:
   prometheus_data:
   alertmanager_data:
   grafana_data:
   certs:
- 
+  media:
+
 networks:
   daka_edge:
     driver: bridge
@@ -295,4 +301,3 @@ networks:
   daka_obs:
     driver: bridge
     internal: true
- 
