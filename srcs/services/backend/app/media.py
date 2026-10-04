@@ -104,8 +104,9 @@ def delete_image(url: str | None) -> None:
 
     root = Path(settings.media_root).resolve()
     path = (root / url.removeprefix(prefix)).resolve()
-    # Refuse anything that escapes media_root, e.g. "/media/../../app/main.py".
-    if not path.is_relative_to(root):
+    # Refuse anything that escapes media_root (e.g. "/media/../../app/main.py")
+    # and anything that is not a regular file, such as a folder.
+    if not path.is_relative_to(root) or not path.is_file():
         return
     path.unlink(missing_ok=True)
 
