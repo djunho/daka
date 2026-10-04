@@ -100,17 +100,29 @@ def _sanitize_oauth_error(raw_error: str | None) -> str:
     return "auth_failed"
 
 
+def _validate_redirect_dest(dest: str | None) -> str:
+    """Ensure the destination path is a safe relative internal route to prevent open redirects."""
+    if not dest or not isinstance(dest, str):
+        return "/"
+    if dest.startswith("/") and not dest.startswith("//") and "\\" not in dest:
+        return dest
+    return "/"
+
+
 @router.get(
     "/google/login",
     summary="Start Google OAuth login",
 )
-async def google_login(request: Request):
+async def google_login(request: Request, dest: str | None = None):
     """Redirect the browser to Google's consent screen."""
     if not settings.google_client_id or not settings.google_client_secret:
         return RedirectResponse(
             url=f"{settings.frontend_url}/login?error=google_unconfigured",
             status_code=status.HTTP_302_FOUND,
         )
+
+    # Preserve intended frontend destination in the temporary signed OAuth session
+    request.session["oauth_dest"] = _validate_redirect_dest(dest)
 
     # Authlib generates the OAuth state and stores it in the signed session
     # cookie; the callback will reject a response with a missing or invalid
@@ -214,9 +226,14 @@ async def google_callback(
                 )
             db.refresh(user)
 
+    # Retrieve and validate the intended destination stored during google_login
+    dest = request.session.pop("oauth_dest", "/")
+    safe_dest = _validate_redirect_dest(dest)
+    redirect_url = f"{settings.frontend_url.rstrip('/')}{safe_dest}"
+
     # Create the same server-side session used by password login before
     # redirecting, so the frontend is authenticated immediately after return.
-    response = RedirectResponse(url=settings.frontend_url, status_code=302)
+    response = RedirectResponse(url=redirect_url, status_code=302)
     try:
         _open_session(db, user, response)
     except IntegrityError:
