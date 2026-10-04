@@ -8,11 +8,13 @@ import {
 
 import {
   ApiError,
+  apiDeleteAvatar,
   apiLogin,
   apiLogout,
   apiMe,
   apiRegister,
   apiUpdateProfile,
+  apiUploadAvatar,
   type UpdateProfileData,
   type ApiUser,
 } from '../lib/api'
@@ -33,6 +35,8 @@ type AuthContextValue = {
   register: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   updateProfile: (data: UpdateProfileData) => Promise<void>
+  uploadAvatar: (file: File) => Promise<void>
+  removeAvatar: () => Promise<void>
 }
 
 // createContext needs a default. We pass null and guard against it in the hook
@@ -86,6 +90,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(updated)
   }
 
+  // Both avatar calls answer with the updated user, so storing it here is
+  // enough for every avatar on screen (profile page, header menu) to change.
+  async function uploadAvatar(file: File) {
+    const updated = await apiUploadAvatar(file)
+    setUser(updated)
+  }
+
+  async function removeAvatar() {
+    const updated = await apiDeleteAvatar()
+    setUser(updated)
+  }
 
   async function logout() {
     // Tell the server to delete the session row, then forget the user locally.
@@ -101,7 +116,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        login,
+        register,
+        logout,
+        updateProfile,
+        uploadAvatar,
+        removeAvatar,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
