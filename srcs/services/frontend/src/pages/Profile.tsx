@@ -19,10 +19,12 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Avatar: the picked file waits here, shown as a preview, until the user
-  // saves or cancels. Hooks stay above the early return (Rules of Hooks).
+  // Avatar changes wait here while editing and are only sent by "Guardar
+  // alterações", together with the other fields. avatarFile is a new photo
+  // (shown as a preview); avatarRemoved means "go back to the initial".
+  // Hooks stay above the early return (Rules of Hooks).
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
-  const [avatarSaving, setAvatarSaving] = useState(false)
+  const [avatarRemoved, setAvatarRemoved] = useState(false)
   const avatarPreview = useObjectUrl(avatarFile)
 
   useEffect(() => {
@@ -44,6 +46,10 @@ export default function Profile() {
       )
   }
 
+  // What the avatar circle currently shows: a picked photo, or the saved one
+  // unless it was marked for removal.
+  const showsAvatar = avatarFile !== null || (!avatarRemoved && !!user.avatar)
+
   // Format date: "setembro de 2026"
   const memberSince = new Date(user.created_at).toLocaleDateString('pt-PT', {
     month: 'long',
@@ -59,6 +65,8 @@ export default function Profile() {
       user_location: user.user_location || '',
       email: user.email,
     })
+    setAvatarFile(null)
+    setAvatarRemoved(false)
     setError(null)
     setIsEditing(false)
   }
@@ -92,52 +100,37 @@ export default function Profile() {
     // Check if some change was made
     const hasNameChanged = trimmedName !== user?.user_name
     const hasLocationChanged = (trimmedLocation || null) !== (user?.user_location || null)
+    // Removing only counts if there is a saved avatar to remove.
+    const removeSavedAvatar = avatarRemoved && !!user?.avatar
+    const hasAvatarChanged = avatarFile !== null || removeSavedAvatar
 
-    if (!hasNameChanged && !hasLocationChanged) {
-      setIsEditing(false)
+    if (!hasNameChanged && !hasLocationChanged && !hasAvatarChanged) {
+      handleCancel()
       return
     }
 
     setSaving(true)
     try {
-      await updateProfile({
-        user_name: trimmedName,
-        user_location: trimmedLocation || null,
-      })
+      // Name and location first. If the photo then fails, the fields are
+      // already saved and pressing "Guardar" again only retries the photo.
+      if (hasNameChanged || hasLocationChanged) {
+        await updateProfile({
+          user_name: trimmedName,
+          user_location: trimmedLocation || null,
+        })
+      }
+      if (avatarFile) {
+        await uploadAvatar(avatarFile)
+      } else if (removeSavedAvatar) {
+        await removeAvatar()
+      }
+      setAvatarFile(null)
+      setAvatarRemoved(false)
       setIsEditing(false)
     } catch (err) {
         setError(err instanceof ApiError ? err.message : 'Erro desconhecido ao guardar alterações. Por favor, tente novamente.')
     } finally {
         setSaving(false)
-    }
-  }
-
-  // Avatar: upload the previewed file. The context then holds the new user,
-  // so the header avatar updates too.
-  async function handleAvatarSave() {
-    if (!avatarFile) return
-    setError(null)
-    setAvatarSaving(true)
-    try {
-      await uploadAvatar(avatarFile)
-      setAvatarFile(null)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Erro desconhecido ao guardar a foto. Por favor, tente novamente.')
-    } finally {
-      setAvatarSaving(false)
-    }
-  }
-
-  // Avatar: go back to the initial letter. The backend also deletes the file.
-  async function handleAvatarRemove() {
-    setError(null)
-    setAvatarSaving(true)
-    try {
-      await removeAvatar()
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Erro desconhecido ao remover a foto. Por favor, tente novamente.')
-    } finally {
-      setAvatarSaving(false)
     }
   }
 
@@ -160,7 +153,7 @@ export default function Profile() {
       <div className="bg-surface border border-line rounded-2xl p-6 shadow-sm">
         <div className="flex items-center gap-4 pb-6 border-b border-line">
           <Avatar
-            avatar={avatarPreview ?? user.avatar}
+            avatar={avatarPreview ?? (avatarRemoved ? null : user.avatar)}
             user_name={user.user_name}
           />
 
@@ -173,54 +166,36 @@ export default function Profile() {
               Membro desde {memberSince}
             </p>
 
-            {/* Avatar actions: Save/Cancel while previewing, otherwise pick or remove */}
-            <div className="flex items-center gap-2 mt-2">
-              {avatarFile ? (
-                <>
+            {/* Avatar actions, only while editing. They change the preview;
+                "Guardar alterações" is what sends them. */}
+            {isEditing && (
+              <div className="flex items-center gap-2 mt-2">
+                <ImagePicker
+                  label={showsAvatar ? 'Alterar foto' : 'Adicionar foto'}
+                  onPick={(file) => {
+                    setError(null)
+                    setAvatarFile(file)
+                    setAvatarRemoved(false)
+                  }}
+                  onError={setError}
+                  disabled={saving}
+                />
+                {showsAvatar && (
                   <button
                     type="button"
-                    onClick={handleAvatarSave}
-                    disabled={avatarSaving}
-                    className={"text-xs font-semibold bg-brand text-surface px-3 py-1.5 rounded-lg hover:opacity-95 transition-opacity" +
-                              " disabled:opacity-40 disabled:cursor-not-allowed"}
-                  >
-                    {avatarSaving ? 'A guardar...' : 'Guardar foto'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAvatarFile(null)}
-                    disabled={avatarSaving}
+                    onClick={() => {
+                      setAvatarFile(null)
+                      setAvatarRemoved(true)
+                    }}
+                    disabled={saving}
                     className={"text-xs font-medium text-muted hover:text-ink px-2.5 py-1 rounded-lg transition-colors" +
                               " disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted"}
                   >
-                    Cancelar
+                    Remover foto
                   </button>
-                </>
-              ) : (
-                <>
-                  <ImagePicker
-                    label={user.avatar ? 'Alterar foto' : 'Adicionar foto'}
-                    onPick={(file) => {
-                      setError(null)
-                      setAvatarFile(file)
-                    }}
-                    onError={setError}
-                    disabled={avatarSaving}
-                  />
-                  {user.avatar && (
-                    <button
-                      type="button"
-                      onClick={handleAvatarRemove}
-                      disabled={avatarSaving}
-                      className={"text-xs font-medium text-muted hover:text-ink px-2.5 py-1 rounded-lg transition-colors" +
-                                " disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted"}
-                    >
-                      {avatarSaving ? 'A remover...' : 'Remover foto'}
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
