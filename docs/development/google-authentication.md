@@ -39,21 +39,27 @@ Google authentication happens only during login. After that, requests use Daka's
 
 ```http
 GET /api/auth/google/login
+GET /api/auth/google/login?dest=/intended-path
 ```
 
-This route checks whether the Google credentials are configured and redirects the browser to Google's authorization screen.
+This route checks whether the Google credentials are configured, safely stores an optional destination path in the temporary OAuth session, and redirects the browser to Google's authorization screen.
 
-If the credentials are not configured, it returns:
+If the credentials are not configured, it redirects the browser to:
 
 ```http
-503 Service Unavailable
+302 Found
+Location: https://localhost:8443/login?error=google_unconfigured
 ```
 
-```json
-{
-  "detail": "Google authentication is not configured."
-}
-```
+#### Destination parameter (`dest`)
+
+To preserve the user's intended destination across the full OAuth redirect flow (e.g., when redirected to `/login` from a protected route like `/profile`), the frontend appends `?dest=<path>`.
+
+The backend validates `dest` against open redirects:
+- Only relative paths starting with a single `/` and containing no `//` or `\` are accepted.
+- Invalid or external destinations safely fall back to `/`.
+
+The validated destination is stored in the signed `daka_oauth_state` session cookie and restored upon callback.
 
 ### Callback
 
@@ -61,9 +67,9 @@ If the credentials are not configured, it returns:
 GET /api/auth/google/callback
 ```
 
-This is the URL Google calls after the user authorizes the application.
+This is the URL Google calls after the user authorizes or denies the application.
 
-The callback exchanges the temporary code for tokens, validates the user data, and creates the local Daka session.
+The callback exchanges the temporary code for tokens, validates the user data, creates the local Daka session, and redirects the browser to the destination path (or `/login?error=<code>` on failure).
 
 ## Configuration
 
@@ -152,7 +158,7 @@ email_verified = true
 
 The `sub` field is the stable identifier of the Google account. The email is normalized by trimming whitespace and converting it to lowercase.
 
-If Google does not verify the email, the login is rejected with `401 Unauthorized`.
+If Google does not verify the email, or user information cannot be obtained, the login fails and the callback redirects the browser to `/login?error=auth_failed`.
 
 ## Account creation and linking
 
@@ -178,7 +184,7 @@ existing_email.google_sub = google_sub
 
 The existing data is preserved, including the name, avatar, location, password, and other related data.
 
-If the account is already linked to another `google_sub`, the backend returns `409 Conflict` and does not replace the existing link.
+If the account is already linked to another `google_sub`, the backend redirects the browser to `/login?error=google_conflict` and does not replace the existing link.
 
 ### Concurrent account-linking protection
 
@@ -357,13 +363,25 @@ ORDER BY id DESC;
 
 Avoid using `SELECT * FROM users`, because it also displays `pass_hash`.
 
-## Common errors
+## Common errors and error handling
 
-### `503 Service Unavailable`
+OAuth errors during browser navigation redirect back to the frontend login page (`/login?error=<code>`) via `302 Found`, allowing the SPA to present localized user feedback in European Portuguese.
 
-The Google credentials were not loaded by the backend. Check `srcs/.env` and rebuild the backend.
+### Query error codes (`/login?error=<code>`)
 
-### `400 redirect_uri_mismatch`
+| Error code | Meaning | User message (pt-PT) | Typical cause |
+| :--- | :--- | :--- | :--- |
+| `access_denied` | Authorization denied | *A autenticação com a Google foi cancelada.* | User clicked "Cancel" on Google's consent screen. |
+| `google_unconfigured` | OAuth disabled | *A autenticação com a Google não se encontra configurada.* | `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` missing in `srcs/.env`. |
+| `google_conflict` | Account linking conflict | *Este email já está associado a outra conta Google.* | Local account email is already linked to a different `google_sub`. |
+| `auth_failed` | Token or claim failure | *Não foi possível concluir a autenticação com a Google.* | Authorization code expired, state invalid, unverified email, or unrecognized external input. |
+| `server_error` | Server error | *Ocorreu um erro no servidor durante a autenticação. Por favor, tenta novamente.* | Database transaction failure when creating local session or user. |
+
+All incoming OAuth error strings from external parameters are sanitized and verified against an allow-list (`ALLOWED_OAUTH_ERRORS`) before constructing redirect URLs, preventing query parameter injection and open redirects.
+
+### Google Cloud Console errors
+
+#### `400 redirect_uri_mismatch`
 
 The redirect URI in Google Cloud Console is not exactly the same as the backend configuration. Compare:
 
@@ -371,24 +389,20 @@ The redirect URI in Google Cloud Console is not exactly the same as the backend 
 https://localhost:8443/api/auth/google/callback
 ```
 
-### `401 Google authentication was not completed`
-
-The OAuth code expired, the state was lost, or authorization was not completed.
-
-### `409 This email is linked to another Google account`
-
-The email is already associated with another `google_sub`. The backend does not replace an existing association.
-
-### Local HTTPS certificate
+#### Local HTTPS certificate
 
 The project uses a local certificate generated by the `certgen` container. Browsers may require manual confirmation before accessing `https://localhost:8443`.
 
 ## Current status
 
-Implemented in the backend:
+Implemented:
 
-- Google OAuth login;
-- OAuth callback;
+- Google OAuth login (`/api/auth/google/login`);
+- Destination preservation across OAuth cycle via `dest` parameter and signed session;
+- OAuth callback (`/api/auth/google/callback`);
+- Browser redirect error handling via HTTP 302 to `/login?error=<code>`;
+- Security sanitization and allow-list against parameter injection;
+- Open redirect validation on destination paths;
 - Google email validation;
 - automatic account creation;
 - linking to an existing local account;
