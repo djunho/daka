@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
 import { ApiError } from '../lib/api'
@@ -64,13 +64,56 @@ export default function Login() {
   // A form-level error (as opposed to per-field): the message the SERVER sends
   // back, like "An account with this email already exists." or "Incorrect
   // email or password." Field errors catch mistakes before we call the API;
-  // this catches what only the server can know.
+  // this catches what only the server can know. Also receives Google OAuth errors.
   const [formError, setFormError] = useState<string | null>(null)
 
-  // From the context: the login/register actions that also update who is
-  // logged in app-wide. navigate sends the user to the home page on success.
-  const { login, register } = useAuth()
+  // From the context: the current user and login/register actions.
+  const { user, login, register } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+
+  // Where to send the user after login (defaults to home page)
+  const from = (location.state as { from?: string } | null)?.from || '/'
+
+  // If already authenticated (e.g. returning from Google OAuth or navigating to /login while logged in), redirect
+  useEffect(() => {
+    if (user) {
+      navigate(from, { replace: true })
+    }
+  }, [user, navigate, from])
+
+  // Display OAuth error feedback from URL query parameters (e.g. /login?error=access_denied)
+  useEffect(() => {
+    const errorParam = searchParams.get('error')
+    if (!errorParam) return
+
+    // Translate the errors from the error query param received from the OAuth redirect into user-friendly messages.
+    //   The error codes are defined by the OAuth 2.0 spec and Google's implementation.
+    // https://developers.google.com/identity/protocols/oauth2/web-server#handlingresponse
+    // https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1
+    switch (errorParam) {
+      case 'access_denied':
+        setFormError('A autenticação com a Google foi cancelada.')
+        break
+      case 'google_unconfigured':
+        setFormError('A autenticação com a Google não se encontra configurada.')
+        break
+      case 'google_conflict':
+        setFormError('Este email já está associado a outra conta Google.')
+        break
+      case 'auth_failed':
+      case 'unauthorized':
+        setFormError('Não foi possível concluir a autenticação com a Google.')
+        break
+      case 'server_error':
+        setFormError('Ocorreu um erro no servidor durante a autenticação. Por favor, tenta novamente.')
+        break
+      default:
+        setFormError('Ocorreu um erro ao tentar autenticar com a Google. Por favor, tenta novamente.')
+        break
+    }
+  }, [searchParams])
 
   const isSignup = tab === 'signup'
 
@@ -127,8 +170,8 @@ export default function Login() {
       } else {
         await login(email.trim(), password)
       }
-      // On success the context now holds the user; send them to the home page.
-      navigate('/')
+      // On success the context now holds the user; send them to the intended page.
+      navigate(from, { replace: true })
     } catch (err) {
       // The API layer throws ApiError with the server's message in .message.
       // Anything else is unexpected, but still worth showing something for.
@@ -179,14 +222,32 @@ export default function Login() {
             </button>
           </div>
 
+          {/* Form- or OAuth-level error alert */}
+          {formError && (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-3 text-sm text-accent bg-accent/10 border border-accent/30 rounded-lg px-4 py-3 mb-6"
+            >
+              <span>{formError}</span>
+              <button
+                type="button"
+                onClick={() => setFormError(null)}
+                className="text-accent/70 hover:text-accent font-bold p-1 transition-colors leading-none"
+                aria-label="Fechar alerta"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           {/* --- Google button --- */}
-          <button
-            type="button"
+          <a
+            href="/api/auth/google/login"
             className="w-full flex items-center justify-center gap-3 py-3 border border-line rounded-xl text-ink font-medium hover:bg-paper transition-colors"
           >
             <GoogleIcon />
-            {isSignup ? 'Registar com o Google' : 'Entrar com o Google'}
-          </button>
+            {isSignup ? 'Registar com a Google' : 'Iniciar sessão com a Google'}
+          </a>
 
           {/* --- divider --- */}
           <div className="flex items-center gap-3 my-6">
@@ -258,18 +319,6 @@ export default function Login() {
                 </button>
               </div>
             </Field>
-
-            {/* Server-level error: shown when the API rejects the request
-                (duplicate email, wrong password). role="alert" so it is
-                announced; distinct from the per-field errors above. */}
-            {formError && (
-              <p
-                role="alert"
-                className="text-sm text-accent bg-accent/10 border border-accent/30 rounded-lg px-4 py-3"
-              >
-                {formError}
-              </p>
-            )}
 
             <button
               type="submit"

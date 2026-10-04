@@ -86,9 +86,9 @@ if settings.google_client_id and settings.google_client_secret:
 async def google_login(request: Request):
     """Redirect the browser to Google's consent screen."""
     if not settings.google_client_id or not settings.google_client_secret:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google authentication is not configured.",
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/login?error=google_unconfigured",
+            status_code=status.HTTP_302_FOUND,
         )
 
     # Authlib generates the OAuth state and stores it in the signed session
@@ -109,29 +109,32 @@ async def google_callback(
     db: Session = Depends(get_db),
 ):
     """Validate Google's response, create a local session, and redirect."""
+    login_url = f"{settings.frontend_url}/login"
+
     if not settings.google_client_id or not settings.google_client_secret:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google authentication is not configured.",
+        return RedirectResponse(
+            url=f"{login_url}?error=google_unconfigured",
+            status_code=status.HTTP_302_FOUND,
         )
 
     # Exchange Google's one-time authorization code for verified token data.
     # Authlib also checks the state saved by google_login before returning.
     try:
         token = await oauth.google.authorize_access_token(request)
-    except OAuthError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Google authentication was not completed.",
+    except OAuthError as err:
+        error_code = err.error or request.query_params.get("error") or "auth_failed"
+        return RedirectResponse(
+            url=f"{login_url}?error={error_code}",
+            status_code=status.HTTP_302_FOUND,
         )
 
     # The OpenID Connect userinfo claim contains the identity fields requested
     # by the client: Google's stable subject id, email, name, and picture.
     google_user = token.get("userinfo")
     if not google_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Google did not return user information.",
+        return RedirectResponse(
+            url=f"{login_url}?error=auth_failed",
+            status_code=status.HTTP_302_FOUND,
         )
 
     google_sub = google_user.get("sub")
@@ -139,9 +142,9 @@ async def google_callback(
     if isinstance(email, str):
         email = email.strip().lower()
     if not google_sub or not email or google_user.get("email_verified") is not True:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Google account information could not be verified.",
+        return RedirectResponse(
+            url=f"{login_url}?error=auth_failed",
+            status_code=status.HTTP_302_FOUND,
         )
 
     # The stable Google subject is the primary lookup. Email is only the
@@ -161,9 +164,9 @@ async def google_callback(
             # Never replace an existing Google link. A different subject with
             # the same email must not take over an already-linked account.
             if existing_email.google_sub is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="This email is linked to another Google account.",
+                return RedirectResponse(
+                    url=f"{login_url}?error=google_conflict",
+                    status_code=status.HTTP_302_FOUND,
                 )
             existing_email.google_sub = google_sub
             user = existing_email
@@ -183,9 +186,9 @@ async def google_callback(
                 db.commit()
             except IntegrityError:
                 db.rollback()
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="This Google account is already registered.",
+                return RedirectResponse(
+                    url=f"{login_url}?error=google_conflict",
+                    status_code=status.HTTP_302_FOUND,
                 )
             db.refresh(user)
 
@@ -196,9 +199,9 @@ async def google_callback(
         _open_session(db, user, response)
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This Google account is already registered.",
+        return RedirectResponse(
+            url=f"{login_url}?error=server_error",
+            status_code=status.HTTP_302_FOUND,
         )
     return response
 
