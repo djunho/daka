@@ -5,6 +5,7 @@ service, the public URLs are /api/auth/register and /api/auth/login.
 
 """
 import secrets
+from urllib.parse import quote
 
 from authlib.integrations.base_client import OAuthError
 from authlib.integrations.starlette_client import OAuth
@@ -78,6 +79,26 @@ if settings.google_client_id and settings.google_client_secret:
         client_kwargs={"scope": "openid email profile"},
     )
 
+# Allowed OAuth 2.0 error codes (RFC 6749 section 4.1.2.1 / Google OAuth).
+# Any unknown, malformed, or injected strings safely fallback to "auth_failed".
+ALLOWED_OAUTH_ERRORS = {
+    "access_denied",
+    "invalid_request",
+    "unauthorized_client",
+    "server_error",
+    "temporarily_unavailable",
+    "interaction_required",
+    "login_required",
+    "consent_required",
+}
+
+
+def _sanitize_oauth_error(raw_error: str | None) -> str:
+    """Validate and URL-encode external OAuth error codes before redirecting."""
+    if raw_error and raw_error in ALLOWED_OAUTH_ERRORS:
+        return quote(raw_error, safe="")
+    return "auth_failed"
+
 
 @router.get(
     "/google/login",
@@ -122,7 +143,8 @@ async def google_callback(
     try:
         token = await oauth.google.authorize_access_token(request)
     except OAuthError as err:
-        error_code = err.error or request.query_params.get("error") or "auth_failed"
+        raw_error = err.error or request.query_params.get("error")
+        error_code = _sanitize_oauth_error(raw_error)
         return RedirectResponse(
             url=f"{login_url}?error={error_code}",
             status_code=status.HTTP_302_FOUND,
