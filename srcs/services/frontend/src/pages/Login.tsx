@@ -82,7 +82,7 @@ export default function Login() {
       ? `/api/auth/google/login?dest=${encodeURIComponent(from)}`
       : '/api/auth/google/login'
 
-  // If already authenticated (e.g. returning from Google OAuth or navigating to /login while logged in), redirect
+  // If already authenticated (e.g. navigating to /login with an active session), redirect
   useEffect(() => {
     if (user) {
       navigate(from, { replace: true })
@@ -109,7 +109,6 @@ export default function Login() {
         setFormError('Este email já está associado a outra conta Google.')
         break
       case 'auth_failed':
-      case 'unauthorized':
         setFormError('Não foi possível concluir a autenticação com a Google.')
         break
       case 'server_error':
