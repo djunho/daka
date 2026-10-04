@@ -385,6 +385,12 @@ def upload_avatar(
     # Lock the user row until the commit. Without it, two uploads from the
     # same user at once would both read the same old avatar, and one of the
     # new files would stay on disk with nothing pointing at it.
+    #
+    # get_current_user already read this row, which pins a MariaDB snapshot
+    # (innodb_snapshot_isolation): locking it now would fail with error 1020
+    # if another request changed it since. Ending that read-only transaction
+    # first makes the lock wait for the other request instead.
+    db.rollback()
     db.refresh(current_user, with_for_update=True)
     old_avatar = current_user.avatar
 
@@ -416,6 +422,8 @@ def delete_avatar(
     db: Session = Depends(get_db),
 ) -> User:
     """Clear the avatar. The UI then falls back to the user's initial."""
+    # See upload_avatar: end the read transaction before locking.
+    db.rollback()
     db.refresh(current_user, with_for_update=True)
     old_avatar = current_user.avatar
 
@@ -438,6 +446,12 @@ def delete_me(
     db: Session = Depends(get_db),
 ) -> None:
     """Delete the account and its listings in one transaction."""
+    # Same row lock as the avatar endpoints: a concurrent upload either
+    # finishes first (and we read its new avatar) or waits and then finds the
+    # account gone. Either way no avatar file is left behind.
+    # See upload_avatar: end the read transaction before locking.
+    db.rollback()
+    db.refresh(current_user, with_for_update=True)
     user_id = current_user.id
     avatar = current_user.avatar
     listing_ids = [
