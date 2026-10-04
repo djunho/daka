@@ -33,6 +33,18 @@ class Settings(BaseSettings):
     # Destination after the backend creates the local Daka session.
     frontend_url: str = "https://localhost:8443"
 
+    # --- Uploaded images ---------------------------------------------------
+    # Where uploaded files are written inside the backend container. This is a
+    # Docker volume, deliberately OUTSIDE /app: /app is a bind mount of the
+    # repository, so files saved there would end up in git.
+    media_root: str = "/data/media"
+    # Public URL prefix nginx serves media_root under. The database stores
+    # "/media/avatars/<file>.webp", ready to use as an <img src>.
+    media_url: str = "/media"
+    # Largest upload accepted, in bytes (2 MB). nginx allows a little more so
+    # that this check, with its clear error message, is the one that fires.
+    max_image_bytes: int = 2 * 1024 * 1024
+
     @property
     def database_url(self) -> str:
         """Connection string in the format SQLAlchemy expects."""
