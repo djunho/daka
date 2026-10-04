@@ -136,14 +136,15 @@ class ProfileUpdate(BaseModel):
     Fields that an authenticated user may change on their profile.
 
     All fields are optional so the client can update only one value at a time.
-    ``avatar`` and ``user_location`` also accept ``None`` to clear them.
+    ``user_location`` also accepts ``None`` to clear it. The avatar is not
+    here: it changes only through PUT/DELETE /api/auth/me/avatar, so the
+    stored value is always a file we created (or the Google picture).
     """
 
     user_name: str | None = Field(default=None, min_length=2, max_length=100)
-    avatar: str | None = Field(default=None, max_length=255)
     user_location: str | None = Field(default=None, max_length=100)
 
-    @field_validator("user_name", "avatar", "user_location")
+    @field_validator("user_name", "user_location")
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
         if value is None:
