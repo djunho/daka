@@ -71,7 +71,7 @@ export default function Login() {
   const { user, login, register } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   // Where to send the user after login (defaults to home page)
   const from = (location.state as { from?: string } | null)?.from || '/'
@@ -119,7 +119,17 @@ export default function Login() {
         setFormError('Ocorreu um erro ao tentar autenticar com a Google. Por favor, tenta novamente.')
         break
     }
-  }, [searchParams])
+
+    // Remove ?error= so a refresh or history navigation does not show the message again.
+    setSearchParams(
+      (params) => {
+        const next = new URLSearchParams(params)
+        next.delete('error')
+        return next
+      },
+      { replace: true },
+    )
+  }, [searchParams, setSearchParams])
 
   const isSignup = tab === 'signup'
 
