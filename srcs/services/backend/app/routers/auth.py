@@ -382,21 +382,25 @@ def upload_avatar(
     The request is multipart/form-data with the image in a field named
     ``file``. Validation, re-encoding and storage live in app/media.py.
     """
-    # Lock the user row until the commit. Without it, two uploads from the
-    # same user at once would both read the same old avatar, and one of the
-    # new files would stay on disk with nothing pointing at it.
-    #
-    # get_current_user already read this row, which pins a MariaDB snapshot
-    # (innodb_snapshot_isolation): locking it now would fail with error 1020
-    # if another request changed it since. Ending that read-only transaction
-    # first makes the lock wait for the other request instead.
-    db.rollback()
-    db.refresh(current_user, with_for_update=True)
-    old_avatar = current_user.avatar
-
+    # Decoding and re-encoding the image is the slow part, so it runs before
+    # the row is locked: the lock below is held only for a quick read and
+    # write, never while the image is being processed.
     new_avatar = save_image(file, "avatars", AVATAR_MAX_SIDE)
-    current_user.avatar = new_avatar
+
     try:
+        # Lock the user row until the commit. Without it, two uploads from
+        # the same user at once would both read the same old avatar, and one
+        # of the new files would stay on disk with nothing pointing at it.
+        #
+        # get_current_user already read this row, which pins a MariaDB
+        # snapshot (innodb_snapshot_isolation): locking it now would fail
+        # with error 1020 if another request changed it since. Ending that
+        # read-only transaction first makes the lock wait for the other
+        # request instead.
+        db.rollback()
+        db.refresh(current_user, with_for_update=True)
+        old_avatar = current_user.avatar
+        current_user.avatar = new_avatar
         db.commit()
     except Exception:
         # The database never recorded the new file, so nothing will ever
