@@ -45,6 +45,7 @@ export default function ImagePicker({
         <>
             <input
                 ref={inputRef}
+                disabled={disabled}
                 type="file"
                 accept={IMAGE_ACCEPT}
                 hidden
