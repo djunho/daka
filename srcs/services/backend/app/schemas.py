@@ -132,7 +132,8 @@ class LoginIn(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    """Fields that an authenticated user may change on their profile.
+    """Body of PATCH /api/auth/me.
+    Fields that an authenticated user may change on their profile.
 
     All fields are optional so the client can update only one value at a time.
     ``avatar`` and ``user_location`` also accept ``None`` to clear them.

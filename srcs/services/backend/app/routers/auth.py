@@ -10,13 +10,23 @@ from authlib.integrations.base_client import OAuthError
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from starlette.responses import RedirectResponse
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.dependencies import SESSION_COOKIE_NAME, get_current_user
-from app.models import User, UserSession
+from app.models import (
+    Favorite,
+    Image,
+    Listing,
+    Message,
+    Report,
+    Trade,
+    User,
+    UserSession,
+)
 from app.schemas import LoginIn, ProfileUpdate, RegisterIn, UserOut
 from app.security import (
     generate_session_token,
@@ -340,6 +350,93 @@ def update_me(
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+@router.delete(
+    "/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete the currently logged-in user's account",
+)
+def delete_me(
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Delete the account and its listings in one transaction."""
+    user_id = current_user.id
+    listing_ids = [
+        listing_id
+        for (listing_id,) in db.query(Listing.id)
+        .filter(Listing.user_id == user_id)
+        .all()
+    ]
+
+    # Trades can reference the user's listings from either side, and messages
+    # depend on trades. Collect the trade ids before deleting those messages.
+    trade_ids = [
+        trade_id
+        for (trade_id,) in db.query(Trade.id)
+        .filter(
+            or_(
+                Trade.sender_id == user_id,
+                Trade.listing_requested_id.in_(listing_ids),
+                Trade.listing_offered_id.in_(listing_ids),
+            )
+        )
+        .all()
+    ]
+
+    try:
+        # Remove every row that references the user's account or listings before
+        # deleting the parent rows. All operations share this transaction.
+        db.query(Message).filter(
+            or_(
+                Message.msg_sender == user_id,
+                Message.trade_id.in_(trade_ids),
+            )
+        ).delete(synchronize_session=False)
+        db.query(Report).filter(
+            or_(
+                Report.reporter_id == user_id,
+                Report.reported_user_id == user_id,
+                Report.reported_listings_id.in_(listing_ids),
+            )
+        ).delete(synchronize_session=False)
+        db.query(Favorite).filter(
+            or_(
+                Favorite.user_id == user_id,
+                Favorite.listing_id.in_(listing_ids),
+            )
+        ).delete(synchronize_session=False)
+        db.query(Trade).filter(Trade.id.in_(trade_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(Image).filter(Image.listing_id.in_(listing_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(Listing).filter(Listing.id.in_(listing_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(UserSession).filter(UserSession.user_id == user_id).delete(
+            synchronize_session=False
+        )
+        db.query(User).filter(User.id == user_id).delete(synchronize_session=False)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Account could not be deleted because related data remains.",
+        )
+
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+    return None
 
 
 @router.post(

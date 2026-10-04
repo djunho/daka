@@ -8,6 +8,17 @@ Toma-la dáka! This is under the scope of our 42 transcendence project.
 
 # Resources
 
+Google authentication
+The complete Google OAuth setup and testing instructions are documented in [`docs/development/google-authentication.md`](docs/development/google-authentication.md).
+
+Before testing Google authentication:
+- Configure the OAuth consent screen and add the test account in Google Cloud Console.
+- Create a Web application OAuth client with the exact redirect URI documented in the guide.
+- Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `OAUTH_STATE_SECRET`, and `FRONTEND_URL` in `srcs/.env`.
+- Rebuild the backend so it loads the OAuth dependencies and environment variables.
+
+Use the linked guide for the complete login flow, account linking rules, security details, troubleshooting steps, and MariaDB verification queries.
+
 # Team Information
 
 # Project Management
