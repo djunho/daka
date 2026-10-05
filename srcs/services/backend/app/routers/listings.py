@@ -8,11 +8,24 @@ define the expected paths, dependencies and response schemas.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import Category, Condition, Listing, ListingState, User
+from app.models import (
+    Category,
+    Condition,
+    Favorite,
+    Image,
+    Listing,
+    ListingState,
+    Message,
+    Report,
+    Trade,
+    User,
+)
 from app.schemas import (
     CategoryOut,
     ConditionOut,
@@ -292,22 +305,81 @@ def update_listing(
 @router.delete(
     "/{id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete or archive a listing",
+    summary="Delete a listing",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated."},
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Not allowed to delete this listing."
+        },
+        status.HTTP_404_NOT_FOUND: {"description": "Listing not found."},
+    },
 )
 def delete_listing(
     id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    """Delete or archive a listing owned by the logged-in user.
+    """Permanently delete one of the logged-in user's listings.
 
-    The final behaviour (hard delete or archive) will be decided when the
-    listing business logic is implemented.
+    A listing can participate in trades and be favorited, reported, or have
+    images. Those child rows must be removed before the listing itself, or
+    MariaDB correctly rejects the deletion because of its foreign keys.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Listing deletion is not implemented yet.",
-    )
+    listing = db.get(Listing, id)
+    if listing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
+
+    if listing.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own listings.",
+        )
+
+    # A trade can reference the listing either as what someone requested or
+    # what they offered. Its messages depend on that trade and come first.
+    trade_ids = [
+        trade_id
+        for (trade_id,) in (
+            db.query(Trade.id)
+            .filter(
+                or_(
+                    Trade.listing_requested_id == listing.id,
+                    Trade.listing_offered_id == listing.id,
+                )
+            )
+            .all()
+        )
+    ]
+
+    try:
+        db.query(Message).filter(Message.trade_id.in_(trade_ids)).delete(
+            synchronize_session=False
+        )
+        (
+            db.query(Report)
+            .filter(Report.reported_listings_id == listing.id)
+            .delete(synchronize_session=False)
+        )
+        db.query(Favorite).filter(Favorite.listing_id == listing.id).delete(
+            synchronize_session=False
+        )
+        db.query(Trade).filter(Trade.id.in_(trade_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(Image).filter(Image.listing_id == listing.id).delete(
+            synchronize_session=False
+        )
+        db.delete(listing)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Listing could not be deleted because related data remains.",
+        )
 
 
 # ---------------------------------------------------------------------------
