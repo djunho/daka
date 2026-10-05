@@ -8,7 +8,16 @@ import secrets
 
 from authlib.integrations.base_client import OAuthError
 from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from starlette.responses import RedirectResponse
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.dependencies import SESSION_COOKIE_NAME, get_current_user
+from app.media import delete_image, save_image
 from app.models import (
     Favorite,
     Image,
@@ -37,6 +47,11 @@ from app.security import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Longest edge, in pixels, of a stored avatar. The UI shows avatars at most
+# 80 px wide; 512 px stays sharp on high-density screens without keeping
+# full-size phone photos on disk.
+AVATAR_MAX_SIDE = 512
 
 # The cookie name now lives in app/dependencies.py (imported above), since both
 # this module and the dependency need it. One definition, one source of truth.
@@ -352,6 +367,78 @@ def update_me(
     return current_user
 
 
+@router.put(
+    "/me/avatar",
+    response_model=UserOut,
+    summary="Upload or replace the current user's avatar",
+)
+def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Store a new avatar image and point the profile at it.
+
+    The request is multipart/form-data with the image in a field named
+    ``file``. Validation, re-encoding and storage live in app/media.py.
+    """
+    # Decoding and re-encoding the image is the slow part, so it runs before
+    # the row is locked: the lock below is held only for a quick read and
+    # write, never while the image is being processed.
+    new_avatar = save_image(file, "avatars", AVATAR_MAX_SIDE)
+
+    try:
+        # Lock the user row until the commit. Without it, two uploads from
+        # the same user at once would both read the same old avatar, and one
+        # of the new files would stay on disk with nothing pointing at it.
+        #
+        # get_current_user already read this row, which pins a MariaDB
+        # snapshot (innodb_snapshot_isolation): locking it now would fail
+        # with error 1020 if another request changed it since. Ending that
+        # read-only transaction first makes the lock wait for the other
+        # request instead.
+        db.rollback()
+        db.refresh(current_user, with_for_update=True)
+        old_avatar = current_user.avatar
+        current_user.avatar = new_avatar
+        db.commit()
+    except Exception:
+        # The database never recorded the new file, so nothing will ever
+        # point at it: remove it before letting the error through.
+        db.rollback()
+        delete_image(new_avatar)
+        raise
+
+    # Only after the commit: until then the profile still used the old file.
+    # delete_image ignores URLs we did not create, like a Google picture.
+    delete_image(old_avatar)
+    db.refresh(current_user)
+    return current_user
+
+
+@router.delete(
+    "/me/avatar",
+    response_model=UserOut,
+    summary="Remove the current user's avatar",
+)
+def delete_avatar(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Clear the avatar. The UI then falls back to the user's initial."""
+    # See upload_avatar: end the read transaction before locking.
+    db.rollback()
+    db.refresh(current_user, with_for_update=True)
+    old_avatar = current_user.avatar
+
+    current_user.avatar = None
+    db.commit()
+
+    delete_image(old_avatar)
+    db.refresh(current_user)
+    return current_user
+
+
 @router.delete(
     "/me",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -363,7 +450,14 @@ def delete_me(
     db: Session = Depends(get_db),
 ) -> None:
     """Delete the account and its listings in one transaction."""
+    # Same row lock as the avatar endpoints: a concurrent upload either
+    # finishes first (and we read its new avatar) or waits and then finds the
+    # account gone. Either way no avatar file is left behind.
+    # See upload_avatar: end the read transaction before locking.
+    db.rollback()
+    db.refresh(current_user, with_for_update=True)
     user_id = current_user.id
+    avatar = current_user.avatar
     listing_ids = [
         listing_id
         for (listing_id,) in db.query(Listing.id)
@@ -428,6 +522,9 @@ def delete_me(
             status_code=status.HTTP_409_CONFLICT,
             detail="Account could not be deleted because related data remains.",
         )
+
+    # The rows are gone; now the uploaded avatar file can go too.
+    delete_image(avatar)
 
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,

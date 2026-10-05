@@ -37,14 +37,19 @@ export async function request<T>(
 ): Promise<T> {
   const { method = 'GET', body } = options
 
+  // FormData (file uploads) is sent as-is: the browser writes the multipart
+  // Content-Type itself, including the "boundary" that separates the parts.
+  // Setting the header by hand would leave the boundary out and break it.
+  const isForm = body instanceof FormData
+
   let res: Response
   try {
     res = await fetch(API_BASE + path, {
       method,
       // Send the session cookie. This is the important line.
       credentials: 'include',
-      headers: body ? { 'Content-Type': 'application/json' } : {},
-      body: body ? JSON.stringify(body) : undefined,
+      headers: body && !isForm ? { 'Content-Type': 'application/json' } : {},
+      body: isForm ? body : body ? JSON.stringify(body) : undefined,
     })
   } catch {
     // fetch only rejects on a network-level failure (server down, no
@@ -113,7 +118,6 @@ export function apiMe() {
 export type UpdateProfileData = {
   user_name?: string
   user_location?: string | null
-  avatar?: string | null
 }
 
 export function apiUpdateProfile(data: UpdateProfileData) {
@@ -121,4 +125,16 @@ export function apiUpdateProfile(data: UpdateProfileData) {
     method: 'PATCH',
     body: data,
   })
+}
+
+// The avatar has its own endpoints. The file travels as multipart/form-data
+// in a field named "file", which is the name the backend's UploadFile expects.
+export function apiUploadAvatar(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return request<ApiUser>('/auth/me/avatar', { method: 'PUT', body: form })
+}
+
+export function apiDeleteAvatar() {
+  return request<ApiUser>('/auth/me/avatar', { method: 'DELETE' })
 }
