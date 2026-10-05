@@ -230,6 +230,11 @@ def create_listing(
     "/{id}",
     response_model=ListingDetailOut,
     summary="Update a listing",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated."},
+        status.HTTP_403_FORBIDDEN: {"description": "Not allowed to edit this listing."},
+        status.HTTP_404_NOT_FOUND: {"description": "Listing not found."},
+    },
 )
 def update_listing(
     id: int,
@@ -237,14 +242,51 @@ def update_listing(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ListingDetailOut:
-    """Update an existing listing owned by the logged-in user.
+    """Update one or more editable fields of the logged-in user's listing."""
+    listing = db.get(Listing, id)
+    if listing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
 
-    The ownership check and database update will be implemented later.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Listing update is not implemented yet.",
+    if listing.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only edit your own listings.",
+        )
+
+    changes = payload.model_dump(exclude_unset=True)
+
+    # The client may choose a new ID, but the database remains the authority
+    # on whether that category/condition is an available lookup value.
+    if "category_id" in changes and db.get(Category, changes["category_id"]) is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The selected category does not exist.",
+        )
+    if "condition_id" in changes and db.get(Condition, changes["condition_id"]) is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The selected condition does not exist.",
+        )
+
+    for field_name, value in changes.items():
+        setattr(listing, field_name, value)
+    db.commit()
+
+    updated_listing = (
+        db.query(Listing)
+        .options(
+            joinedload(Listing.owner),
+            joinedload(Listing.category),
+            joinedload(Listing.condition),
+            selectinload(Listing.images),
+        )
+        .filter(Listing.id == listing.id)
+        .one()
     )
+    return updated_listing
 
 
 @router.delete(
