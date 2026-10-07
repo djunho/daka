@@ -56,11 +56,6 @@ def list_listings(
         gt=0,
         description="Filter listings by category.",
     ),
-    state_id: int | None = Query(
-        default=None,
-        gt=0,
-        description="Filter listings by state; public browsing only exposes Available.",
-    ),
     user_id: int | None = Query(
         default=None,
         gt=0,
@@ -86,8 +81,8 @@ def list_listings(
 ) -> ListingPageOut:
     """Return one page of public listings, ordered from oldest to newest.
 
-    Every optional filter is combined with AND. Regardless of a requested
-    ``state_id``, Removed and Expired listings are never visible here.
+    Every optional filter is combined with AND. Removed and Expired listings
+    are never visible here.
     """
     listings = (
         db.query(Listing)
@@ -102,8 +97,6 @@ def list_listings(
 
     if category_id is not None:
         listings = listings.filter(Listing.category_id == category_id)
-    if state_id is not None:
-        listings = listings.filter(Listing.state_id == state_id)
     if user_id is not None:
         listings = listings.filter(Listing.user_id == user_id)
     if q is not None and (search := q.strip()):
