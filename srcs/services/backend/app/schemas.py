@@ -285,6 +285,16 @@ class ListingSummaryOut(BaseModel):
     owner: UserOut
     created_at: datetime
 
+
+class ListingPageOut(BaseModel):
+    """One page of public listings, together with its pagination metadata."""
+
+    items: list[ListingSummaryOut]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=12)
+    offset: int = Field(ge=0)
+
+
 class ListingDetailOut(ListingSummaryOut):
     """Detailed version with full description and images."""
     listing_dsc: str | None
