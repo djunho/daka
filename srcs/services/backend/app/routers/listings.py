@@ -28,6 +28,7 @@ from app.schemas import (
     ConditionOut,
     ListingCreateIn,
     ListingDetailOut,
+    ListingPageOut,
     ListingSummaryOut,
     ListingUpdateIn,
 )
@@ -41,26 +42,39 @@ router = APIRouter(prefix="/listings", tags=["listings"])
 
 @router.get(
     "",
-    response_model=list[ListingSummaryOut],
+    response_model=ListingPageOut,
     summary="List and search listings",
 )
 def list_listings(
     q: str | None = Query(
         default=None,
-        description="Search listings by text.",
+        max_length=150,
+        description="Search available listings by title.",
     ),
     category_id: int | None = Query(
         default=None,
+        gt=0,
         description="Filter listings by category.",
+    ),
+    state_id: int | None = Query(
+        default=None,
+        gt=0,
+        description="Filter listings by state; public browsing only exposes Available.",
+    ),
+    user_id: int | None = Query(
+        default=None,
+        gt=0,
+        description="Filter listings by owner.",
     ),
     location: str | None = Query(
         default=None,
+        max_length=100,
         description="Filter listings by location.",
     ),
     limit: int = Query(
-        default=20,
+        default=12,
         ge=1,
-        le=100,
+        le=12,
         description="Maximum number of listings to return.",
     ),
     offset: int = Query(
@@ -69,18 +83,42 @@ def list_listings(
         description="Number of listings to skip for pagination.",
     ),
     db: Session = Depends(get_db),
-) -> list[ListingSummaryOut]:
-    """Return a paginated list of listings.
+) -> ListingPageOut:
+    """Return one page of public listings, ordered from oldest to newest.
 
-    The optional query parameters are intended to support the frontend's
-    search, filtering and pagination controls.
-
-    Business logic and database queries will be implemented later.
+    Every optional filter is combined with AND. Regardless of a requested
+    ``state_id``, Removed and Expired listings are never visible here.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Listing search is not implemented yet.",
+    listings = (
+        db.query(Listing)
+        .join(Listing.state)
+        .options(
+            joinedload(Listing.owner),
+            joinedload(Listing.category),
+            joinedload(Listing.condition),
+        )
+        .filter(ListingState.state_name == "Available")
     )
+
+    if category_id is not None:
+        listings = listings.filter(Listing.category_id == category_id)
+    if state_id is not None:
+        listings = listings.filter(Listing.state_id == state_id)
+    if user_id is not None:
+        listings = listings.filter(Listing.user_id == user_id)
+    if q is not None and (search := q.strip()):
+        listings = listings.filter(Listing.title.ilike(f"%{search}%"))
+    if location is not None and (place := location.strip()):
+        listings = listings.filter(Listing.listing_location.ilike(f"%{place}%"))
+
+    total = listings.count()
+    items = (
+        listings.order_by(Listing.created_at.asc(), Listing.id.asc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return ListingPageOut(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get(
@@ -148,16 +186,32 @@ def get_listing(
     id: int,
     db: Session = Depends(get_db),
 ) -> ListingDetailOut:
-    """Return the complete details of a listing.
+    """Return the complete details of one available listing.
 
-    The detailed response includes the listing description, images and whether
-    the listing is favorited by the current user when that information is
-    available.
+    Removed and Expired listings deliberately behave as not found so a public
+    request cannot reveal data that should no longer be visible.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Listing retrieval is not implemented yet.",
+    listing = (
+        db.query(Listing)
+        .join(Listing.state)
+        .options(
+            joinedload(Listing.owner),
+            joinedload(Listing.category),
+            joinedload(Listing.condition),
+            selectinload(Listing.images),
+        )
+        .filter(
+            Listing.id == id,
+            ListingState.state_name == "Available",
+        )
+        .first()
     )
+    if listing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
+    return listing
 
 
 @router.post(
