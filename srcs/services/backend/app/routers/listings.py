@@ -323,7 +323,7 @@ def delete_listing(
     available, and favorites are removed because they only apply to public
     listings.
     """
-    listing = db.get(Listing, id)
+    listing = db.get(Listing, id, with_for_update=True)
     if listing is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
