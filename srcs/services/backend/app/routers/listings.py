@@ -9,7 +9,6 @@ define the expected paths, dependencies and response schemas.
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.database import get_db
@@ -18,12 +17,10 @@ from app.models import (
     Category,
     Condition,
     Favorite,
-    Image,
     Listing,
     ListingState,
-    Message,
-    Report,
     Trade,
+    TradeState,
     User,
 )
 from app.schemas import (
@@ -305,7 +302,7 @@ def update_listing(
 @router.delete(
     "/{id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a listing",
+    summary="Remove a listing from public view",
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated."},
         status.HTTP_403_FORBIDDEN: {
@@ -319,11 +316,12 @@ def delete_listing(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    """Permanently delete one of the logged-in user's listings.
+    """Soft-delete one of the logged-in user's listings.
 
-    A listing can participate in trades and be favorited, reported, or have
-    images. Those child rows must be removed before the listing itself, or
-    MariaDB correctly rejects the deletion because of its foreign keys.
+    The listing and its history remain in the database for moderation and
+    completed trades. Open trades are cancelled because the offer is no longer
+    available, and favorites are removed because they only apply to public
+    listings.
     """
     listing = db.get(Listing, id)
     if listing is None:
@@ -338,48 +336,43 @@ def delete_listing(
             detail="You can only delete your own listings.",
         )
 
-    # A trade can reference the listing either as what someone requested or
-    # what they offered. Its messages depend on that trade and come first.
-    trade_ids = [
-        trade_id
-        for (trade_id,) in (
-            db.query(Trade.id)
-            .filter(
-                or_(
-                    Trade.listing_requested_id == listing.id,
-                    Trade.listing_offered_id == listing.id,
-                )
-            )
-            .all()
-        )
-    ]
-
-    try:
-        db.query(Message).filter(Message.trade_id.in_(trade_ids)).delete(
-            synchronize_session=False
-        )
-        (
-            db.query(Report)
-            .filter(Report.reported_listings_id == listing.id)
-            .delete(synchronize_session=False)
-        )
-        db.query(Favorite).filter(Favorite.listing_id == listing.id).delete(
-            synchronize_session=False
-        )
-        db.query(Trade).filter(Trade.id.in_(trade_ids)).delete(
-            synchronize_session=False
-        )
-        db.query(Image).filter(Image.listing_id == listing.id).delete(
-            synchronize_session=False
-        )
-        db.delete(listing)
-        db.commit()
-    except IntegrityError:
-        db.rollback()
+    removed = (
+        db.query(ListingState)
+        .filter(ListingState.state_name == "Removed")
+        .first()
+    )
+    open_trade = (
+        db.query(TradeState).filter(TradeState.state_name == "Open").first()
+    )
+    cancelled_trade = (
+        db.query(TradeState)
+        .filter(TradeState.state_name == "Cancelled")
+        .first()
+    )
+    if removed is None or open_trade is None or cancelled_trade is None:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Listing could not be deleted because related data remains.",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Listing or trade states are not configured.",
         )
+
+    if listing.state_id == removed.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
+
+    listing.state_id = removed.id
+    db.query(Trade).filter(
+        or_(
+            Trade.listing_requested_id == listing.id,
+            Trade.listing_offered_id == listing.id,
+        ),
+        Trade.trade_state_id == open_trade.id,
+    ).update({Trade.trade_state_id: cancelled_trade.id}, synchronize_session=False)
+    db.query(Favorite).filter(Favorite.listing_id == listing.id).delete(
+        synchronize_session=False
+    )
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
