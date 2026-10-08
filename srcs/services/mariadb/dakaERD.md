@@ -16,6 +16,7 @@ erDiagram
         VARCHAR user_location
         TIMESTAMP created_at
         TIMESTAMP updated_at
+        DATETIME deleted_at
     }
 
     CATEGORIES {
@@ -121,6 +122,7 @@ erDiagram
         VARCHAR user_location
         TIMESTAMP created_at
         TIMESTAMP updated_at
+        DATETIME deleted_at
     }
 
     LISTINGS {
