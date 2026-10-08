@@ -54,6 +54,9 @@ services:
         condition: service_healthy
     volumes:
       - ./services/backend:/app
+      # Uploaded images (avatars, listing photos). Kept outside /app, which is
+      # the repository itself, so uploads never end up in git.
+      - media:/data/media
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
@@ -103,6 +106,8 @@ services:
         condition: service_started
     volumes:
       - certs:/etc/nginx/certs:ro
+      # Same volume as the backend, read-only: nginx only serves the files.
+      - media:/data/media:ro
     healthcheck:
       test: "wget -q -O /dev/null --no-check-certificate https://localhost/healthz || exit 1"
       interval: 10s
@@ -285,6 +290,7 @@ volumes:
   alertmanager_data:
   grafana_data:
   certs:
+  media:
  
 networks:
   daka_edge:

@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import ProfileField from '../components/ProfileField'
 import Avatar from '../components/Avatar'
+import ImagePicker from '../components/ImagePicker'
+import { useObjectUrl } from '../hooks/useObjectUrl'
 import { ApiError } from '../lib/api'
 
 export default function Profile() {
-  const { user, updateProfile } = useAuth()
+  const { user, updateProfile, uploadAvatar, removeAvatar } = useAuth()
 
   const [isEditing, setIsEditing] = useState(false)
   const [formData, setFormData] = useState({
@@ -16,6 +18,14 @@ export default function Profile() {
   })
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Avatar changes wait here while editing and are only sent by "Guardar
+  // alterações", together with the other fields. avatarFile is a new photo
+  // (shown as a preview); avatarRemoved means "go back to the initial".
+  // Hooks stay above the early return (Rules of Hooks).
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [avatarRemoved, setAvatarRemoved] = useState(false)
+  const avatarPreview = useObjectUrl(avatarFile)
 
   useEffect(() => {
     if (user) {
@@ -36,6 +46,10 @@ export default function Profile() {
       )
   }
 
+  // What the avatar circle currently shows: a picked photo, or the saved one
+  // unless it was marked for removal.
+  const showsAvatar = avatarFile !== null || (!avatarRemoved && !!user.avatar)
+
   // Format date: "setembro de 2026"
   const memberSince = new Date(user.created_at).toLocaleDateString('pt-PT', {
     month: 'long',
@@ -51,6 +65,8 @@ export default function Profile() {
       user_location: user.user_location || '',
       email: user.email,
     })
+    setAvatarFile(null)
+    setAvatarRemoved(false)
     setError(null)
     setIsEditing(false)
   }
@@ -84,19 +100,32 @@ export default function Profile() {
     // Check if some change was made
     const hasNameChanged = trimmedName !== user?.user_name
     const hasLocationChanged = (trimmedLocation || null) !== (user?.user_location || null)
+    // Removing only counts if there is a saved avatar to remove.
+    const removeSavedAvatar = avatarRemoved && !!user?.avatar
+    const hasAvatarChanged = avatarFile !== null || removeSavedAvatar
 
-    if (!hasNameChanged && !hasLocationChanged) {
-      setIsEditing(false)
+    if (!hasNameChanged && !hasLocationChanged && !hasAvatarChanged) {
+      handleCancel()
       return
     }
 
     setSaving(true)
     try {
-      await updateProfile({
-        user_name: trimmedName,
-        user_location: trimmedLocation || null,
-        // TODO: Add avatar when enabled
-      })
+      // Name and location first. If the photo then fails, the fields are
+      // already saved and pressing "Guardar" again only retries the photo.
+      if (hasNameChanged || hasLocationChanged) {
+        await updateProfile({
+          user_name: trimmedName,
+          user_location: trimmedLocation || null,
+        })
+      }
+      if (avatarFile) {
+        await uploadAvatar(avatarFile)
+      } else if (removeSavedAvatar) {
+        await removeAvatar()
+      }
+      setAvatarFile(null)
+      setAvatarRemoved(false)
       setIsEditing(false)
     } catch (err) {
         setError(err instanceof ApiError ? err.message : 'Erro desconhecido ao guardar alterações. Por favor, tente novamente.')
@@ -124,7 +153,7 @@ export default function Profile() {
       <div className="bg-surface border border-line rounded-2xl p-6 shadow-sm">
         <div className="flex items-center gap-4 pb-6 border-b border-line">
           <Avatar
-            avatar={user.avatar}
+            avatar={avatarPreview ?? (avatarRemoved ? null : user.avatar)}
             user_name={user.user_name}
           />
 
@@ -136,6 +165,37 @@ export default function Profile() {
             <p className="text-sm text-muted">
               Membro desde {memberSince}
             </p>
+
+            {/* Avatar actions, only while editing. They change the preview;
+                "Guardar alterações" is what sends them. */}
+            {isEditing && (
+              <div className="flex items-center gap-2 mt-2">
+                <ImagePicker
+                  label={showsAvatar ? 'Alterar foto' : 'Adicionar foto'}
+                  onPick={(file) => {
+                    setError(null)
+                    setAvatarFile(file)
+                    setAvatarRemoved(false)
+                  }}
+                  onError={setError}
+                  disabled={saving}
+                />
+                {showsAvatar && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAvatarFile(null)
+                      setAvatarRemoved(true)
+                    }}
+                    disabled={saving}
+                    className={"text-xs font-medium text-muted hover:text-ink px-2.5 py-1 rounded-lg transition-colors" +
+                              " disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted"}
+                  >
+                    Remover foto
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

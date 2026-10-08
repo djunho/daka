@@ -137,14 +137,15 @@ class ProfileUpdate(BaseModel):
     Fields that an authenticated user may change on their profile.
 
     All fields are optional so the client can update only one value at a time.
-    ``avatar`` and ``user_location`` also accept ``None`` to clear them.
+    ``user_location`` also accepts ``None`` to clear it. The avatar is not
+    here: it changes only through PUT/DELETE /api/auth/me/avatar, so the
+    stored value is always a file we created (or the Google picture).
     """
 
     user_name: str | None = Field(default=None, min_length=2, max_length=100)
-    avatar: str | None = Field(default=None, max_length=255)
     user_location: str | None = Field(default=None, max_length=100)
 
-    @field_validator("user_name", "avatar", "user_location")
+    @field_validator("user_name", "user_location")
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -216,19 +217,61 @@ class ImageOut(BaseModel):
 # --- Ad Entries ---
 class ListingCreateIn(BaseModel):
     title: str = Field(min_length=3, max_length=150)
-    category_id: int
-    condition_id: int
+    category_id: int = Field(gt=0)
+    condition_id: int = Field(gt=0)
     listing_dsc: str | None = Field(default=None, max_length=2000)
     listing_location: str | None = Field(default=None, max_length=100)
     wish: str | None = Field(default=None, max_length=1000)
 
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 3:
+            raise ValueError("title must have at least 3 visible characters")
+        return cleaned
+
+    @field_validator("listing_dsc", "listing_location", "wish")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
 class ListingUpdateIn(BaseModel):
     title: str | None = Field(default=None, min_length=3, max_length=150)
-    category_id: int | None = None
-    condition_id: int | None = None
+    category_id: int | None = Field(default=None, gt=0)
+    condition_id: int | None = Field(default=None, gt=0)
     listing_dsc: str | None = Field(default=None, max_length=2000)
     listing_location: str | None = Field(default=None, max_length=100)
     wish: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if len(cleaned) < 3:
+            raise ValueError("title must have at least 3 visible characters")
+        return cleaned
+
+    @field_validator("listing_dsc", "listing_location", "wish")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @model_validator(mode="after")
+    def require_a_change(self) -> "ListingUpdateIn":
+        """Reject an empty PATCH and fields that cannot be cleared."""
+        if not self.model_fields_set:
+            raise ValueError("at least one listing field is required")
+        for field_name in ("title", "category_id", "condition_id"):
+            if field_name in self.model_fields_set and getattr(self, field_name) is None:
+                raise ValueError(f"{field_name} cannot be null")
+        return self
 
 # --- Saídas de Anúncios ---
 class ListingSummaryOut(BaseModel):

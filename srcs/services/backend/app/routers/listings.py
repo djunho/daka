@@ -8,11 +8,21 @@ define the expected paths, dependencies and response schemas.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import User
+from app.models import (
+    Category,
+    Condition,
+    Favorite,
+    Listing,
+    ListingState,
+    Trade,
+    TradeState,
+    User,
+)
 from app.schemas import (
     CategoryOut,
     ConditionOut,
@@ -86,10 +96,7 @@ def list_categories(
     The frontend can use this endpoint to populate category filters and
     selection controls when creating or searching listings.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Category listing is not implemented yet.",
-    )
+    return db.query(Category).order_by(Category.category_name).all()
 
 
 @router.get(
@@ -105,10 +112,7 @@ def list_conditions(
     The frontend can use this endpoint to populate condition filters and
     selection controls when creating or editing a listing.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Condition listing is not implemented yet.",
-    )
+    return db.query(Condition).order_by(Condition.id).all()
 
 
 @router.get(
@@ -172,16 +176,75 @@ def create_listing(
     Authentication is required. The request body is validated by
     ListingCreateIn before this function is called.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Listing creation is not implemented yet.",
+    # IDs are valid positive integers after Pydantic validation, but only the
+    # database can tell whether they refer to a category/condition that exists.
+    category = db.get(Category, payload.category_id)
+    if category is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The selected category does not exist.",
+        )
+
+    condition = db.get(Condition, payload.condition_id)
+    if condition is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The selected condition does not exist.",
+        )
+
+    # State is server-owned: a client must never be able to publish an ad as
+    # Removed or Expired just by choosing a different state_id in the request.
+    available_state = (
+        db.query(ListingState)
+        .filter(ListingState.state_name == "Available")
+        .first()
     )
+    if available_state is None:
+        # This is a deployment/configuration problem (the required seed row is
+        # missing), rather than invalid input from the user.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Listing states are not configured.",
+        )
+
+    listing = Listing(
+        user_id=current_user.id,
+        category_id=category.id,
+        condition_id=condition.id,
+        state_id=available_state.id,
+        title=payload.title,
+        listing_dsc=payload.listing_dsc,
+        listing_location=payload.listing_location,
+        wish=payload.wish,
+    )
+    db.add(listing)
+    db.commit()
+
+    # Re-read with the relationships required by ListingDetailOut. This keeps
+    # the endpoint independent of SQLAlchemy's lazy-loading configuration.
+    created_listing = (
+        db.query(Listing)
+        .options(
+            joinedload(Listing.owner),
+            joinedload(Listing.category),
+            joinedload(Listing.condition),
+            selectinload(Listing.images),
+        )
+        .filter(Listing.id == listing.id)
+        .one()
+    )
+    return created_listing
 
 
 @router.patch(
     "/{id}",
     response_model=ListingDetailOut,
     summary="Update a listing",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated."},
+        status.HTTP_403_FORBIDDEN: {"description": "Not allowed to edit this listing."},
+        status.HTTP_404_NOT_FOUND: {"description": "Listing not found."},
+    },
 )
 def update_listing(
     id: int,
@@ -189,35 +252,127 @@ def update_listing(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ListingDetailOut:
-    """Update an existing listing owned by the logged-in user.
+    """Update one or more editable fields of the logged-in user's listing."""
+    listing = db.get(Listing, id)
+    if listing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
 
-    The ownership check and database update will be implemented later.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Listing update is not implemented yet.",
+    if listing.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only edit your own listings.",
+        )
+
+    changes = payload.model_dump(exclude_unset=True)
+
+    # The client may choose a new ID, but the database remains the authority
+    # on whether that category/condition is an available lookup value.
+    if "category_id" in changes and db.get(Category, changes["category_id"]) is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The selected category does not exist.",
+        )
+    if "condition_id" in changes and db.get(Condition, changes["condition_id"]) is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The selected condition does not exist.",
+        )
+
+    for field_name, value in changes.items():
+        setattr(listing, field_name, value)
+    db.commit()
+
+    updated_listing = (
+        db.query(Listing)
+        .options(
+            joinedload(Listing.owner),
+            joinedload(Listing.category),
+            joinedload(Listing.condition),
+            selectinload(Listing.images),
+        )
+        .filter(Listing.id == listing.id)
+        .one()
     )
+    return updated_listing
 
 
 @router.delete(
     "/{id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete or archive a listing",
+    summary="Remove a listing from public view",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated."},
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Not allowed to delete this listing."
+        },
+        status.HTTP_404_NOT_FOUND: {"description": "Listing not found."},
+    },
 )
 def delete_listing(
     id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    """Delete or archive a listing owned by the logged-in user.
+    """Soft-delete one of the logged-in user's listings.
 
-    The final behaviour (hard delete or archive) will be decided when the
-    listing business logic is implemented.
+    The listing and its history remain in the database for moderation and
+    completed trades. Open trades are cancelled because the offer is no longer
+    available, and favorites are removed because they only apply to public
+    listings.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Listing deletion is not implemented yet.",
+    listing = db.get(Listing, id, with_for_update=True)
+    if listing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
+
+    if listing.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own listings.",
+        )
+
+    removed = (
+        db.query(ListingState)
+        .filter(ListingState.state_name == "Removed")
+        .first()
     )
+    open_trade = (
+        db.query(TradeState).filter(TradeState.state_name == "Open").first()
+    )
+    cancelled_trade = (
+        db.query(TradeState)
+        .filter(TradeState.state_name == "Cancelled")
+        .first()
+    )
+    if removed is None or open_trade is None or cancelled_trade is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Listing or trade states are not configured.",
+        )
+
+    if listing.state_id == removed.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
+
+    listing.state_id = removed.id
+    db.query(Trade).filter(
+        or_(
+            Trade.listing_requested_id == listing.id,
+            Trade.listing_offered_id == listing.id,
+        ),
+        Trade.trade_state_id == open_trade.id,
+    ).update({Trade.trade_state_id: cancelled_trade.id}, synchronize_session=False)
+    db.query(Favorite).filter(Favorite.listing_id == listing.id).delete(
+        synchronize_session=False
+    )
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
