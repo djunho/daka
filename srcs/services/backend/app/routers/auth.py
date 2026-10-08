@@ -368,6 +368,7 @@ def delete_me(
         listing_id
         for (listing_id,) in db.query(Listing.id)
         .filter(Listing.user_id == user_id)
+        .with_for_update()
         .all()
     ]
 
@@ -383,6 +384,7 @@ def delete_me(
                 Trade.listing_offered_id.in_(listing_ids),
             )
         )
+        .with_for_update()
         .all()
     ]
 
@@ -415,9 +417,6 @@ def delete_me(
             synchronize_session=False
         )
         db.query(Listing).filter(Listing.id.in_(listing_ids)).delete(
-            synchronize_session=False
-        )
-        db.query(UserSession).filter(UserSession.user_id == user_id).delete(
             synchronize_session=False
         )
         db.query(User).filter(User.id == user_id).delete(synchronize_session=False)
