@@ -4,7 +4,9 @@ Mounted under /auth by app/main.py. Because nginx forwards /api/ to this
 service, the public URLs are /api/auth/register and /api/auth/login.
 
 """
+import logging
 import secrets
+from urllib.parse import quote
 
 from authlib.integrations.base_client import OAuthError
 from authlib.integrations.starlette_client import OAuth
@@ -47,6 +49,7 @@ from app.security import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 # Longest edge, in pixels, of a stored avatar. The UI shows avatars at most
 # 80 px wide; 512 px stays sharp on high-density screens without keeping
@@ -78,18 +81,51 @@ if settings.google_client_id and settings.google_client_secret:
         client_kwargs={"scope": "openid email profile"},
     )
 
+# Allowed OAuth 2.0 error codes (RFC 6749 section 4.1.2.1 / Google OAuth).
+# Any unknown, malformed, or injected strings safely fallback to "auth_failed".
+ALLOWED_OAUTH_ERRORS = {
+    "access_denied",
+    "invalid_request",
+    "unauthorized_client",
+    "server_error",
+    "temporarily_unavailable",
+    "interaction_required",
+    "login_required",
+    "consent_required",
+}
+
+
+def _sanitize_oauth_error(raw_error: str | None) -> str:
+    """Validate and URL-encode external OAuth error codes before redirecting."""
+    if raw_error and raw_error in ALLOWED_OAUTH_ERRORS:
+        return quote(raw_error, safe="")
+    return "auth_failed"
+
+
+def _validate_redirect_dest(dest: str | None) -> str:
+    """Ensure the destination path is a safe relative internal route to prevent open redirects."""
+    if not dest or not isinstance(dest, str):
+        return "/"
+    if dest.startswith("/") and not dest.startswith("//") and "\\" not in dest:
+        return dest
+    return "/"
+
 
 @router.get(
     "/google/login",
     summary="Start Google OAuth login",
 )
-async def google_login(request: Request):
+async def google_login(request: Request, dest: str | None = None):
     """Redirect the browser to Google's consent screen."""
+    frontend_url = settings.frontend_url.rstrip("/")
     if not settings.google_client_id or not settings.google_client_secret:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google authentication is not configured.",
+        return RedirectResponse(
+            url=f"{frontend_url}/login?error=google_unconfigured",
+            status_code=status.HTTP_302_FOUND,
         )
+
+    # Preserve intended frontend destination in the temporary signed OAuth session
+    request.session["oauth_dest"] = _validate_redirect_dest(dest)
 
     # Authlib generates the OAuth state and stores it in the signed session
     # cookie; the callback will reject a response with a missing or invalid
@@ -109,29 +145,41 @@ async def google_callback(
     db: Session = Depends(get_db),
 ):
     """Validate Google's response, create a local session, and redirect."""
+    frontend_url = settings.frontend_url.rstrip("/")
+    login_url = f"{frontend_url}/login"
+
     if not settings.google_client_id or not settings.google_client_secret:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google authentication is not configured.",
+        logger.warning("Google OAuth callback invoked but credentials are not configured")
+        return RedirectResponse(
+            url=f"{login_url}?error=google_unconfigured",
+            status_code=status.HTTP_302_FOUND,
         )
 
     # Exchange Google's one-time authorization code for verified token data.
     # Authlib also checks the state saved by google_login before returning.
     try:
         token = await oauth.google.authorize_access_token(request)
-    except OAuthError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Google authentication was not completed.",
+    except OAuthError as err:
+        raw_error = err.error or request.query_params.get("error")
+        logger.warning(
+            "Google OAuth failed: %s (%s)",
+            err.error,
+            getattr(err, "description", None),
+        )
+        error_code = _sanitize_oauth_error(raw_error)
+        return RedirectResponse(
+            url=f"{login_url}?error={error_code}",
+            status_code=status.HTTP_302_FOUND,
         )
 
     # The OpenID Connect userinfo claim contains the identity fields requested
     # by the client: Google's stable subject id, email, name, and picture.
     google_user = token.get("userinfo")
     if not google_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Google did not return user information.",
+        logger.warning("Google OAuth failed: missing userinfo claim in token response")
+        return RedirectResponse(
+            url=f"{login_url}?error=auth_failed",
+            status_code=status.HTTP_302_FOUND,
         )
 
     google_sub = google_user.get("sub")
@@ -139,9 +187,15 @@ async def google_callback(
     if isinstance(email, str):
         email = email.strip().lower()
     if not google_sub or not email or google_user.get("email_verified") is not True:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Google account information could not be verified.",
+        logger.warning(
+            "Google OAuth failed: unverified or missing claims (sub=%s, email=%s, verified=%s)",
+            bool(google_sub),
+            bool(email),
+            google_user.get("email_verified"),
+        )
+        return RedirectResponse(
+            url=f"{login_url}?error=auth_failed",
+            status_code=status.HTTP_302_FOUND,
         )
 
     # The stable Google subject is the primary lookup. Email is only the
@@ -161,9 +215,13 @@ async def google_callback(
             # Never replace an existing Google link. A different subject with
             # the same email must not take over an already-linked account.
             if existing_email.google_sub is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="This email is linked to another Google account.",
+                logger.warning(
+                    "Google OAuth conflict: local account %s is already linked to another google_sub",
+                    existing_email.id,
+                )
+                return RedirectResponse(
+                    url=f"{login_url}?error=google_conflict",
+                    status_code=status.HTTP_302_FOUND,
                 )
             existing_email.google_sub = google_sub
             user = existing_email
@@ -181,24 +239,31 @@ async def google_callback(
             db.add(user)
             try:
                 db.commit()
-            except IntegrityError:
+            except IntegrityError as exc:
                 db.rollback()
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="This Google account is already registered.",
+                logger.warning("Google OAuth user creation race condition: %s", exc)
+                return RedirectResponse(
+                    url=f"{login_url}?error=server_error",
+                    status_code=status.HTTP_302_FOUND,
                 )
             db.refresh(user)
 
+    # Retrieve and validate the intended destination stored during google_login
+    dest = request.session.pop("oauth_dest", "/")
+    safe_dest = _validate_redirect_dest(dest)
+    redirect_url = f"{frontend_url}{safe_dest}"
+
     # Create the same server-side session used by password login before
     # redirecting, so the frontend is authenticated immediately after return.
-    response = RedirectResponse(url=settings.frontend_url, status_code=302)
+    response = RedirectResponse(url=redirect_url, status_code=302)
     try:
         _open_session(db, user, response)
-    except IntegrityError:
+    except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This Google account is already registered.",
+        logger.warning("Google OAuth session creation error: %s", exc)
+        return RedirectResponse(
+            url=f"{login_url}?error=server_error",
+            status_code=status.HTTP_302_FOUND,
         )
     return response
 
