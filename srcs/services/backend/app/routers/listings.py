@@ -1,13 +1,12 @@
-"""Listing routes: browsing, creating and managing marketplace listings.
+"""Listing routes for browsing, creating and managing marketplace listings.
 
 Mounted under /listings by app/main.py.
 
-The routes in this module define the public API contract for listings.
-Business logic will be added incrementally; for now, the handlers only
-define the expected paths, dependencies and response schemas.
+The module exposes public listing browsing and lookup endpoints, as well as
+authenticated endpoints for owners to create, update and remove listings.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -24,6 +23,7 @@ from app.models import (
     User,
 )
 from app.schemas import (
+    LISTINGS_PAGE_SIZE,
     CategoryOut,
     ConditionOut,
     ListingCreateIn,
@@ -67,9 +67,9 @@ def list_listings(
         description="Filter listings by location.",
     ),
     limit: int = Query(
-        default=12,
+        default=LISTINGS_PAGE_SIZE,
         ge=1,
-        le=12,
+        le=LISTINGS_PAGE_SIZE,
         description="Maximum number of listings to return.",
     ),
     offset: int = Query(
@@ -79,7 +79,7 @@ def list_listings(
     ),
     db: Session = Depends(get_db),
 ) -> ListingPageOut:
-    """Return one page of public listings, ordered from oldest to newest.
+    """Return one page of public listings, ordered from newest to oldest.
 
     Every optional filter is combined with AND. Removed and Expired listings
     are never visible here.
@@ -100,13 +100,14 @@ def list_listings(
     if user_id is not None:
         listings = listings.filter(Listing.user_id == user_id)
     if q is not None and (search := q.strip()):
-        listings = listings.filter(Listing.title.ilike(f"%{search}%"))
+        listings = listings.filter(
+            Listing.title.icontains(search, autoescape=True))
     if location is not None and (place := location.strip()):
-        listings = listings.filter(Listing.listing_location.ilike(f"%{place}%"))
-
+        listings = listings.filter(
+            Listing.listing_location.icontains(place, autoescape=True))
     total = listings.count()
     items = (
-        listings.order_by(Listing.created_at.asc(), Listing.id.asc())
+        listings.order_by(Listing.created_at.desc(), Listing.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
@@ -176,7 +177,7 @@ def list_favorites(
     summary="Get a listing by ID",
 )
 def get_listing(
-    id: int,
+    id: int = Path(gt=0, description="The listing identifier."),
     db: Session = Depends(get_db),
 ) -> ListingDetailOut:
     """Return the complete details of one available listing.
