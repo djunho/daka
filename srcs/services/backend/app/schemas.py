@@ -34,7 +34,7 @@ from app.security import MAX_PASSWORD_BYTES
 # Short enough to be memorable, long enough that brute force is hopeless. The
 # 42 subject does not fix a number; 8 is the common floor and NIST's minimum.
 MIN_PASSWORD_LENGTH = 8
-
+LISTINGS_PAGE_SIZE = 12
 
 # ---------------------------------------------------------------------------
 # Shared pieces
@@ -272,6 +272,16 @@ class ListingUpdateIn(BaseModel):
                 raise ValueError(f"{field_name} cannot be null")
         return self
 
+class PublicUserOut(BaseModel):
+    """What anyone, even without logging in, may see about a user."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_name: str
+    avatar: str | None
+    user_location: str | None
+
 # --- Saídas de Anúncios ---
 class ListingSummaryOut(BaseModel):
     """Lightweight, condensed version for showcase, feed, search, and autocomplete."""
@@ -282,7 +292,7 @@ class ListingSummaryOut(BaseModel):
     condition: ConditionOut
     listing_location: str | None
     wish: str | None
-    owner: UserOut
+    owner: PublicUserOut
     created_at: datetime
 
 
@@ -291,7 +301,7 @@ class ListingPageOut(BaseModel):
 
     items: list[ListingSummaryOut]
     total: int = Field(ge=0)
-    limit: int = Field(ge=1, le=12)
+    limit: int = Field(ge=1, le=LISTINGS_PAGE_SIZE)
     offset: int = Field(ge=0)
 
 
