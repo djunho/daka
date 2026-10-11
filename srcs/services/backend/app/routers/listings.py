@@ -91,6 +91,8 @@ def list_listings(
             joinedload(Listing.owner),
             joinedload(Listing.category),
             joinedload(Listing.condition),
+            # Needed for cover_image on every card of the page.
+            selectinload(Listing.images),
         )
         .filter(ListingState.state_name == "Available")
     )

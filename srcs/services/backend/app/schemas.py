@@ -293,6 +293,8 @@ class ListingSummaryOut(BaseModel):
     listing_location: str | None
     wish: str | None
     owner: PublicUserOut
+    # URL of the primary photo (Listing.cover_image), or None without photos.
+    cover_image: str | None
     created_at: datetime
 
 
