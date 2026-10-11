@@ -35,6 +35,7 @@ from app.security import MAX_PASSWORD_BYTES
 # 42 subject does not fix a number; 8 is the common floor and NIST's minimum.
 MIN_PASSWORD_LENGTH = 8
 LISTINGS_PAGE_SIZE = 12
+MAX_LISTINGS_PAGE_SIZE = 100
 
 # ---------------------------------------------------------------------------
 # Shared pieces
@@ -301,7 +302,7 @@ class ListingPageOut(BaseModel):
 
     items: list[ListingSummaryOut]
     total: int = Field(ge=0)
-    limit: int = Field(ge=1, le=LISTINGS_PAGE_SIZE)
+    limit: int = Field(ge=1, le=MAX_LISTINGS_PAGE_SIZE)
     offset: int = Field(ge=0)
 
 
