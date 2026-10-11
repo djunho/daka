@@ -1,41 +1,40 @@
 import { Link } from 'react-router-dom'
-import { CATEGORY_BY_ID, type CategoryId, type Listing } from '../types/listing'
+import { categoryLabel, categoryTint, conditionLabel } from '../types/listing'
+import { type ApiListingSummary } from '../lib/api'
 
-// Photo placeholder background per category, until the user uploads a real photo.
-const TINT: Record<CategoryId, string> = {
-  roupa:         '#e9d8c6',
-  eletronica:    '#d2dee8',
-  casa:          '#d8e0da',
-  livros:        '#e6d3d0',
-  plantas:       '#cfe3d2',
-  colecionaveis: '#dcd6ec',
-  outros:        '#e4e2dd',
-}
-
-export default function ListingCard({ listing }: { listing: Listing }) {
-  const { id, title, wants, category, condition, location, owner } = listing
+export default function ListingCard({ listing }: { listing: ApiListingSummary }) {
+  const { id, title, wish, category, condition, listing_location, owner, cover_image } = listing
 
   return (
     <Link to={`/listing/${id}`} className="card block text-inherit no-underline">
-      <div className="card-media" style={{ ['--tint' as string]: TINT[category] }}>
-        <span className="badge">{condition}</span>
+      <div className="card-media" style={{ ['--tint' as string]: categoryTint(category) }}>
+        {cover_image && (
+          <img src={cover_image} alt={title} className='absolute inset-0 w-full h-full object-cover' loading='lazy' />
+        )}
+        <span className="badge">{conditionLabel(condition)}</span>
         {/* show the human-facing label, not the code id */}
-        <span className="card-cat">{CATEGORY_BY_ID[category].label}</span>
+        <span className="card-cat relative">{categoryLabel(category)}</span>
       </div>
 
       <div className="card-body">
         <h3 className="card-title">{title}</h3>
 
-        <p className="swap">
-          <span className="swap-arrow" aria-hidden="true">⇄</span>
-          <span className="swap-label">quer:</span>
-          <span className="swap-wants">{wants}</span>
-        </p>
+        {wish && (
+          <p className="swap">
+            <span className="swap-arrow" aria-hidden="true">⇄</span>
+            <span className="swap-label">quer:</span>
+            <span className="swap-wants">{wish}</span>
+          </p>
+        )}
 
         <div className="card-meta">
-          <span>{location}</span>
-          <span className="dot" aria-hidden="true">•</span>
-          <span>@{owner}</span>
+          {listing_location && (
+            <>
+              <span>{listing_location}</span>
+              <span className="dot" aria-hidden="true">•</span>
+            </>
+          )}
+          <span>@{owner.user_name}</span>
         </div>
       </div>
     </Link>
