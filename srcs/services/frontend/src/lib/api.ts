@@ -91,6 +91,54 @@ export type ApiUser = {
   created_at: string
 }
 
+export type ApiCategory = {
+  id: number
+  category_name: string
+}
+
+export type ApiCondition = {
+  id: number
+  condition_name: string
+}
+
+export type ApiImage = {
+  id: number
+  image_path: string
+  is_primary: boolean
+}
+
+export type ApiPublicUser = {
+  id: number
+  user_name: string
+  avatar: string | null
+  user_location: string | null
+}
+
+export type ApiListingSummary = {
+  id: number
+  title: string
+  category: ApiCategory
+  condition: ApiCondition
+  listing_location: string | null
+  wish: string | null
+  owner: ApiPublicUser
+  cover_image: string | null
+  created_at: string
+}
+
+export type ApiListingDetail = ApiListingSummary & {
+  listing_dsc: string | null
+  images: ApiImage[]
+  is_favorited: boolean
+}
+
+export type ApiListingPage = {
+  items: ApiListingSummary[]
+  total: number
+  limit: number
+  offset: number
+}
+
 // --- The four auth calls, named so components read like prose. ---
 
 export function apiRegister(user_name: string, email: string, password: string) {
@@ -137,4 +185,97 @@ export function apiUploadAvatar(file: File) {
 
 export function apiDeleteAvatar() {
   return request<ApiUser>('/auth/me/avatar', { method: 'DELETE' })
+}
+
+// Every filter is optional. Only the ones given end up in the URL.
+export type ListListingsParams = {
+  q?: string
+  category_id?: number
+  user_id?: number
+  location?: string
+  limit?: number
+  offset?: number
+}
+
+export function apiListListings(params: ListListingsParams = {}) {
+  const query = new URLSearchParams()
+
+  // Text filters: skip empty strings so "?q=" is never sent.
+  if (params.q) query.set('q', params.q)
+  if (params.location) query.set('location', params.location)
+
+  // Numbers: compare with undefined, because 0 is a valid offset.
+  if (params.category_id !== undefined) query.set('category_id', String(params.category_id))
+  if (params.user_id !== undefined) query.set('user_id', String(params.user_id))
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+
+  const qs = query.toString()
+  return request<ApiListingPage>(qs ? `/listings?${qs}` : '/listings')
+}
+
+export function apiGetListing(id: number) {
+  return request<ApiListingDetail>(`/listings/${id}`)
+}
+
+export function apiListCategories() {
+  return request<ApiCategory[]>('/listings/categories')
+}
+
+export function apiListConditions() {
+  return request<ApiCondition[]>('/listings/conditions')
+}
+
+export type CreateListingData = {
+  title: string
+  category_id: number
+  condition_id: number
+  listing_dsc?: string | null
+  listing_location?: string | null
+  wish?: string | null
+}
+
+export function apiCreateListing(data: CreateListingData) {
+  return request<ApiListingDetail>('/listings', {
+    method: 'POST',
+    body: data,
+  })
+}
+
+export type UpdateListingData = {
+  title?: string
+  category_id?: number
+  condition_id?: number
+  listing_dsc?: string | null
+  listing_location?: string | null
+  wish?: string | null
+}
+
+export function apiUpdateListing(id: number, data: UpdateListingData) {
+  return request<ApiListingDetail>(`/listings/${id}`, {
+    method: 'PATCH',
+    body: data,
+  })
+}
+
+export function apiDeleteListing(id: number) {
+  return request<void>(`/listings/${id}`, { method: 'DELETE' })
+}
+
+export function apiUploadListingImage(id: number, file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return request<ApiListingDetail>(`/listings/${id}/images`, { method: 'POST', body: form})
+}
+
+export function apiSetPrimaryListingImage(id: number, imageId: number) {
+  return request<ApiListingDetail>(`/listings/${id}/images/${imageId}/primary`, {
+    method: 'PUT'
+  })
+}
+
+export function apiDeleteListingImage(id: number, imageId: number) {
+  return request<ApiListingDetail>(`/listings/${id}/images/${imageId}`, {
+    method: 'DELETE'
+  })
 }
