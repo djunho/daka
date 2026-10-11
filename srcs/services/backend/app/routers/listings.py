@@ -36,6 +36,7 @@ from app.models import (
 )
 from app.schemas import (
     LISTINGS_PAGE_SIZE,
+    MAX_LISTINGS_PAGE_SIZE,
     CategoryOut,
     ConditionOut,
     ListingCreateIn,
@@ -88,7 +89,7 @@ def list_listings(
     limit: int = Query(
         default=LISTINGS_PAGE_SIZE,
         ge=1,
-        le=LISTINGS_PAGE_SIZE,
+        le=MAX_LISTINGS_PAGE_SIZE,
         description="Maximum number of listings to return.",
     ),
     offset: int = Query(
@@ -177,7 +178,7 @@ def list_favorites(
     limit: int = Query(
         default=LISTINGS_PAGE_SIZE,
         ge=1,
-        le=LISTINGS_PAGE_SIZE,
+        le=MAX_LISTINGS_PAGE_SIZE,
         description="Maximum number of listings to return.",
     ),
     offset: int = Query(
@@ -339,7 +340,7 @@ def update_listing(
     db: Session = Depends(get_db),
 ) -> ListingDetailOut:
     """Update one or more editable fields of the logged-in user's listing."""
-    listing = db.get(Listing, id)
+    listing = db.get(Listing, id, with_for_update=True)
     if listing is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -350,6 +351,12 @@ def update_listing(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only edit your own listings.",
+        )
+
+    if listing.state.state_name == "Removed":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
         )
 
     changes = payload.model_dump(exclude_unset=True)
@@ -670,7 +677,11 @@ def _load_listing_detail(db: Session, id: int) -> Listing:
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated."},
         status.HTTP_404_NOT_FOUND: {"description": "Listing not found."},
-        status.HTTP_409_CONFLICT: {"The listing is already favorited or belongs to the current user."},
+        status.HTTP_409_CONFLICT: {
+            "description": (
+                "The listing is already favorited or belongs to the current user."
+            )
+        },
     },
 )
 def add_favorite(
