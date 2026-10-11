@@ -17,6 +17,7 @@ from fastapi import (
     status,
 )
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.database import get_db
@@ -40,7 +41,6 @@ from app.schemas import (
     ListingCreateIn,
     ListingDetailOut,
     ListingPageOut,
-    ListingSummaryOut,
     ListingUpdateIn,
 )
 
@@ -170,22 +170,52 @@ def list_conditions(
 
 @router.get(
     "/favorites",
-    response_model=list[ListingSummaryOut],
+    response_model=ListingPageOut,
     summary="List the current user's favorite listings",
 )
 def list_favorites(
+    limit: int = Query(
+        default=LISTINGS_PAGE_SIZE,
+        ge=1,
+        le=LISTINGS_PAGE_SIZE,
+        description="Maximum number of listings to return.",
+    ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+        description="Number of favorite listings to skip for pagination.",
+    ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[ListingSummaryOut]:
+) -> ListingPageOut:
     """Return listings saved as favorites by the logged-in user.
 
     Authentication is required. The current user is obtained from the session
     cookie through the get_current_user dependency.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Favorite listings are not implemented yet.",
+    favorites = (
+        db.query(Listing)
+        .join(Favorite, Favorite.listing_id == Listing.id)
+        .join(Listing.state)
+        .options(
+            joinedload(Listing.owner),
+            joinedload(Listing.category),
+            joinedload(Listing.condition),
+        )
+        .filter(
+            Favorite.user_id == current_user.id,
+            ListingState.state_name == "Available",
+        )
     )
+    total = favorites.count()
+    items = (
+        favorites
+        .order_by(Listing.created_at.desc(), Listing.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return ListingPageOut(items=items, total=total, limit=limit, offset=offset)
 
 
 # ---------------------------------------------------------------------------
@@ -637,6 +667,11 @@ def _load_listing_detail(db: Session, id: int) -> Listing:
     "/{id}/favorite",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Add a listing to the current user's favorites",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated."},
+        status.HTTP_404_NOT_FOUND: {"description": "Listing not found."},
+        status.HTTP_409_CONFLICT: {"The listing is already favorited or belongs to the current user."},
+    },
 )
 def add_favorite(
     id: int,
@@ -645,19 +680,58 @@ def add_favorite(
 ) -> None:
     """Favorite a listing for the logged-in user.
 
-    Authentication is required. The relationship between the user and the
-    listing will be created by the business logic implemented later.
+    Only an available listing can be saved. Trying to save the same listing
+    twice returns a conflict instead of relying on the database constraint to
+    produce a server error. Trying to favorite your own listing is not allowed.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Adding favorites is not implemented yet.",
+    listing = (
+        db.query(Listing)
+        .join(Listing.state)
+        .filter(
+            Listing.id == id,
+            ListingState.state_name == "Available",
+        )
+        .first()
     )
+    if listing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
+    if listing.user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You cannot favorite your own listing.",
+        )
+
+    favorite_key = (current_user.id, listing.id)
+    if db.get(Favorite, favorite_key) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Listing is already in your favorites.",
+        )
+
+    db.add(Favorite(user_id=current_user.id, listing_id=listing.id))
+    try:
+        db.commit()
+    except IntegrityError:
+        # The composite primary key also protects against two concurrent
+        # requests that both pass the check above.
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Listing is already in your favorites.",
+        ) from None
 
 
 @router.delete(
     "/{id}/favorite",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove a listing from the current user's favorites",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated."},
+        status.HTTP_404_NOT_FOUND: {"description": "Favorite not found."},
+    },
 )
 def remove_favorite(
     id: int,
@@ -666,10 +740,16 @@ def remove_favorite(
 ) -> None:
     """Remove a listing from the logged-in user's favorites.
 
-    Authentication is required. The favorite relationship will be removed by
-    the business logic implemented later.
+    Authentication is required. Only the current user's relationship is
+    considered, so one user can never remove another user's favorite.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Removing favorites is not implemented yet.",
-    )
+    favorite = db.get(Favorite, (current_user.id, id), with_for_update=True)
+
+    if favorite is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Favorite not found.",
+        )
+
+    db.delete(favorite)
+    db.commit()
