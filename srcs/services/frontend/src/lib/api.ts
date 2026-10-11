@@ -80,14 +80,20 @@ export async function request<T>(
   return data as T
 }
 
-// The user shape the backend returns (UserOut). Kept here next to the client so
-// the API's contract lives in one place.
-export type ApiUser = {
+// The user shapes the backend returns. Kept here next to the client so the
+// API's contract lives in one place.
+//
+// ApiPublicUser (PublicUserOut) is what anyone may see, e.g. a listing's owner.
+// ApiUser (UserOut) is the logged-in user, with the private fields on top.
+export type ApiPublicUser = {
   id: number
   user_name: string
-  email: string
   avatar: string | null
   user_location: string | null
+}
+
+export type ApiUser = ApiPublicUser & {
+  email: string
   created_at: string
 }
 
@@ -105,13 +111,6 @@ export type ApiImage = {
   id: number
   image_path: string
   is_primary: boolean
-}
-
-export type ApiPublicUser = {
-  id: number
-  user_name: string
-  avatar: string | null
-  user_location: string | null
 }
 
 export type ApiListingSummary = {
@@ -200,9 +199,11 @@ export type ListListingsParams = {
 export function apiListListings(params: ListListingsParams = {}) {
   const query = new URLSearchParams()
 
-  // Text filters: skip empty strings so "?q=" is never sent.
-  if (params.q) query.set('q', params.q)
-  if (params.location) query.set('location', params.location)
+  // Text filters: trim them, and skip empty ones so "?q=" is never sent.
+  const q = params.q?.trim()
+  const location = params.location?.trim()
+  if (q) query.set('q', q)
+  if (location) query.set('location', location)
 
   // Numbers: compare with undefined, because 0 is a valid offset.
   if (params.category_id !== undefined) query.set('category_id', String(params.category_id))
@@ -242,14 +243,10 @@ export function apiCreateListing(data: CreateListingData) {
   })
 }
 
-export type UpdateListingData = {
-  title?: string
-  category_id?: number
-  condition_id?: number
-  listing_dsc?: string | null
-  listing_location?: string | null
-  wish?: string | null
-}
+// A PATCH sends only what changes, so every field becomes optional. Partial
+// keeps each field's type: title, category_id and condition_id still cannot
+// be null, matching the backend's ListingUpdateIn.
+export type UpdateListingData = Partial<CreateListingData>
 
 export function apiUpdateListing(id: number, data: UpdateListingData) {
   return request<ApiListingDetail>(`/listings/${id}`, {
