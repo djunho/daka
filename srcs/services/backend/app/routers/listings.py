@@ -289,20 +289,7 @@ def create_listing(
     db.add(listing)
     db.commit()
 
-    # Re-read with the relationships required by ListingDetailOut. This keeps
-    # the endpoint independent of SQLAlchemy's lazy-loading configuration.
-    created_listing = (
-        db.query(Listing)
-        .options(
-            joinedload(Listing.owner),
-            joinedload(Listing.category),
-            joinedload(Listing.condition),
-            selectinload(Listing.images),
-        )
-        .filter(Listing.id == listing.id)
-        .one()
-    )
-    return created_listing
+    return _load_listing_detail(db, listing.id)
 
 
 @router.patch(
@@ -354,18 +341,7 @@ def update_listing(
         setattr(listing, field_name, value)
     db.commit()
 
-    updated_listing = (
-        db.query(Listing)
-        .options(
-            joinedload(Listing.owner),
-            joinedload(Listing.category),
-            joinedload(Listing.condition),
-            selectinload(Listing.images),
-        )
-        .filter(Listing.id == listing.id)
-        .one()
-    )
-    return updated_listing
+    return _load_listing_detail(db, listing.id)
 
 
 @router.delete(
@@ -472,6 +448,12 @@ def delete_listing(
         status.HTTP_409_CONFLICT: {"description": "The listing has too many photos."},
         status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {"description": "File too large."},
         status.HTTP_415_UNSUPPORTED_MEDIA_TYPE: {"description": "Not a JPEG, PNG or WebP."},
+        # Declaring 422 replaces FastAPI's automatic "Validation Error" entry,
+        # so the description covers both cases.
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Image dimensions are too large, or invalid request "
+            "(e.g. no file).",
+        },
     },
 )
 def add_listing_image(
@@ -582,7 +564,7 @@ def delete_listing_image(
 def _get_own_listing(
     db: Session, id: int, user_id: int, *, lock: bool = False
 ) -> Listing:
-    """Return the user's listing, or raise 404 (missing/removed) or 403.
+    """Return the user's listing, or raise 404 (missing/not available) or 403.
 
     With ``lock=True`` the row stays locked (SELECT ... FOR UPDATE) until the
     transaction ends. populate_existing re-reads a row already loaded earlier
@@ -592,8 +574,8 @@ def _get_own_listing(
     if lock:
         query = query.with_for_update()
     listing = query.first()
-    # A removed listing behaves as not found, as in GET and DELETE.
-    if listing is None or listing.state.state_name == "Removed":
+    # Removed and Expired listings behave as not found, as in GET.
+    if listing is None or listing.state.state_name != "Available":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Listing not found.",
@@ -627,7 +609,12 @@ def _find_image(listing: Listing, image_id: int) -> Image:
 
 
 def _load_listing_detail(db: Session, id: int) -> Listing:
-    """Read a listing with every relationship ListingDetailOut needs."""
+    """Read a listing with every relationship ListingDetailOut needs.
+
+    Used after a write to answer with the saved listing. Loading the
+    relationships here keeps the endpoints independent of SQLAlchemy's
+    lazy-loading configuration.
+    """
     return (
         db.query(Listing)
         .options(
