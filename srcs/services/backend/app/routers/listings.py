@@ -202,6 +202,7 @@ def list_favorites(
             joinedload(Listing.owner),
             joinedload(Listing.category),
             joinedload(Listing.condition),
+            selectinload(Listing.images),
         )
         .filter(
             Favorite.user_id == current_user.id,
