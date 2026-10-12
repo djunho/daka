@@ -80,15 +80,62 @@ export async function request<T>(
   return data as T
 }
 
-// The user shape the backend returns (UserOut). Kept here next to the client so
-// the API's contract lives in one place.
-export type ApiUser = {
+// The user shapes the backend returns. Kept here next to the client so the
+// API's contract lives in one place.
+//
+// ApiPublicUser (PublicUserOut) is what anyone may see, e.g. a listing's owner.
+// ApiUser (UserOut) is the logged-in user, with the private fields on top.
+export type ApiPublicUser = {
   id: number
   user_name: string
-  email: string
   avatar: string | null
   user_location: string | null
+}
+
+export type ApiUser = ApiPublicUser & {
+  email: string
   created_at: string
+}
+
+export type ApiCategory = {
+  id: number
+  category_name: string
+}
+
+export type ApiCondition = {
+  id: number
+  condition_name: string
+}
+
+export type ApiImage = {
+  id: number
+  image_path: string
+  is_primary: boolean
+}
+
+export type ApiListingSummary = {
+  id: number
+  title: string
+  category: ApiCategory
+  condition: ApiCondition
+  listing_location: string | null
+  wish: string | null
+  owner: ApiPublicUser
+  cover_image: string | null
+  created_at: string
+}
+
+export type ApiListingDetail = ApiListingSummary & {
+  listing_dsc: string | null
+  images: ApiImage[]
+  is_favorited: boolean
+}
+
+export type ApiListingPage = {
+  items: ApiListingSummary[]
+  total: number
+  limit: number
+  offset: number
 }
 
 // --- The four auth calls, named so components read like prose. ---
@@ -137,4 +184,95 @@ export function apiUploadAvatar(file: File) {
 
 export function apiDeleteAvatar() {
   return request<ApiUser>('/auth/me/avatar', { method: 'DELETE' })
+}
+
+// Every filter is optional. Only the ones given end up in the URL.
+export type ListListingsParams = {
+  q?: string
+  category_id?: number
+  user_id?: number
+  location?: string
+  limit?: number
+  offset?: number
+}
+
+export function apiListListings(params: ListListingsParams = {}) {
+  const query = new URLSearchParams()
+
+  // Text filters: trim them, and skip empty ones so "?q=" is never sent.
+  const q = params.q?.trim()
+  const location = params.location?.trim()
+  if (q) query.set('q', q)
+  if (location) query.set('location', location)
+
+  // Numbers: compare with undefined, because 0 is a valid offset.
+  if (params.category_id !== undefined) query.set('category_id', String(params.category_id))
+  if (params.user_id !== undefined) query.set('user_id', String(params.user_id))
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+
+  const qs = query.toString()
+  return request<ApiListingPage>(qs ? `/listings?${qs}` : '/listings')
+}
+
+export function apiGetListing(id: number) {
+  return request<ApiListingDetail>(`/listings/${id}`)
+}
+
+export function apiListCategories() {
+  return request<ApiCategory[]>('/listings/categories')
+}
+
+export function apiListConditions() {
+  return request<ApiCondition[]>('/listings/conditions')
+}
+
+export type CreateListingData = {
+  title: string
+  category_id: number
+  condition_id: number
+  listing_dsc?: string | null
+  listing_location?: string | null
+  wish?: string | null
+}
+
+export function apiCreateListing(data: CreateListingData) {
+  return request<ApiListingDetail>('/listings', {
+    method: 'POST',
+    body: data,
+  })
+}
+
+// A PATCH sends only what changes, so every field becomes optional. Partial
+// keeps each field's type: title, category_id and condition_id still cannot
+// be null, matching the backend's ListingUpdateIn.
+export type UpdateListingData = Partial<CreateListingData>
+
+export function apiUpdateListing(id: number, data: UpdateListingData) {
+  return request<ApiListingDetail>(`/listings/${id}`, {
+    method: 'PATCH',
+    body: data,
+  })
+}
+
+export function apiDeleteListing(id: number) {
+  return request<void>(`/listings/${id}`, { method: 'DELETE' })
+}
+
+export function apiUploadListingImage(id: number, file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return request<ApiListingDetail>(`/listings/${id}/images`, { method: 'POST', body: form})
+}
+
+export function apiSetPrimaryListingImage(id: number, imageId: number) {
+  return request<ApiListingDetail>(`/listings/${id}/images/${imageId}/primary`, {
+    method: 'PUT'
+  })
+}
+
+export function apiDeleteListingImage(id: number, imageId: number) {
+  return request<ApiListingDetail>(`/listings/${id}/images/${imageId}`, {
+    method: 'DELETE'
+  })
 }

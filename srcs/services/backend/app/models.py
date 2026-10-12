@@ -143,8 +143,18 @@ class Listing(Base):
     category: Mapped["Category"] = relationship()
     condition: Mapped["Condition"] = relationship()
     state: Mapped["ListingState"] = relationship()
-    # One-to-many: a listing can have several photos.
-    images: Mapped[list["Image"]] = relationship(back_populates="listing")
+    # One-to-many: a listing can have several photos, kept in upload order.
+    images: Mapped[list["Image"]] = relationship(
+        back_populates="listing", order_by="Image.id"
+    )
+
+    @property
+    def cover_image(self) -> str | None:
+        """URL of the photo shown on cards: the primary one, else the oldest."""
+        for image in self.images:
+            if image.is_primary:
+                return image.image_path
+        return self.images[0].image_path if self.images else None
 
 
 # ---------------------------------------------------------------------------
