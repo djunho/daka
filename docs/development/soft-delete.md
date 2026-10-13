@@ -1,19 +1,19 @@
-# Soft Delete de Contas de Usuário
+# User Account Soft Delete
 
-Este documento descreve a implementação de soft delete de contas de usuário no backend do Daka.
+This document describes the voluntary user account soft delete implementation in the Daka backend.
 
-## Objetivo
+## Objective
 
-Quando um usuário solicita a exclusão da própria conta, os dados não são removidos fisicamente do banco. A conta é marcada como desativada e deixa de participar das funcionalidades ativas da aplicação.
+When a user requests account deletion, the data is not physically removed from the database. The account is marked as deactivated, personal fields are anonymized, and the account stops participating in the application's active features.
 
-Essa abordagem preserva informações importantes para:
+This approach preserves important information for:
 
-- moderação;
-- denúncias;
-- histórico de negociações;
-- mensagens;
-- auditoria;
-- histórico dos listings.
+- moderation;
+- reports;
+- trade history;
+- messages;
+- auditing;
+- listing history.
 
 ## Endpoint
 
@@ -21,98 +21,115 @@ Essa abordagem preserva informações importantes para:
 DELETE /api/auth/me
 ```
 
-A rota exige uma sessão válida. O usuário só pode desativar a conta associada ao próprio cookie `daka_session`.
+The route requires a valid session. A user can only deactivate the account associated with their own `daka_session` cookie.
 
-Em caso de sucesso:
+On success:
 
 ```http
 204 No Content
 ```
 
-Sem autenticação válida:
+Without valid authentication:
 
 ```http
 401 Unauthorized
 ```
 
-## Como funciona
+## How it works
 
-A rota executa as seguintes ações:
+The route performs the following actions:
 
-1. Bloqueia a linha do usuário durante a transação.
-2. Bloqueia os listings do usuário.
-3. Marca a conta com `deleted_at`.
-4. Altera os listings para o estado `Removed`.
-5. Cancela os trades abertos relacionados ao usuário ou aos seus listings.
-6. Remove os favoritos relacionados à conta ou aos listings.
-7. Remove as sessões ativas do usuário.
-8. Confirma todas as alterações em uma única transação.
-9. Remove o arquivo físico do avatar depois do `commit`.
-10. Limpa o cookie `daka_session`.
+1. Locks the user row during the transaction.
+2. Locks the user's listings.
+3. Sets `deleted_at` on the account.
+4. Anonymizes the personal fields.
+5. Changes the listings to the `Removed` state.
+6. Cancels open trades related to the user or their listings.
+7. Removes favorites related to the account or listings.
+8. Removes the user's active sessions.
+9. Commits all changes in a single transaction.
+10. Removes the physical avatar file after the `commit`.
+11. Clears the `daka_session` cookie.
 
-## Dados preservados
+## Anonymized fields
 
-O soft delete não remove fisicamente:
+After voluntary deletion, the account keeps its ID but personal fields are replaced:
 
-- o registro do usuário;
-- os listings;
-- as imagens dos listings;
-- as denúncias;
-- os trades;
-- as mensagens.
+```text
+user_name     = Deleted user
+email         = deleted-{user_id}@deleted.daka
+pass_hash     = NULL
+google_sub    = NULL
+avatar        = NULL
+user_location = NULL
+deleted_at    = current timestamp
+```
 
-Os reports não são apagados para preservar o histórico de moderação. Os listings permanecem no banco com o estado `Removed`.
+The `.daka` domain passes the API's `EmailStr` validation. Including the user ID keeps the anonymized email unique, and the original email becomes available for a new registration.
 
-## Campo `deleted_at`
+## Preserved data
 
-Foi adicionado à tabela `users`:
+Soft delete does not physically remove:
+
+- the user record;
+- listings;
+- listing images;
+- reports;
+- trades;
+- messages.
+
+Reports are preserved to maintain the moderation history. Listings remain in the database with the `Removed` state.
+
+## `deleted_at` field
+
+The following field was added to the `users` table:
 
 ```sql
 deleted_at DATETIME NULL
 ```
 
-Os valores representam:
+The values represent:
 
 ```text
-deleted_at = NULL       conta ativa
-deleted_at = data/hora  conta desativada
+deleted_at = NULL       active account
+deleted_at = timestamp  deactivated account
 ```
 
-O modelo SQLAlchemy correspondente é:
+The corresponding SQLAlchemy model field is:
 
 ```python
 deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
 ```
 
-## Autenticação após a desativação
+## Authentication after deactivation
 
-A dependência `get_current_user` verifica se o usuário associado à sessão possui `deleted_at IS NULL`.
+The `get_current_user` dependency only accepts users where `deleted_at IS NULL`.
 
-Por isso, uma sessão antiga não permite acesso depois da desativação.
+Therefore, an old session cannot be used after the account is deactivated.
 
-O login por email e senha também ignora contas desativadas. O login Google não reativa automaticamente uma conta desativada.
+Email/password login ignores deactivated accounts. Google login does not automatically reactivate a deactivated account.
 
-## Transação e concorrência
+## Transactions and concurrency
 
-As alterações são executadas em uma transação:
+The changes are executed inside a transaction:
 
 ```python
 try:
-    # alterações
+    # changes
     db.commit()
 except IntegrityError:
     db.rollback()
 ```
 
-Se ocorrer um erro de integridade, todas as alterações são revertidas e a API retorna `409 Conflict`.
+If an integrity error occurs, all changes are rolled back and the API returns `409 Conflict`.
 
-As consultas de usuário e listings usam `with_for_update()` para reduzir condições de corrida com atualizações, trades ou outras operações simultâneas.
+The user and listing queries use `with_for_update()` to reduce race conditions with updates, trades, or other simultaneous operations.
 
-## Migration para bancos existentes
+## Migration for existing databases
 
-Bancos novos recebem `deleted_at` automaticamente através do `schema.sql`.
+New databases receive `deleted_at` automatically through `schema.sql`.
 
-Volumes MariaDB existentes precisam executar:
+Existing MariaDB volumes must apply:
 
 ```sql
 ALTER TABLE users
@@ -120,7 +137,7 @@ ADD COLUMN deleted_at DATETIME NULL
 AFTER updated_at;
 ```
 
-Antes da migration, recomenda-se fazer backup:
+A backup is recommended before applying the migration:
 
 ```bash
 mkdir -p backups
@@ -136,7 +153,7 @@ docker exec daka_db mariadb-dump \
   daka > backups/daka-before-soft-delete.sql
 ```
 
-Depois, aplicar a coluna:
+Apply the column idempotently:
 
 ```bash
 docker exec daka_db mariadb \
@@ -148,7 +165,7 @@ docker exec daka_db mariadb \
       AFTER updated_at;"
 ```
 
-Confirmar a migration:
+Verify the migration:
 
 ```bash
 docker exec daka_db mariadb \
@@ -158,29 +175,29 @@ docker exec daka_db mariadb \
   -e "SHOW COLUMNS FROM users LIKE 'deleted_at';"
 ```
 
-## Teste completo
+## Complete test
 
-### 1. Iniciar os serviços
+### 1. Start the services
 
 ```bash
 docker compose -f srcs/docker-compose.yml up -d --build
 ```
 
-Verificar o estado:
+Check the status:
 
 ```bash
 docker compose -f srcs/docker-compose.yml ps
 ```
 
-O backend e o banco devem aparecer como `healthy`.
+The backend and database should appear as `healthy`.
 
-### 2. Testar a API
+### 2. Test the API
 
 ```bash
 curl -k https://localhost:8443/api/health
 ```
 
-Resultado esperado:
+Expected result:
 
 ```json
 {
@@ -189,7 +206,7 @@ Resultado esperado:
 }
 ```
 
-### 3. Criar um usuário temporário
+### 3. Create a temporary user
 
 ```bash
 curl -k -i \
@@ -202,13 +219,13 @@ curl -k -i \
   }'
 ```
 
-Resultado esperado:
+Expected result:
 
 ```http
 201 Created
 ```
 
-### 4. Fazer login e guardar a sessão
+### 4. Log in and save the session
 
 ```bash
 curl -k -i \
@@ -221,15 +238,15 @@ curl -k -i \
   }'
 ```
 
-Resultado esperado:
+Expected result:
 
 ```http
 200 OK
 ```
 
-O cookie `daka_session` será guardado em `/tmp/daka-cookies.txt`.
+The `daka_session` cookie is saved in `/tmp/daka-cookies.txt`.
 
-### 5. Criar um listing de teste
+### 5. Create a test listing
 
 ```bash
 curl -k -i \
@@ -246,13 +263,13 @@ curl -k -i \
   }'
 ```
 
-Resultado esperado:
+Expected result:
 
 ```http
 201 Created
 ```
 
-### 6. Executar o soft delete
+### 6. Execute the soft delete
 
 ```bash
 curl -k -i \
@@ -261,35 +278,32 @@ curl -k -i \
   https://localhost:8443/api/auth/me
 ```
 
-Resultado esperado:
+Expected result:
 
 ```http
 204 No Content
 ```
 
-### 7. Verificar o usuário no MariaDB
-
-Entrar no banco:
-
-```bash
-docker exec -it daka_db mariadb -u root -p daka
-```
-
-Executar:
+### 7. Verify the anonymized user
 
 ```sql
 SELECT
     id,
     user_name,
     email,
-    deleted_at
+    deleted_at,
+    pass_hash,
+    google_sub,
+    avatar,
+    user_location
 FROM users
-WHERE email = 'soft-delete-test@example.com';
+WHERE email LIKE 'deleted-%@deleted.daka'
+ORDER BY id DESC;
 ```
 
-O usuário deve continuar no banco com `deleted_at` preenchido.
+The user should remain with anonymized personal fields and a populated `deleted_at`.
 
-### 8. Verificar o listing
+### 8. Verify the listing
 
 ```sql
 SELECT
@@ -302,17 +316,19 @@ JOIN listings_states ls
 WHERE l.user_id = (
     SELECT id
     FROM users
-    WHERE email = 'soft-delete-test@example.com'
+    WHERE email LIKE 'deleted-%@deleted.daka'
+    ORDER BY id DESC
+    LIMIT 1
 );
 ```
 
-O listing deve permanecer no banco com:
+The listing should remain with:
 
 ```text
 state_name = Removed
 ```
 
-### 9. Verificar as sessões
+### 9. Verify the sessions
 
 ```sql
 SELECT *
@@ -320,45 +336,34 @@ FROM sessions
 WHERE user_id = (
     SELECT id
     FROM users
-    WHERE email = 'soft-delete-test@example.com'
+    WHERE email LIKE 'deleted-%@deleted.daka'
+    ORDER BY id DESC
+    LIMIT 1
 );
 ```
 
-O resultado deve ser vazio.
+The result should be empty.
 
-### 10. Confirmar que a conta não pode mais fazer login
+### 10. Confirm that the original email can be reused
 
-```bash
-curl -k -i \
-  -X POST https://localhost:8443/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "soft-delete-test@example.com",
-    "password": "SoftDelete-Test-123"
-  }'
-```
-
-Resultado esperado:
+Register a new account using the same original email. The expected result is:
 
 ```http
-401 Unauthorized
+201 Created
 ```
 
-## Validações realizadas
+## Validation performed
 
-A implementação foi validada com:
+The implementation was validated with:
 
-- compilação Python;
+- Python compilation;
 - `git diff --check`;
-- migration aplicada no MariaDB;
-- backend iniciado como `healthy`;
-- MariaDB iniciado como `healthy`;
-- resposta `200` no endpoint `/api/health`;
-- cadastro de usuário temporário;
-- login do usuário temporário;
-- criação de listing;
-- resposta `204` na exclusão da conta;
-- `deleted_at` preenchido no banco;
-- listing preservado com estado `Removed`;
-- sessões removidas;
-- login posterior rejeitado com `401`.
+- MariaDB migration;
+- healthy backend startup;
+- healthy MariaDB startup;
+- `200` response from `/api/health`;
+- voluntary account deletion;
+- personal data anonymization;
+- reuse of the original email after deletion;
+- listing preservation with the `Removed` state;
+- session revocation.
