@@ -133,7 +133,7 @@ class LoginIn(BaseModel):
 
 class ProfileUpdate(BaseModel):
     """Body of PATCH /api/auth/me.
-    
+
     Fields that an authenticated user may change on their profile.
 
     All fields are optional so the client can update only one value at a time.
