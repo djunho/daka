@@ -388,14 +388,7 @@ def login(
     On success the browser receives an httpOnly cookie holding the session
     token, and the body describes the user who just logged in.
     """
-    user = (
-        db.query(User)
-        .filter(
-            User.email == payload.email,
-            User.deleted_at.is_(None),
-        )
-        .first()
-    )
+    user = db.query(User).filter(User.email == payload.email).first()
 
     # Three cases collapse into one here, deliberately:
     #   - no account with that email        -> compare against the dummy hash
@@ -409,6 +402,12 @@ def login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password.",
+        )
+
+    if user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account is deactivated.",
         )
 
     _open_session(db, user, response)
@@ -534,9 +533,8 @@ def delete_me(
     db: Session = Depends(get_db),
 ) -> None:
     """Soft-delete the account and remove it from active application data."""
-    # Lock the account before changing its lifecycle state. Ending the read
-    # transaction first makes the lock wait correctly for concurrent updates.
-    # See upload_avatar: end the read transaction before locking.
+    # Lock the account first. See upload_avatar for why the read transaction
+    # must end before locking on MariaDB 11.8.
     db.rollback()
     db.refresh(current_user, with_for_update=True)
     user_id = current_user.id
@@ -579,6 +577,7 @@ def delete_me(
         # Keep the user, listings, reports, trades, messages, and images in
         # the database. Only active visibility and access are removed.
         db.query(Listing).filter(
+            Listing.user_id == user_id,
             Listing.id.in_(listing_ids),
             Listing.state_id != removed_state.id,
         ).update(
@@ -603,6 +602,12 @@ def delete_me(
             )
         ).delete(synchronize_session=False)
         current_user.deleted_at = deleted_at
+        current_user.user_name = "Deleted user"
+        current_user.email = f"deleted-{user_id}@deleted.daka"
+        current_user.pass_hash = None
+        current_user.google_sub = None
+        current_user.avatar = None
+        current_user.user_location = None
         db.query(UserSession).filter(UserSession.user_id == user_id).delete(
             synchronize_session=False
         )
@@ -611,7 +616,7 @@ def delete_me(
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Account could not be deactivated because related data remains.",
+            detail="Account desactivation could not be completed due to a database conflict.",
         )
 
     # The account is now inactive, so its private avatar file is no longer
