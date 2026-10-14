@@ -13,7 +13,15 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import Listing, ListingState, Message, Trade, TradeState, User
+from app.models import (
+    Favorite,
+    Listing,
+    ListingState,
+    Message,
+    Trade,
+    TradeState,
+    User,
+)
 from app.schemas import (
     ListingDetailOut,
     ListingSummaryOut,
@@ -25,13 +33,6 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/trades", tags=["trades"])
-
-
-def _not_implemented() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Trade endpoints are not implemented yet.",
-    )
 
 def _trade_state(db: Session, name: str) -> TradeState:
     trade_state = (
@@ -60,6 +61,18 @@ def _available_listing_state(db: Session) -> ListingState:
         )
     return listing_state
 
+def _removed_listing_state(db: Session) -> ListingState:
+    listing_state = (
+        db.query(ListingState)
+        .filter(ListingState.state_name == "Removed")
+        .first()
+    )
+    if listing_state is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Listing states are not configured.",
+        )
+    return listing_state
 
 def _load_trade(db: Session, trade_id: int) -> Trade:
     trade = (
@@ -319,8 +332,117 @@ def accept_trade(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TradeDetailOut:
-    raise _not_implemented()
+    user_id = current_user.id
 
+    # get_current_user já realizou consultas. O rollback termina essa transação
+    # de leitura antes de começarmos a adquirir locks.
+    db.rollback()
+
+    candidate = db.get(Trade, id)
+    if candidate is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trade not found.",
+        )
+
+    listing_ids = [candidate.listing_requested_id]
+    if candidate.listing_offered_id is not None:
+        listing_ids.append(candidate.listing_offered_id)
+
+    # A ordenação garante que transações concorrentes bloqueiam os anúncios
+    # sempre na mesma ordem, reduzindo a possibilidade de deadlocks.
+    locked_listings = (
+        db.query(Listing)
+        .filter(Listing.id.in_(listing_ids))
+        .order_by(Listing.id)
+        .with_for_update()
+        .all()
+    )
+    listings_by_id = {
+        listing.id: listing
+        for listing in locked_listings
+    }
+
+    trade = db.get(Trade, id, with_for_update=True)
+    if trade is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trade not found.",
+        )
+
+    requested = listings_by_id.get(trade.listing_requested_id)
+
+    offered = (
+        listings_by_id.get(trade.listing_offered_id)
+        if trade.listing_offered_id is not None
+        else None
+    )
+
+    if requested is None or (
+        trade.listing_offered_id is not None and offered is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A listing in this trade no longer exists.",
+        )
+
+    if requested.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the requested listing owner may accept this trade.",
+        )
+
+    open_state = _trade_state(db, "Open")
+    finished_state = _trade_state(db, "Finished")
+    cancelled_state = _trade_state(db, "Cancelled")
+    available_state = _available_listing_state(db)
+    removed_state = _removed_listing_state(db)
+
+    if trade.trade_state_id != open_state.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only an open trade may be accepted.",
+        )
+
+    if requested.state_id != available_state.id or (
+        offered is not None and offered.state_id != available_state.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A listing in this trade is no longer available.",
+        )
+
+    involved_listing_ids = [requested.id]
+    requested.state_id = removed_state.id
+
+    if offered is not None:
+        involved_listing_ids.append(offered.id)
+        offered.state_id = removed_state.id
+
+    trade.trade_state_id = finished_state.id
+
+    # Anúncios removidos da vitrine também deixam de ser favoritos.
+    db.query(Favorite).filter(
+        Favorite.listing_id.in_(involved_listing_ids)
+    ).delete(synchronize_session=False)
+
+    # Cancela todas as outras propostas abertas que utilizavam qualquer um
+    # dos anúncios envolvidos na troca concluída.
+    db.query(Trade).filter(
+        Trade.id != trade.id,
+        Trade.trade_state_id == open_state.id,
+        or_(
+            Trade.listing_requested_id.in_(involved_listing_ids),
+            Trade.listing_offered_id.in_(involved_listing_ids),
+        ),
+    ).update(
+        {Trade.trade_state_id: cancelled_state.id},
+        synchronize_session=False,
+    )
+
+    db.commit()
+
+    return _trade_detail(_load_trade(db, trade.id))
 
 @router.patch(
     "/{id}/cancel",
@@ -332,4 +454,42 @@ def cancel_trade(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TradeDetailOut:
-    raise _not_implemented()
+    user_id = current_user.id
+    db.rollback()
+
+    trade = db.get(Trade, id, with_for_update=True)
+    if trade is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trade not found.",
+        )
+
+    requested = db.get(Listing, trade.listing_requested_id)
+    if requested is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Requested listing no longer exists.",
+        )
+
+    is_sender = trade.sender_id == user_id
+    is_recipient = requested.user_id == user_id
+
+    if not is_sender and not is_recipient:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only trade participants may cancel this trade.",
+        )
+
+    open_state = _trade_state(db, "Open")
+    cancelled_state = _trade_state(db, "Cancelled")
+
+    if trade.trade_state_id != open_state.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only an open trade may be cancelled.",
+        )
+
+    trade.trade_state_id = cancelled_state.id
+    db.commit()
+
+    return _trade_detail(_load_trade(db, trade.id))
