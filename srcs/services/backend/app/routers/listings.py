@@ -354,7 +354,7 @@ def update_listing(
             detail="You can only edit your own listings.",
         )
 
-    if listing.state.state_name == "Removed":
+    if listing.state.state_name != "Available":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Listing not found.",
