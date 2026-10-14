@@ -36,6 +36,8 @@ from app.security import MAX_PASSWORD_BYTES
 # 42 subject does not fix a number; 8 is the common floor and NIST's minimum.
 MIN_PASSWORD_LENGTH = 8
 LISTINGS_PAGE_SIZE = 12
+DEFAULT_TRADES_PAGE_SIZE = 20
+MAX_TRADES_PAGE_SIZE = 100
 
 # ---------------------------------------------------------------------------
 # Shared pieces
@@ -342,6 +344,15 @@ class TradeSummaryOut(BaseModel):
     state: TradeStateOut
     created_at: datetime
     updated_at: datetime
+
+
+class TradePageOut(BaseModel):
+    """One page of the current user's trades."""
+
+    items: list[TradeSummaryOut]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=MAX_TRADES_PAGE_SIZE)
+    offset: int = Field(ge=0)
 
 
 class TradeDetailOut(TradeSummaryOut):

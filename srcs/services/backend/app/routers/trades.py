@@ -23,11 +23,14 @@ from app.models import (
     User,
 )
 from app.schemas import (
+    DEFAULT_TRADES_PAGE_SIZE,
+    MAX_TRADES_PAGE_SIZE,
     ListingDetailOut,
     ListingSummaryOut,
     PublicUserOut,
     TradeCreateIn,
     TradeDetailOut,
+    TradePageOut,
     TradeStateOut,
     TradeSummaryOut,
 )
@@ -264,15 +267,26 @@ def create_trade(
     return _trade_detail(_load_trade(db, trade.id))
 
 
-@router.get("", response_model=list[TradeSummaryOut], summary="List my trades")
+@router.get("", response_model=TradePageOut, summary="List my trades")
 def list_trades(
     trade_type: Literal["received", "sent"] | None = Query(
         default=None,
         alias="type",
     ),
+    limit: int = Query(
+        default=DEFAULT_TRADES_PAGE_SIZE,
+        ge=1,
+        le=MAX_TRADES_PAGE_SIZE,
+        description="Maximum number of trades to return.",
+    ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+        description="Number of trades to skip for pagination.",
+    ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[TradeSummaryOut]:
+) -> TradePageOut:
     query = (
         db.query(Trade)
         .join(Trade.requested_listing)
@@ -302,13 +316,20 @@ def list_trades(
             )
         )
 
+    total = query.count()
     trades = (
-        query
-        .order_by(Trade.created_at.desc(), Trade.id.desc())
+        query.order_by(Trade.updated_at.desc(), Trade.id.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
-    return [_trade_summary(trade) for trade in trades]
+    return TradePageOut(
+        items=[_trade_summary(trade) for trade in trades],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 @router.get(
     "/{id}", response_model=TradeDetailOut, summary="Get one trade proposal"
