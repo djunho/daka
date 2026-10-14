@@ -7,6 +7,7 @@ implemented in the next feature branch.
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -15,6 +16,7 @@ from app.dependencies import get_current_user
 from app.models import Listing, ListingState, Message, Trade, TradeState, User
 from app.schemas import (
     ListingDetailOut,
+    ListingSummaryOut,
     PublicUserOut,
     TradeCreateIn,
     TradeDetailOut,
@@ -107,6 +109,36 @@ def _trade_detail(trade: Trade) -> TradeDetailOut:
         created_at=trade.created_at,
         updated_at=trade.updated_at,
     )
+
+def _trade_summary(trade: Trade) -> TradeSummaryOut:
+    return TradeSummaryOut(
+        id=trade.id,
+        requested_listing=ListingSummaryOut.model_validate(
+            trade.requested_listing
+        ),
+        offered_listing=(
+            ListingSummaryOut.model_validate(trade.offered_listing)
+            if trade.offered_listing is not None
+            else None
+        ),
+        sender=PublicUserOut.model_validate(trade.sender),
+        recipient=PublicUserOut.model_validate(
+            trade.requested_listing.owner
+        ),
+        state=TradeStateOut.model_validate(trade.state),
+        created_at=trade.created_at,
+        updated_at=trade.updated_at,
+    )
+
+
+def _require_participant(trade: Trade, user_id: int) -> None:
+    recipient_id = trade.requested_listing.user_id
+
+    if trade.sender_id != user_id and recipient_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only trade participants may access this trade.",
+        )
 
 @router.post(
     "",
@@ -221,12 +253,49 @@ def create_trade(
 
 @router.get("", response_model=list[TradeSummaryOut], summary="List my trades")
 def list_trades(
-    trade_type: Literal["received", "sent"] | None = Query(default=None, alias="type"),
+    trade_type: Literal["received", "sent"] | None = Query(
+        default=None,
+        alias="type",
+    ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[TradeSummaryOut]:
-    raise _not_implemented()
+    query = (
+        db.query(Trade)
+        .join(Trade.requested_listing)
+        .options(
+            joinedload(Trade.requested_listing).joinedload(Listing.owner),
+            joinedload(Trade.requested_listing).joinedload(Listing.category),
+            joinedload(Trade.requested_listing).joinedload(Listing.condition),
+            joinedload(Trade.requested_listing).selectinload(Listing.images),
+            joinedload(Trade.offered_listing).joinedload(Listing.owner),
+            joinedload(Trade.offered_listing).joinedload(Listing.category),
+            joinedload(Trade.offered_listing).joinedload(Listing.condition),
+            joinedload(Trade.offered_listing).selectinload(Listing.images),
+            joinedload(Trade.sender),
+            joinedload(Trade.state),
+        )
+    )
 
+    if trade_type == "received":
+        query = query.filter(Listing.user_id == current_user.id)
+    elif trade_type == "sent":
+        query = query.filter(Trade.sender_id == current_user.id)
+    else:
+        query = query.filter(
+            or_(
+                Trade.sender_id == current_user.id,
+                Listing.user_id == current_user.id,
+            )
+        )
+
+    trades = (
+        query
+        .order_by(Trade.created_at.desc(), Trade.id.desc())
+        .all()
+    )
+
+    return [_trade_summary(trade) for trade in trades]
 
 @router.get(
     "/{id}", response_model=TradeDetailOut, summary="Get one trade proposal"
@@ -236,8 +305,9 @@ def get_trade(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TradeDetailOut:
-    raise _not_implemented()
-
+    trade = _load_trade(db, id)
+    _require_participant(trade, current_user.id)
+    return _trade_detail(trade)
 
 @router.patch(
     "/{id}/accept",
