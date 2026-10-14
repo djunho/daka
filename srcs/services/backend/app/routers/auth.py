@@ -219,11 +219,6 @@ async def google_callback(
             .first()
         )
         if existing_email is not None:
-            if existing_email.deleted_at is not None:
-                return RedirectResponse(
-                    url=f"{login_url}?error=account_deleted",
-                    status_code=status.HTTP_302_FOUND,
-                )
             # Never replace an existing Google link. A different subject with
             # the same email must not take over an already-linked account.
             if existing_email.google_sub is not None:
@@ -398,16 +393,16 @@ def login(
     # the response leaks nothing about which emails are registered.
     stored_hash = user.pass_hash if user and user.pass_hash else _DUMMY_HASH
 
-    if not verify_password(payload.password, stored_hash) or user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password.",
-        )
-
     if user.deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="This account is deactivated.",
+        )
+
+    if not verify_password(payload.password, stored_hash) or user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password.",
         )
 
     _open_session(db, user, response)
