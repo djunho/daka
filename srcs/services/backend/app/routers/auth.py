@@ -616,7 +616,7 @@ def delete_me(
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Account desactivation could not be completed due to a database conflict.",
+            detail="Account deactivation could not be completed due to a database conflict.",
         )
 
     # The account is now inactive, so its private avatar file is no longer
