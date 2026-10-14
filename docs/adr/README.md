@@ -69,3 +69,7 @@ Possible statuses:
 7. Change the status to `Accepted` once approved.
 
 ---
+
+## Index of Decisions
+
+- [ADR-0001: Location Autocomplete Strategy: Local Open-Source Dataset vs. Google Places API](0001-location-autocomplete-strategy.md)
