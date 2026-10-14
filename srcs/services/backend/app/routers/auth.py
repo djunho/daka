@@ -31,11 +31,10 @@ from app.dependencies import SESSION_COOKIE_NAME, get_current_user
 from app.media import delete_image, save_image
 from app.models import (
     Favorite,
-    Image,
     Listing,
-    Message,
-    Report,
+    ListingState,
     Trade,
+    TradeState,
     User,
     UserSession,
 )
@@ -45,6 +44,7 @@ from app.security import (
     hash_password,
     hash_session_token,
     session_expiry,
+    utcnow,
     verify_password,
 )
 
@@ -200,7 +200,14 @@ async def google_callback(
 
     # The stable Google subject is the primary lookup. Email is only the
     # fallback used to link an existing local account after Google verifies it.
-    user = db.query(User).filter(User.google_sub == google_sub).first()
+    user = (
+        db.query(User)
+        .filter(
+            User.google_sub == google_sub,
+            User.deleted_at.is_(None),
+        )
+        .first()
+    )
     if user is None:
         # Lock the matched account until this transaction commits. Without
         # this lock, concurrent callbacks could both observe an empty
@@ -386,6 +393,12 @@ def login(
     # the response leaks nothing about which emails are registered.
     stored_hash = user.pass_hash if user and user.pass_hash else _DUMMY_HASH
 
+    if user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account is deactivated.",
+        )
+
     if not verify_password(payload.password, stored_hash) or user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -514,81 +527,95 @@ def delete_me(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    """Delete the account and its listings in one transaction."""
-    # Same row lock as the avatar endpoints: a concurrent upload either
-    # finishes first (and we read its new avatar) or waits and then finds the
-    # account gone. Either way no avatar file is left behind.
-    # See upload_avatar: end the read transaction before locking.
+    """Soft-delete the account and remove it from active application data."""
+    # Lock the account first. See upload_avatar for why the read transaction
+    # must end before locking on MariaDB 11.8.
     db.rollback()
     db.refresh(current_user, with_for_update=True)
     user_id = current_user.id
     avatar = current_user.avatar
+    deleted_at = utcnow()
     listing_ids = [
         listing_id
         for (listing_id,) in db.query(Listing.id)
         .filter(Listing.user_id == user_id)
+        .with_for_update()
         .all()
     ]
 
-    # Trades can reference the user's listings from either side, and messages
-    # depend on trades. Collect the trade ids before deleting those messages.
-    trade_ids = [
-        trade_id
-        for (trade_id,) in db.query(Trade.id)
-        .filter(
+    removed_state = (
+        db.query(ListingState)
+        .filter(ListingState.state_name == "Removed")
+        .first()
+    )
+    open_trade_state = (
+        db.query(TradeState)
+        .filter(TradeState.state_name == "Open")
+        .first()
+    )
+    cancelled_trade_state = (
+        db.query(TradeState)
+        .filter(TradeState.state_name == "Cancelled")
+        .first()
+    )
+    if (
+        removed_state is None
+        or open_trade_state is None
+        or cancelled_trade_state is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account deletion states are not configured.",
+        )
+
+    try:
+        # Keep the user, listings, reports, trades, messages, and images in
+        # the database. Only active visibility and access are removed.
+        db.query(Listing).filter(
+            Listing.user_id == user_id,
+            Listing.id.in_(listing_ids),
+            Listing.state_id != removed_state.id,
+        ).update(
+            {Listing.state_id: removed_state.id},
+            synchronize_session=False,
+        )
+        db.query(Trade).filter(
             or_(
                 Trade.sender_id == user_id,
                 Trade.listing_requested_id.in_(listing_ids),
                 Trade.listing_offered_id.in_(listing_ids),
-            )
+            ),
+            Trade.trade_state_id == open_trade_state.id,
+        ).update(
+            {Trade.trade_state_id: cancelled_trade_state.id},
+            synchronize_session=False,
         )
-        .all()
-    ]
-
-    try:
-        # Remove every row that references the user's account or listings before
-        # deleting the parent rows. All operations share this transaction.
-        db.query(Message).filter(
-            or_(
-                Message.msg_sender == user_id,
-                Message.trade_id.in_(trade_ids),
-            )
-        ).delete(synchronize_session=False)
-        db.query(Report).filter(
-            or_(
-                Report.reporter_id == user_id,
-                Report.reported_user_id == user_id,
-                Report.reported_listings_id.in_(listing_ids),
-            )
-        ).delete(synchronize_session=False)
         db.query(Favorite).filter(
             or_(
                 Favorite.user_id == user_id,
                 Favorite.listing_id.in_(listing_ids),
             )
         ).delete(synchronize_session=False)
-        db.query(Trade).filter(Trade.id.in_(trade_ids)).delete(
-            synchronize_session=False
-        )
-        db.query(Image).filter(Image.listing_id.in_(listing_ids)).delete(
-            synchronize_session=False
-        )
-        db.query(Listing).filter(Listing.id.in_(listing_ids)).delete(
-            synchronize_session=False
-        )
+        current_user.deleted_at = deleted_at
+        current_user.user_name = "Deleted user"
+        current_user.email = f"deleted-{user_id}@deleted.daka"
+        current_user.pass_hash = None
+        current_user.google_sub = None
+        current_user.avatar = None
+        current_user.user_location = None
         db.query(UserSession).filter(UserSession.user_id == user_id).delete(
             synchronize_session=False
         )
-        db.query(User).filter(User.id == user_id).delete(synchronize_session=False)
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Account could not be deleted because related data remains.",
+            detail="Account deactivation could not be completed due to a database conflict.",
         )
 
-    # The rows are gone; now the uploaded avatar file can go too.
+    # The account is now inactive, so its private avatar file is no longer
+    # needed. File cleanup happens after commit so a rollback keeps the data.
     delete_image(avatar)
 
     response.delete_cookie(
