@@ -46,6 +46,9 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+    # Soft deletion keeps the row for reports and historical records while
+    # preventing the account from authenticating or appearing as active.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     # One-to-many: a user publishes many listings. ``back_populates`` links this
     # to Listing.owner so both sides stay consistent in memory.

@@ -43,7 +43,13 @@ def get_current_user(
     # incoming cookie the same way and look the row up by that hash.
     token_hash = hash_session_token(daka_session)
     session = (
-        db.query(UserSession).filter(UserSession.token_hash == token_hash).first()
+        db.query(UserSession)
+        .join(User)
+        .filter(
+            UserSession.token_hash == token_hash,
+            User.deleted_at.is_(None),
+        )
+        .first()
     )
 
     if session is None:

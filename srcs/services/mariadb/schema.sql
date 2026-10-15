@@ -9,7 +9,8 @@ CREATE TABLE users (
 	user_location 	VARCHAR(100),
 	created_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		ON UPDATE CURRENT_TIMESTAMP
+		ON UPDATE CURRENT_TIMESTAMP,
+	deleted_at 		DATETIME NULL
 );
 
 -- One row per active login. Logging out deletes the row, which is what makes

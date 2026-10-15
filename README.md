@@ -8,7 +8,7 @@ Toma-la dáka! This is under the scope of our 42 transcendence project.
 
 # Resources
 
-Google authentication
+## Google authentication
 The complete Google OAuth setup and testing instructions are documented in [`docs/development/google-authentication.md`](docs/development/google-authentication.md).
 
 Before testing Google authentication:

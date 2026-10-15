@@ -75,5 +75,14 @@ docker logs daka_db
 Contributing
 - If you change the schema, update `dakaERD.md` and `schema.sql` together and provide migration notes in this README.
 
+Migration notes
+- Soft delete adds `users.deleted_at DATETIME NULL`.
+- New databases receive this column from `schema.sql`.
+- Existing MariaDB volumes must apply:
+
+```sql
+ALTER TABLE users ADD COLUMN deleted_at DATETIME NULL AFTER updated_at;
+```
+
 License
 - Follow the repository LICENSE in the project root.

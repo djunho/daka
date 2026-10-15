@@ -38,6 +38,7 @@ MIN_PASSWORD_LENGTH = 8
 LISTINGS_PAGE_SIZE = 12
 DEFAULT_TRADES_PAGE_SIZE = 20
 MAX_TRADES_PAGE_SIZE = 100
+MAX_LISTINGS_PAGE_SIZE = 100
 
 # ---------------------------------------------------------------------------
 # Shared pieces
@@ -136,6 +137,7 @@ class LoginIn(BaseModel):
 
 class ProfileUpdate(BaseModel):
     """Body of PATCH /api/auth/me.
+
     Fields that an authenticated user may change on their profile.
 
     All fields are optional so the client can update only one value at a time.
@@ -306,7 +308,7 @@ class ListingPageOut(BaseModel):
 
     items: list[ListingSummaryOut]
     total: int = Field(ge=0)
-    limit: int = Field(ge=1, le=LISTINGS_PAGE_SIZE)
+    limit: int = Field(ge=1, le=MAX_LISTINGS_PAGE_SIZE)
     offset: int = Field(ge=0)
 
 
