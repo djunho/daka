@@ -19,6 +19,7 @@ SQLAlchemy models describe rows in a table. These describe messages on the
 wire. They look similar and are deliberately not the same thing.
 """
 from datetime import datetime
+from typing import Literal
 
 from pydantic import (
     BaseModel,
@@ -314,3 +315,38 @@ class ListingDetailOut(ListingSummaryOut):
     listing_dsc: str | None
     images: list[ImageOut] = Field(default_factory=list)
     is_favorited: bool = False
+
+
+# ===========================================================================
+# TRADES SCHEMAS
+# ===========================================================================
+class TradeCreateIn(BaseModel):
+    """Body accepted by POST /api/trades."""
+
+    listing_requested_id: int = Field(gt=0)
+    listing_offered_id: int | None = Field(default=None, gt=0)
+    initial_msg: str = Field(min_length=1, max_length=250)
+
+
+class TradeStateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    state_name: Literal["Open", "Finished", "Cancelled"]
+
+
+class TradeSummaryOut(BaseModel):
+    id: int
+    requested_listing: ListingSummaryOut
+    offered_listing: ListingSummaryOut | None
+    sender: PublicUserOut
+    recipient: PublicUserOut
+    state: TradeStateOut
+    created_at: datetime
+    updated_at: datetime
+
+
+class TradeDetailOut(TradeSummaryOut):
+    requested_listing: ListingDetailOut
+    offered_listing: ListingDetailOut | None
+    initial_msg: str
