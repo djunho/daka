@@ -61,11 +61,8 @@ export default function Login() {
   // "Signing in…" instead of letting the user submit twice.
   const [submitting, setSubmitting] = useState(false)
 
-  // A form-level error (as opposed to per-field): the message the SERVER sends
-  // back, like "An account with this email already exists." or "Incorrect
-  // email or password." Field errors catch mistakes before we call the API;
-  // this catches what only the server can know. Also receives Google OAuth errors.
-  const [formError, setFormError] = useState<string | null>(null)
+  // Form-, OAuth-, or account action feedback banner. Can be an error or a success notice.
+  const [banner, setBanner] = useState<{ type: 'error' | 'success'; message: string } | null>(null)
 
   // From the context: the current user and login/register actions.
   const { user, login, register } = useAuth()
@@ -100,22 +97,31 @@ export default function Login() {
     // https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1
     switch (errorParam) {
       case 'access_denied':
-        setFormError('A autenticação com a Google foi cancelada.')
+        setBanner({ type: 'error', message: 'A autenticação com a Google foi cancelada.' })
         break
       case 'google_unconfigured':
-        setFormError('A autenticação com a Google não se encontra configurada.')
+        setBanner({ type: 'error', message: 'A autenticação com a Google não se encontra configurada.' })
         break
       case 'google_conflict':
-        setFormError('Este email já está associado a outra conta Google.')
+        setBanner({ type: 'error', message: 'Este email já está associado a outra conta Google.' })
         break
       case 'auth_failed':
-        setFormError('Não foi possível concluir a autenticação com a Google.')
+        setBanner({ type: 'error', message: 'Não foi possível concluir a autenticação com a Google.' })
         break
       case 'server_error':
-        setFormError('Ocorreu um erro no servidor durante a autenticação. Por favor, tenta novamente.')
+        setBanner({
+          type: 'error',
+          message: 'Ocorreu um erro no servidor durante a autenticação. Por favor, tenta novamente.',
+        })
+        break
+      case 'account_deleted':
+        setBanner({ type: 'success', message: 'A tua conta foi eliminada com sucesso.' })
         break
       default:
-        setFormError('Ocorreu um erro ao tentar autenticar com a Google. Por favor, tenta novamente.')
+        setBanner({
+          type: 'error',
+          message: 'Ocorreu um erro ao tentar autenticar com a Google. Por favor, tenta novamente.',
+        })
         break
     }
 
@@ -138,7 +144,7 @@ export default function Login() {
   function switchTab(next: 'signin' | 'signup') {
     setTab(next)
     setErrors({})
-    setFormError(null)
+    setBanner(null)
   }
 
   // Runs on submit. Returns the errors it found (empty object = all good) so
@@ -171,7 +177,7 @@ export default function Login() {
 
   async function handleSubmit() {
     // Clear any leftover server error from a previous attempt.
-    setFormError(null)
+    setBanner(null)
 
     const found = validate()
     setErrors(found)
@@ -190,11 +196,13 @@ export default function Login() {
     } catch (err) {
       // The API layer throws ApiError with the server's message in .message.
       // Anything else is unexpected, but still worth showing something for.
-      setFormError(
-        err instanceof ApiError
-          ? err.message
-          : 'Algo correu mal. Por favor, tenta novamente.',
-      )
+      setBanner({
+        type: 'error',
+        message:
+          err instanceof ApiError
+            ? err.message
+            : 'Algo correu mal. Por favor, tenta novamente.',
+      })
     } finally {
       // Runs whether we succeeded or failed, so the button never stays stuck.
       setSubmitting(false)
@@ -237,18 +245,28 @@ export default function Login() {
             </button>
           </div>
 
-          {/* Form- or OAuth-level error alert */}
-          {formError && (
+          {/* Form-, OAuth-, or account action feedback banner */}
+          {banner && (
             <div
-              role="alert"
-              className="flex items-center justify-between gap-3 text-sm text-accent bg-accent/10 border border-accent/30 rounded-lg px-4 py-3 mb-6"
+              role={banner.type === 'error' ? 'alert' : 'status'}
+              className={
+                'flex items-center justify-between gap-3 text-sm rounded-lg px-4 py-3 mb-6 ' +
+                (banner.type === 'error'
+                  ? 'text-accent bg-accent/10 border border-accent/30'
+                  : 'text-brand bg-brand/10 border border-brand/30')
+              }
             >
-              <span>{formError}</span>
+              <span>{banner.message}</span>
               <button
                 type="button"
-                onClick={() => setFormError(null)}
-                className="text-accent/70 hover:text-accent font-bold p-1 transition-colors leading-none"
-                aria-label="Fechar alerta"
+                onClick={() => setBanner(null)}
+                className={
+                  'font-bold p-1 transition-colors leading-none ' +
+                  (banner.type === 'error'
+                    ? 'text-accent/70 hover:text-accent'
+                    : 'text-brand/70 hover:text-brand')
+                }
+                aria-label="Fechar mensagem"
               >
                 ✕
               </button>

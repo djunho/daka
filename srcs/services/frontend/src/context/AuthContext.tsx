@@ -12,6 +12,7 @@ import {
   apiLogin,
   apiLogout,
   apiMe,
+  apiDeleteAccount,
   apiRegister,
   apiUpdateProfile,
   apiUploadAvatar,
@@ -35,6 +36,7 @@ type AuthContextValue = {
   register: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   updateProfile: (data: UpdateProfileData) => Promise<void>
+  deleteAccount: () => Promise<void>
   uploadAvatar: (file: File) => Promise<void>
   removeAvatar: () => Promise<void>
 }
@@ -90,6 +92,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(updated)
   }
 
+  async function deleteAccount() {
+    await apiDeleteAccount()
+    setUser(null)
+    // Perform a clean window-level navigation rather than React Router's SPA navigate.
+    // Account deletion is a destructive terminal event; this ensures all in-memory client
+    // state is flushed and prevents <RequireAuth> from intercepting the URL transition
+    // and stripping the ?error= query parameter.
+    window.location.replace('/login?error=account_deleted')
+  }
+
   // Both avatar calls answer with the updated user, so storing it here is
   // enough for every avatar on screen (profile page, header menu) to change.
   async function uploadAvatar(file: File) {
@@ -124,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         logout,
         updateProfile,
+        deleteAccount,
         uploadAvatar,
         removeAvatar,
       }}

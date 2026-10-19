@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import ProfileField from '../components/ProfileField'
@@ -8,7 +8,7 @@ import { useObjectUrl } from '../hooks/useObjectUrl'
 import { ApiError } from '../lib/api'
 
 export default function Profile() {
-  const { user, updateProfile, uploadAvatar, removeAvatar } = useAuth()
+  const { user, updateProfile, uploadAvatar, removeAvatar, deleteAccount } = useAuth()
 
   const [isEditing, setIsEditing] = useState(false)
   const [formData, setFormData] = useState({
@@ -16,8 +16,15 @@ export default function Profile() {
       user_location: user?.user_location || '',
       email: user?.email || '',
   })
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  // Focus management refs for delete confirmation modal dialog (W3C ARIA Dialog)
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null)
+  const cancelBtnRef = useRef<HTMLButtonElement>(null)
+  const confirmBtnRef = useRef<HTMLButtonElement>(null)
 
   // Avatar changes wait here while editing and are only sent by "Guardar
   // alterações", together with the other fields. avatarFile is a new photo
@@ -36,6 +43,72 @@ export default function Profile() {
       })
     }
   }, [user])
+
+  const prevShowDeleteModalRef = useRef(false)
+
+  // Manage delete confirmation modal accessibility:
+  // - Focus trap inside dialog (Tab / Shift+Tab cycling)
+  // - Close on Escape
+  // - Prevent body scroll behind dialog
+  // Hooks must stay above the early return (Rules of Hooks).
+  useEffect(() => {
+    if (!showDeleteModal) return
+
+    const originalOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    // Move initial focus to the Cancel button inside the dialog
+    const frameId = requestAnimationFrame(() => {
+      cancelBtnRef.current?.focus()
+    })
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !deleting) {
+        setShowDeleteModal(false)
+        return
+      }
+
+      // Trap focus between Cancel and Confirm buttons while dialog is open
+      if (e.key === 'Tab') {
+        const cancelBtn = cancelBtnRef.current
+        const confirmBtn = confirmBtnRef.current
+        if (!cancelBtn || !confirmBtn) return
+
+        if (document.activeElement !== cancelBtn && document.activeElement !== confirmBtn) {
+          e.preventDefault()
+          cancelBtn.focus()
+          return
+        }
+
+        if (e.shiftKey) {
+          if (document.activeElement === cancelBtn) {
+            e.preventDefault()
+            confirmBtn.focus()
+          }
+        } else {
+          if (document.activeElement === confirmBtn) {
+            e.preventDefault()
+            cancelBtn.focus()
+          }
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      cancelAnimationFrame(frameId)
+      window.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = originalOverflow
+    }
+  }, [showDeleteModal, deleting])
+
+  // Restore focus to the trigger button when dialog closes
+  useEffect(() => {
+    if (prevShowDeleteModalRef.current && !showDeleteModal) {
+      deleteTriggerRef.current?.focus()
+    }
+    prevShowDeleteModalRef.current = showDeleteModal
+  }, [showDeleteModal])
 
   if (!user) {
       return (
@@ -131,6 +204,22 @@ export default function Profile() {
         setError(err instanceof ApiError ? err.message : 'Erro desconhecido ao guardar alterações. Por favor, tente novamente.')
     } finally {
         setSaving(false)
+    }
+  }
+
+  async function handleDeleteAccount() {
+    setError(null)
+    setDeleting(true)
+    try {
+      await deleteAccount()
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : 'Erro desconhecido. Não foi possível eliminar a conta. Por favor, tenta novamente.'
+      )
+      setDeleting(false)
+      setShowDeleteModal(false)
     }
   }
 
@@ -268,8 +357,88 @@ export default function Profile() {
             onChange={(e) => setFormData({ ...formData, user_location: e.target.value })}
           />
         </div>
-        <Link className="btn" to="/">Voltar ao início</Link>
+
+        {/* --- Danger Zone (Account Deletion) --- */}
+        <div className="pt-6 border-t border-line">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-accent/20 bg-accent/[0.02]">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-accent">
+                Zona de perigo
+              </h3>
+              <p className="text-xs text-muted mt-1">
+                Ao eliminares a tua conta, todos os teus anúncios e propostas de troca serão cancelados de forma definitiva.
+              </p>
+            </div>
+            <button
+              ref={deleteTriggerRef}
+              type="button"
+              onClick={() => setShowDeleteModal(true)}
+              disabled={isEditing || saving || deleting}
+              className={
+                'px-3.5 py-2 text-xs font-semibold text-accent border border-accent/30 rounded-xl transition-colors whitespace-nowrap self-start ' +
+                'enabled:hover:bg-accent enabled:hover:text-white ' +
+                'disabled:opacity-40 disabled:pointer-events-none ' +
+                'sm:self-auto'
+              }
+            >
+              Eliminar conta
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <Link className="btn" to="/">Voltar ao início</Link>
+        </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-account-title"
+          aria-describedby="delete-account-description"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40 backdrop-blur-xs"
+        >
+          <div className="w-full max-w-md bg-surface border border-line rounded-2xl p-6 shadow-2xl space-y-4">
+            <h3 id="delete-account-title" className="text-base font-bold text-ink">
+              Eliminar conta
+            </h3>
+            <p id="delete-account-description" className="text-sm text-muted">
+              Tens a certeza de que desejas eliminar a tua conta? Esta ação é irreversível. Todos os teus anúncios serão removidos e as tuas propostas de troca ativas serão canceladas.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-3">
+              <button
+                ref={cancelBtnRef}
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleting}
+                className={
+                  'px-4 py-2 text-xs font-medium text-muted transition-colors ' +
+                  'enabled:hover:text-ink ' +
+                  'disabled:opacity-40 disabled:pointer-events-none'
+                }
+              >
+                Cancelar
+              </button>
+              <button
+                ref={confirmBtnRef}
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleting}
+                className={
+                  'px-4 py-2 text-xs font-semibold bg-accent text-white rounded-xl transition-opacity ' +
+                  'enabled:hover:opacity-90 ' +
+                  'disabled:opacity-40 disabled:pointer-events-none'
+                }
+              >
+                {deleting ? 'A eliminar...' : 'Sim, eliminar conta'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
