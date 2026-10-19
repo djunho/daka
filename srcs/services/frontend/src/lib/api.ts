@@ -162,6 +162,10 @@ export function apiMe() {
   return request<ApiUser>('/auth/me')
 }
 
+export function apiDeleteAccount(): Promise<void> {
+  return request<void>('/auth/me', { method: 'DELETE' })
+}
+
 export type UpdateProfileData = {
   user_name?: string
   user_location?: string | null
