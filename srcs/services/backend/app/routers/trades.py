@@ -7,7 +7,7 @@ implemented in the next feature branch.
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -183,11 +183,33 @@ def create_trade(
     available_state = _available_listing_state(db)
     open_state = _trade_state(db, "Open")
 
-    requested = db.get(
-        Listing,
-        payload.listing_requested_id,
-        with_for_update=True,
+    listing_ids = [payload.listing_requested_id]
+
+    if payload.listing_offered_id is not None:
+        listing_ids.append(payload.listing_offered_id)
+
+    listing_ids.sort()
+
+    locked_listings = db.scalars(
+        select(Listing)
+        .where(Listing.id.in_(listing_ids))
+        .order_by(Listing.id.asc())
+        .with_for_update()
+    ).all()
+
+    listings_by_id = {
+        listing.id: listing
+        for listing in locked_listings
+    }
+
+    requested = listings_by_id.get(payload.listing_requested_id)
+
+    offered = (
+        listings_by_id.get(payload.listing_offered_id)
+        if payload.listing_offered_id is not None
+        else None
     )
+
     if requested is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -206,15 +228,7 @@ def create_trade(
             detail="Requested listing is not available.",
         )
 
-    offered = None
-
     if payload.listing_offered_id is not None:
-        offered = db.get(
-            Listing,
-            payload.listing_offered_id,
-            with_for_update=True,
-        )
-
         if offered is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -370,8 +384,10 @@ def accept_trade(
     if candidate.listing_offered_id is not None:
         listing_ids.append(candidate.listing_offered_id)
 
-    # A ordenação garante que transações concorrentes bloqueiam os anúncios
-    # sempre na mesma ordem, reduzindo a possibilidade de deadlocks.
+    # Termina a transação de leitura iniciada por candidate.
+    # Os IDs necessários já estão guardados em listing_ids.
+    db.rollback()
+
     locked_listings = (
         db.query(Listing)
         .filter(Listing.id.in_(listing_ids))
@@ -384,7 +400,13 @@ def accept_trade(
         for listing in locked_listings
     }
 
-    trade = db.get(Trade, id, with_for_update=True)
+    trade = db.get(
+        Trade,
+        id,
+        with_for_update=True,
+        populate_existing=True,
+    )
+
     if trade is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
