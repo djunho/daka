@@ -36,6 +36,8 @@ from app.security import MAX_PASSWORD_BYTES
 # 42 subject does not fix a number; 8 is the common floor and NIST's minimum.
 MIN_PASSWORD_LENGTH = 8
 LISTINGS_PAGE_SIZE = 12
+DEFAULT_TRADES_PAGE_SIZE = 20
+MAX_TRADES_PAGE_SIZE = 100
 MAX_LISTINGS_PAGE_SIZE = 100
 
 # ---------------------------------------------------------------------------
@@ -322,10 +324,27 @@ class ListingDetailOut(ListingSummaryOut):
 # ===========================================================================
 class TradeCreateIn(BaseModel):
     """Body accepted by POST /api/trades."""
-
     listing_requested_id: int = Field(gt=0)
     listing_offered_id: int | None = Field(default=None, gt=0)
     initial_msg: str = Field(min_length=1, max_length=250)
+
+    @field_validator("initial_msg")
+    @classmethod
+    def strip_initial_msg(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError(
+                "initial message must contain visible characters"
+            )
+        return cleaned
+
+    @model_validator(mode="after")
+    def require_different_listings(self) -> "TradeCreateIn":
+        if self.listing_offered_id == self.listing_requested_id:
+            raise ValueError(
+                "requested and offered listings must be different"
+            )
+        return self
 
 
 class TradeStateOut(BaseModel):
@@ -344,6 +363,15 @@ class TradeSummaryOut(BaseModel):
     state: TradeStateOut
     created_at: datetime
     updated_at: datetime
+
+
+class TradePageOut(BaseModel):
+    """One page of the current user's trades."""
+
+    items: list[TradeSummaryOut]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=MAX_TRADES_PAGE_SIZE)
+    offset: int = Field(ge=0)
 
 
 class TradeDetailOut(TradeSummaryOut):
