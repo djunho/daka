@@ -9,7 +9,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from app.database import get_db
 from app.dependencies import get_current_user
@@ -167,18 +167,7 @@ def create_trade(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TradeDetailOut:
-    message = payload.initial_msg.strip()
-    if not message:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Initial message must contain visible characters.",
-        )
-
-    if payload.listing_offered_id == payload.listing_requested_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Requested and offered listings must be different.",
-        )
+    message = payload.initial_msg
 
     available_state = _available_listing_state(db)
     open_state = _trade_state(db, "Open")
@@ -247,6 +236,28 @@ def create_trade(
                 detail="Offered listing is not available.",
             )
 
+    existing_open_trade_query = db.query(Trade).filter(
+        Trade.sender_id == current_user.id,
+        Trade.listing_requested_id == requested.id,
+        Trade.trade_state_id == open_state.id,
+    )
+
+    if offered is None:
+        existing_open_trade_query = existing_open_trade_query.filter(
+            Trade.listing_offered_id.is_(None)
+        )
+    else:
+        existing_open_trade_query = existing_open_trade_query.filter(
+            Trade.listing_offered_id == offered.id
+        )
+
+    existing_open_trade = existing_open_trade_query.with_for_update().first()
+    if existing_open_trade is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have an identical open trade proposal.",
+        )
+
     trade = Trade(
         listing_requested_id=requested.id,
         sender_id=current_user.id,
@@ -305,10 +316,10 @@ def list_trades(
         db.query(Trade)
         .join(Trade.requested_listing)
         .options(
-            joinedload(Trade.requested_listing).joinedload(Listing.owner),
-            joinedload(Trade.requested_listing).joinedload(Listing.category),
-            joinedload(Trade.requested_listing).joinedload(Listing.condition),
-            joinedload(Trade.requested_listing).selectinload(Listing.images),
+            contains_eager(Trade.requested_listing).joinedload(Listing.owner),
+            contains_eager(Trade.requested_listing).joinedload(Listing.category),
+            contains_eager(Trade.requested_listing).joinedload(Listing.condition),
+            contains_eager(Trade.requested_listing).selectinload(Listing.images),
             joinedload(Trade.offered_listing).joinedload(Listing.owner),
             joinedload(Trade.offered_listing).joinedload(Listing.category),
             joinedload(Trade.offered_listing).joinedload(Listing.condition),
@@ -378,6 +389,26 @@ def accept_trade(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Trade not found.",
+        )
+
+    candidate_requested = db.get(Listing, candidate.listing_requested_id)
+    if candidate_requested is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Requested listing no longer exists.",
+        )
+
+    if candidate_requested.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the requested listing owner may accept this trade.",
+        )
+
+    open_state_id = _trade_state(db, "Open").id
+    if candidate.trade_state_id != open_state_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only an open trade may be accepted.",
         )
 
     listing_ids = [candidate.listing_requested_id]
@@ -500,27 +531,48 @@ def cancel_trade(
     user_id = current_user.id
     db.rollback()
 
-    trade = db.get(Trade, id, with_for_update=True)
-    if trade is None:
+    candidate = db.get(Trade, id)
+    if candidate is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Trade not found.",
         )
 
-    requested = db.get(Listing, trade.listing_requested_id)
-    if requested is None:
+    candidate_requested = db.get(Listing, candidate.listing_requested_id)
+    if candidate_requested is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Requested listing no longer exists.",
         )
 
-    is_sender = trade.sender_id == user_id
-    is_recipient = requested.user_id == user_id
+    is_sender = candidate.sender_id == user_id
+    is_recipient = candidate_requested.user_id == user_id
 
     if not is_sender and not is_recipient:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only trade participants may cancel this trade.",
+        )
+
+    open_state_id = _trade_state(db, "Open").id
+    if candidate.trade_state_id != open_state_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only an open trade may be cancelled.",
+        )
+
+    db.rollback()
+
+    trade = db.get(
+        Trade,
+        id,
+        with_for_update=True,
+        populate_existing=True,
+    )
+    if trade is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trade not found.",
         )
 
     open_state = _trade_state(db, "Open")
