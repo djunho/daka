@@ -210,7 +210,7 @@ class TradesTestCase(unittest.TestCase):
         self.assertEqual(received_page.limit, 1)
         self.assertEqual(received_page.offset, 1)
         self.assertEqual(len(received_page.items), 1)
-        self.assertIn(received_page.items[0].id, {sent_trade.id, other_trade.id})
+        self.assertEqual(received_page.items[0].id, sent_trade.id)
 
     def test_trade_detail_is_restricted_to_participants(self) -> None:
         trade = self._create(self.sender, self.offered)
