@@ -20,7 +20,7 @@ def get_public_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PublicProfileOut:
-    """Return a logged-in user's name and currently available listings."""
+    """Return the requested user's public profile and currently available listings."""
     user = (
         db.query(User)
         .filter(
