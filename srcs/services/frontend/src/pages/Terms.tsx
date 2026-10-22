@@ -2,129 +2,153 @@
 export default function Terms() {
   return (
     <main className="page max-w-3xl mx-auto px-4 py-12 text-ink">
-      <header className="mb-8">
+      <header className="mb-8 pb-4 border-b border-line">
         <h1 className="page-title text-3xl md:text-4xl font-bold font-display mb-3">
-          Termos e Condições
+          Termos de Serviço
         </h1>
         <p className="text-sm text-muted">
-          Texto base de referência oficial (gov.pt)
+          Última atualização: Outubro de 2026 · Plataforma Daka
         </p>
       </header>
 
       <section className="space-y-4 mb-8 text-base leading-relaxed">
         <p>
-          O portal gov.pt disponibiliza informação sobre milhares de serviços
-          públicos, organizando e clarificando informação relativa a:
-          procedimentos, canais de atendimento, suporte, moradas e horários.
+          A plataforma Daka (<em>&ldquo;Toma-lá, dá-cá&rdquo;</em>) disponibiliza
+          um espaço comunitário para facilitar o contacto entre utilizadores para a{' '}
+          <strong>troca direta de artigos em segunda mão</strong>.
         </p>
         <p>
-          Além de disponibilizar ligações para outros portais ou aplicações, o
-          portal gov.pt também permite realizar vários serviços digitais, tais
-          como: alterar a morada, renovar o Cartão de Cidadão, consultar
-          certidões permanentes, submeter pedidos de licenciamento para a
-          atividade económica, entre muitos outros.
+          Além de disponibilizar a publicação e pesquisa de anúncios, a plataforma
+          permite realizar várias ações, tais como: propor e negociar trocas
+          diretas entre membros, gerir anúncios próprios e guardar artigos favoritos.
         </p>
         <p>
-          Os serviços disponíveis diretamente no portal gov.pt são
-          desenvolvidos e mantidos pela Agência para a Reforma Tecnológica do
-          Estado, IP (ARTE), nalguns casos, em colaboração com outras entidades
-          públicas.
+          <strong>Princípio de trocas sem dinheiro:</strong> O Daka não é uma loja
+          online nem um intermediário financeiro. A plataforma destina-se
+          estritamente a trocas de bens em espécie, sendo proibida qualquer
+          cobrança de valores, venda por dinheiro ou envio de quantias monetárias
+          entre utilizadores.
         </p>
         <p>
-          Alguns serviços podem ter termos e condições próprios. Deve lê-los com
-          atenção, bem como as instruções de realização do serviço.
+          O acesso e a utilização da plataforma Daka são gratuitos e implicam a
+          aceitação plena e sem reservas dos presentes Termos de Serviço.
         </p>
       </section>
 
       <section className="mb-8">
         <h2 className="text-2xl font-bold font-display mb-4">
-          Conteúdos do portal gov.pt
+          Conteúdos e Responsabilidade dos Utilizadores
         </h2>
         <div className="space-y-4 text-base leading-relaxed">
           <p>
-            Qualquer site poderá criar links para o portal gov.pt, estando
-            expressamente proibido:
+            O conteúdo e o logótipo da plataforma Daka estão protegidos por
+            direitos de autor e propriedade intelectual. Qualquer utilizador pode
+            partilhar hiperligações para o Daka, desde que tal não tenha
+            finalidades comerciais nem sugira falsamente uma associação ou apoio
+            oficial por parte da plataforma.
+          </p>
+          <p>
+            Cada utilizador é inteiramente responsável pelos conteúdos que publica
+            na plataforma, incluindo títulos, descrições, fotografias de artigos e
+            mensagens privadas de negociação. O utilizador compromete-se a agir de
+            boa-fé, garantindo a veracidade das informações e o rigor na
+            descrição do estado dos artigos disponibilizados para troca.
+          </p>
+          <h3 className="text-xl font-bold font-display pt-2">
+            Artigos Estritamente Proibidos
+          </h3>
+          <p>
+            É expressamente proibido publicar anúncios, oferecer ou solicitar a
+            troca de bens cuja circulação ou cedência viole a legislação portuguesa
+            ou comunitária, nomeadamente:
           </p>
           <ul className="list-disc pl-6 space-y-2">
             <li>
-              cobrar aos utilizadores pelo clique no link para o portal gov.pt
+              Armas de fogo, munições, réplicas, armas brancas ou material explosivo;
             </li>
             <li>
-              afirmar que o site é apoiado ou associado ao portal gov.pt
+              Substâncias estupefacientes, psicotrópicas ou medicamentos (sujeitos ou
+              não a receita médica);
+            </li>
+            <li>
+              Artigos contrafeitos, cópias pirateadas ou quaisquer bens que violem
+              direitos de propriedade intelectual ou direitos de autor;
+            </li>
+            <li>
+              Animais vivos, espécies protegidas ou produtos de origem animal restritos;
+            </li>
+            <li>
+              Documentos de identificação, cartões de crédito ou dados pessoais de
+              terceiros;
+            </li>
+            <li>
+              Bens furtados, extraviados ou de proveniência ilegítima.
             </li>
           </ul>
-          <p className="font-semibold">
-            &ldquo;gov.pt&rdquo; é uma marca registada.
-          </p>
-          <p>
-            O conteúdo do portal gov.pt é alvo de direitos de autor e direitos
-            conexos bem como de direitos de propriedade industrial.
-          </p>
-          <p>
-            Desde que refira o portal gov.pt como fonte, o utilizador pode copiar
-            ou utilizar gratuitamente conteúdos existentes no portal para uso
-            pessoal ou público, desde que não tenha finalidades lucrativas ou
-            ofensivas.
-          </p>
-          <p>
-            O portal gov.pt faz ligações para outros sites de entidades públicas
-            ou privadas, os conteúdos ou problemas na utilização desses sites não
-            são da responsabilidade do portal gov.pt.
-          </p>
-          <p>
-            Para utilizar conteúdos de sites para onde o portal gov.pt faz
-            ligação deve obter autorização junto da entidade responsável pelo
-            site.
-          </p>
-          <p>
-            O portal gov.pt não se responsabiliza por conteúdos associados a ele
-            noutros sites.
-          </p>
-          <p>
-            Os conteúdos do portal gov.pt são fornecidos pelas entidades
-            responsáveis pelos serviços. Deve esclarecer qualquer dúvida sobre um
-            serviço com a entidade responsável.
-          </p>
-          <p>
-            O portal gov.pt pretende que a informação esteja o mais completa e
-            rigorosa possível e procura corrigir todos os erros que lhe sejam
-            comunicados.
+          <p className="text-sm text-muted">
+            O Daka reserva-se o direito de remover de imediato quaisquer anúncios
+            que violem estas proibições, podendo proceder à suspensão ou encerramento
+            da conta infratora.
           </p>
         </div>
       </section>
 
       <section className="mb-8">
-        <h2 className="text-2xl font-bold font-display mb-4">Aviso legal</h2>
+        <h2 className="text-2xl font-bold font-display mb-4">
+          Aviso Legal e Limitação de Responsabilidade
+        </h2>
         <div className="space-y-4 text-base leading-relaxed">
           <p>
-            Os conteúdos neste portal não estabelecem qualquer relação
-            contratual com a Agência para a Reforma Tecnológica do Estado ou com
-            o portal gov.pt. Assim, não respondem por qualquer perda ou dano,
-            direto ou indireto, sofrido por qualquer utilizador relativamente à
-            informação deste portal.
+            Nos termos do Decreto-Lei n.º 7/2004, a plataforma Daka atua como
+            mero prestador intermediário de serviços de alojamento da informação.
+            Os conteúdos disponibilizados não estabelecem qualquer relação
+            comercial ou contratual entre os utilizadores e o Daka.
           </p>
           <p>
-            A Agência para a Reforma Tecnológica do Estado e o portal gov.pt não
-            são responsáveis pela exatidão, qualidade, segurança ou legalidade
-            dos conteúdos, produtos ou serviços deste portal que sejam fornecidos
-            por outros organismos.
+            A plataforma não inspeciona previamente os bens e não é responsável
+            pela exatidão das descrições, pela qualidade, segurança ou legalidade
+            dos artigos trocados entre utilizadores, nem por eventuais perdas, danos
+            ou litígios decorrentes das trocas acordadas.
           </p>
+
+          <h3 className="text-xl font-bold font-display pt-2">
+            Segurança em Trocas Presenciais
+          </h3>
           <p>
-            A Agência para a Reforma Tecnológica do Estado e o portal gov.pt
-            fazem o esforço para que os conteúdos neste portal estejam o mais
-            atualizados possível. No entanto, não podem garantir que um documento
-            ou informação disponível neste portal esteja de acordo com o texto
-            adotado oficialmente.
+            Como as trocas dependem da entrega física direta acordada entre
+            particulares, recomendamos vivamente as seguintes medidas de segurança:
           </p>
+          <ul className="list-disc pl-6 space-y-2">
+            <li>
+              Marcar os encontros sempre em <strong>locais públicos, movimentados e bem
+              iluminados</strong> (estações de transportes, centros comerciais ou cafés);
+            </li>
+            <li>
+              Fazer-se acompanhar por outra pessoa sempre que possível;
+            </li>
+            <li>
+              Examinar cuidadosamente o artigo e verificar o seu funcionamento antes
+              de dar a troca por concluída;
+            </li>
+            <li>
+              Recusar qualquer pedido de transferência monetária, pagamento de
+              portes ou depósito antecipado.
+            </li>
+          </ul>
+
+          <h3 className="text-xl font-bold font-display pt-2">
+            Encerramento de Conta e Lei Aplicável
+          </h3>
           <p>
-            Assim, só a versão dos atos publicados no Diário da República é
-            considerada autêntica.
+            O utilizador pode encerrar a sua conta a qualquer momento nas definições
+            de perfil. A infração reiterada destes termos, a publicação de artigos
+            proibidos ou condutas lesivas resultarão no encerramento imediato da
+            conta.
           </p>
-          <p>
-            Antes de fazer algo com base no conteúdo deste portal garanta que
-            não tem dúvidas e que conhece todas as variáveis do processo. Em
-            caso de dúvidas contacte a entidade responsável pelo serviço ou um
-            profissional.
+          <p className="text-sm text-muted">
+            Os presentes Termos de Serviço regem-se pela lei portuguesa. Para a
+            resolução de eventuais litígios emergentes da utilização da plataforma,
+            é competente o foro da Comarca do Porto.
           </p>
         </div>
       </section>
