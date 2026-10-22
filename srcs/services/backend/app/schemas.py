@@ -322,9 +322,13 @@ class ListingDetailOut(ListingSummaryOut):
 class PublicProfileOut(BaseModel):
     """Public profile data returned when viewing another active user."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_name: str
     avatar: str | None
+    user_location: str | None
+    created_at: datetime
     listings: list[ListingSummaryOut] = Field(default_factory=list)
 
 

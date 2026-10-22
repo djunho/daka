@@ -56,5 +56,7 @@ def get_public_profile(
         id=user.id,
         user_name=user.user_name,
         avatar=user.avatar,
+        user_location=user.user_location,
+        created_at=user.created_at,
         listings=[ListingSummaryOut.model_validate(listing) for listing in listings],
     )
