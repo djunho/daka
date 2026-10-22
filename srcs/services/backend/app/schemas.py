@@ -319,6 +319,15 @@ class ListingDetailOut(ListingSummaryOut):
     is_favorited: bool = False
 
 
+class PublicProfileOut(BaseModel):
+    """Public profile data returned when viewing another active user."""
+
+    id: int
+    user_name: str
+    avatar: str | None
+    listings: list[ListingSummaryOut] = Field(default_factory=list)
+
+
 # ===========================================================================
 # TRADES SCHEMAS
 # ===========================================================================
