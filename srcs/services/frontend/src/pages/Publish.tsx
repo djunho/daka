@@ -25,6 +25,9 @@ interface FormErrors {
   listing_dsc?: string
 }
 
+// Maximum number of photos per listing, mirroring backend MAX_IMAGES_PER_LISTING.
+const MAX_PHOTOS = 6
+
 interface PhotoThumbnailProps {
   file: File
   index: number
@@ -129,8 +132,8 @@ export default function Publish() {
     e.target.value = ''
     if (files.length === 0) return
 
-    if (photos.length + files.length > 6) {
-      setPhotoError('Podes adicionar no máximo 6 fotografias por anúncio.')
+    if (photos.length + files.length > MAX_PHOTOS) {
+      setPhotoError(`Podes adicionar no máximo ${MAX_PHOTOS} fotografias por anúncio.`)
       return
     }
 
@@ -154,11 +157,12 @@ export default function Publish() {
   }
 
   const handleRemovePhoto = (indexToRemove: number) => {
+    // Prevent removal of photos that were already successfully uploaded to the backend
+    if (indexToRemove < uploadedPhotosCountRef.current) {
+      return
+    }
     setPhotos((prev) => prev.filter((_, i) => i !== indexToRemove))
     setPhotoError(null)
-    if (indexToRemove < uploadedPhotosCountRef.current) {
-      uploadedPhotosCountRef.current = Math.max(0, uploadedPhotosCountRef.current - 1)
-    }
   }
 
   // Client-side validation mirroring backend ListingCreateIn schema
@@ -343,7 +347,6 @@ export default function Publish() {
                   setTitle(e.target.value)
                   if (errors.title) setErrors((prev) => ({ ...prev, title: undefined }))
                 }}
-                maxLength={150}
                 placeholder="Ex.: Bicicleta de montanha em bom estado"
                 aria-invalid={Boolean(errors.title)}
                 aria-describedby={errors.title ? 'title-error' : undefined}
@@ -462,7 +465,6 @@ export default function Publish() {
                   setWish(e.target.value)
                   if (errors.wish) setErrors((prev) => ({ ...prev, wish: undefined }))
                 }}
-                maxLength={1000}
                 placeholder="Ex.: Livros de ficção científica, jogos de tabuleiro ou material de pintura"
                 aria-invalid={Boolean(errors.wish)}
                 aria-describedby={errors.wish ? 'wish-error' : undefined}
@@ -494,7 +496,6 @@ export default function Publish() {
                   setDescription(e.target.value)
                   if (errors.listing_dsc) setErrors((prev) => ({ ...prev, listing_dsc: undefined }))
                 }}
-                maxLength={2000}
                 placeholder="Descreve o teu artigo com mais pormenores: tempo de utilização, funcionamento, acessórios incluídos ou pequenas marcas de desgaste."
                 aria-invalid={Boolean(errors.listing_dsc)}
                 aria-describedby={errors.listing_dsc ? 'description-error' : undefined}
@@ -515,7 +516,7 @@ export default function Publish() {
                 <label className="text-xs uppercase tracking-wider font-bold text-muted">
                   Fotografias do artigo <span className="text-muted font-normal lowercase">(opcional)</span>
                 </label>
-                <span className="text-[11px] text-muted">{photos.length}/6</span>
+                <span className="text-[11px] text-muted">{photos.length}/{MAX_PHOTOS}</span>
               </div>
               <p className="text-xs text-muted mb-3">
                 A primeira foto será a capa do anúncio. Formatos aceites: JPEG, PNG ou WebP até 2 MB cada.
@@ -527,12 +528,12 @@ export default function Publish() {
                     key={`${file.name}-${file.size}-${file.lastModified}`}
                     file={file}
                     index={index}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || index < uploadedPhotosCountRef.current}
                     onRemove={handleRemovePhoto}
                   />
                 ))}
 
-                {photos.length < 6 && (
+                {photos.length < MAX_PHOTOS && (
                   <label
                     className={`w-24 h-24 sm:w-28 sm:h-28 rounded-xl border-2 border-dashed border-line bg-paper/50 flex flex-col items-center justify-center transition-colors text-muted shrink-0 ${
                       isSubmitting
@@ -568,8 +569,13 @@ export default function Publish() {
             <div className="pt-6 border-t border-line flex flex-col-reverse sm:flex-row items-center justify-end gap-3">
               <Link
                 to="/"
+                tabIndex={isSubmitting ? -1 : 0}
+                aria-disabled={isSubmitting}
+                onClick={(e) => {
+                  if (isSubmitting) e.preventDefault()
+                }}
                 className={`w-full sm:w-auto px-5 py-2.5 rounded-full text-sm font-semibold text-muted hover:text-ink text-center transition-colors ${
-                  isSubmitting ? 'pointer-events-none opacity-40' : ''
+                  isSubmitting ? 'pointer-events-none opacity-40 cursor-not-allowed' : ''
                 }`}
               >
                 Cancelar
