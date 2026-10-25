@@ -60,7 +60,7 @@ function PhotoThumbnail({ file, index, disabled = false, onRemove }: PhotoThumbn
           type="button"
           onClick={() => onRemove(index)}
           aria-label={`Remover foto ${index + 1}`}
-          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-surface/90 text-accent hover:bg-surface border border-line/40 flex items-center justify-center text-xs shadow-sm transition-transform hover:scale-110"
+          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-surface/90 text-accent hover:bg-surface border border-line/40 flex items-center justify-center text-xs shadow-sm transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-accent"
         >
           ✕
         </button>
@@ -537,24 +537,31 @@ export default function Publish() {
                     className={`w-24 h-24 sm:w-28 sm:h-28 rounded-xl border-2 border-dashed border-line bg-paper/50 flex flex-col items-center justify-center transition-colors text-muted shrink-0 ${
                       isSubmitting
                         ? 'opacity-40 cursor-not-allowed'
-                        : 'hover:border-brand hover:bg-paper hover:text-brand cursor-pointer'
+                        : 'hover:border-brand hover:bg-paper hover:text-brand focus-within:border-brand focus-within:text-brand focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2 cursor-pointer'
                     }`}
                   >
-                    <span className="text-2xl leading-none font-light">+</span>
+                    <span className="text-2xl leading-none font-light" aria-hidden="true">+</span>
                     <span className="text-[11px] font-medium mt-1">Adicionar</span>
                     <input
                       type="file"
                       accept={IMAGE_ACCEPT}
                       multiple
                       disabled={isSubmitting}
-                      className="hidden"
+                      className="sr-only"
+                      aria-label="Adicionar fotografias"
+                      aria-invalid={Boolean(photoError)}
+                      aria-describedby={photoError ? 'photo-error' : undefined}
                       onChange={handlePhotoSelect}
                     />
                   </label>
                 )}
               </div>
 
-              {photoError && <p className="text-xs text-accent mt-2">{photoError}</p>}
+              {photoError && (
+                <p id="photo-error" className="text-xs text-accent mt-2">
+                  {photoError}
+                </p>
+              )}
             </div>
 
             {/* Form footer actions */}
