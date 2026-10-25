@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, type FormEvent, type ChangeEvent } from 'react'
+import { useState, useEffect, useCallback, useRef, type FormEvent, type ChangeEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   apiListCategories,
   apiListConditions,
   apiCreateListing,
+  apiUpdateListing,
   apiUploadListingImage,
   ApiCategory,
   ApiCondition,
@@ -93,6 +94,10 @@ export default function Publish() {
   const [submittingStatus, setSubmittingStatus] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
+  // Track created listing ID and uploaded photos count to prevent duplicate listings on retry
+  const createdListingIdRef = useRef<number | null>(null)
+  const uploadedPhotosCountRef = useRef(0)
+
   const loadMetadata = useCallback(async () => {
     setIsLoadingMeta(true)
     setMetaError(null)
@@ -129,7 +134,15 @@ export default function Publish() {
       return
     }
 
+    const existingKeys = new Set(photos.map((p) => `${p.name}-${p.size}-${p.lastModified}`))
     for (const f of files) {
+      const key = `${f.name}-${f.size}-${f.lastModified}`
+      if (existingKeys.has(key)) {
+        setPhotoError(`A fotografia "${f.name}" já foi adicionada.`)
+        return
+      }
+      existingKeys.add(key)
+
       const err = validateImage(f)
       if (err) {
         setPhotoError(`${f.name}: ${err}`)
@@ -143,6 +156,9 @@ export default function Publish() {
   const handleRemovePhoto = (indexToRemove: number) => {
     setPhotos((prev) => prev.filter((_, i) => i !== indexToRemove))
     setPhotoError(null)
+    if (indexToRemove < uploadedPhotosCountRef.current) {
+      uploadedPhotosCountRef.current = Math.max(0, uploadedPhotosCountRef.current - 1)
+    }
   }
 
   // Client-side validation mirroring backend ListingCreateIn schema
@@ -180,7 +196,22 @@ export default function Publish() {
     }
 
     setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+
+    const firstErrorField = (Object.keys(newErrors) as Array<keyof FormErrors>)[0]
+    if (firstErrorField) {
+      const fieldInputIds: Record<keyof FormErrors, string> = {
+        title: 'title',
+        category_id: 'category',
+        condition_id: 'condition',
+        listing_location: 'listing_location',
+        wish: 'wish',
+        listing_dsc: 'description',
+      }
+      document.getElementById(fieldInputIds[firstErrorField])?.focus()
+      return false
+    }
+
+    return true
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -204,19 +235,27 @@ export default function Publish() {
         listing_dsc: description.trim() || null,
       }
 
-      // Create listing record first to obtain its generated ID
-      const newListing = await apiCreateListing(payload)
+      // Create listing record first or resume if already created on prior partial failure
+      let listingId = createdListingIdRef.current
+      if (listingId === null) {
+        const newListing = await apiCreateListing(payload)
+        listingId = newListing.id
+        createdListingIdRef.current = listingId
+      } else {
+        // If the listing was already created on a previous attempt, sync any edits
+        // made by the user before resuming photo uploads.
+        await apiUpdateListing(listingId, payload)
+      }
 
-      // Sequentially upload photos to POST /api/listings/{id}/images
-      if (photos.length > 0) {
-        for (let i = 0; i < photos.length; i++) {
-          setSubmittingStatus(`A enviar fotografia ${i + 1} de ${photos.length}…`)
-          await apiUploadListingImage(newListing.id, photos[i])
-        }
+      // Sequentially upload remaining photos to POST /api/listings/{id}/images
+      for (let i = uploadedPhotosCountRef.current; i < photos.length; i++) {
+        setSubmittingStatus(`A enviar fotografia ${i + 1} de ${photos.length}…`)
+        await apiUploadListingImage(listingId, photos[i])
+        uploadedPhotosCountRef.current = i + 1
       }
 
       // Redirect user to the newly created listing page
-      navigate(`/listing/${newListing.id}`)
+      navigate(`/listing/${listingId}`)
     } catch (err) {
       setSubmitError(
         err instanceof ApiError
@@ -306,11 +345,17 @@ export default function Publish() {
                 }}
                 maxLength={150}
                 placeholder="Ex.: Bicicleta de montanha em bom estado"
+                aria-invalid={Boolean(errors.title)}
+                aria-describedby={errors.title ? 'title-error' : undefined}
                 className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                   errors.title ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
                 }`}
               />
-              {errors.title && <p className="text-xs text-accent mt-1">{errors.title}</p>}
+              {errors.title && (
+                <p id="title-error" className="text-xs text-accent mt-1">
+                  {errors.title}
+                </p>
+              )}
             </div>
 
             {/* Category and Condition grid */}
@@ -327,6 +372,8 @@ export default function Publish() {
                     setCategoryId(e.target.value ? Number(e.target.value) : '')
                     if (errors.category_id) setErrors((prev) => ({ ...prev, category_id: undefined }))
                   }}
+                  aria-invalid={Boolean(errors.category_id)}
+                  aria-describedby={errors.category_id ? 'category-error' : undefined}
                   className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                     errors.category_id ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
                   }`}
@@ -338,7 +385,11 @@ export default function Publish() {
                     </option>
                   ))}
                 </select>
-                {errors.category_id && <p className="text-xs text-accent mt-1">{errors.category_id}</p>}
+                {errors.category_id && (
+                  <p id="category-error" className="text-xs text-accent mt-1">
+                    {errors.category_id}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -353,6 +404,8 @@ export default function Publish() {
                     setConditionId(e.target.value ? Number(e.target.value) : '')
                     if (errors.condition_id) setErrors((prev) => ({ ...prev, condition_id: undefined }))
                   }}
+                  aria-invalid={Boolean(errors.condition_id)}
+                  aria-describedby={errors.condition_id ? 'condition-error' : undefined}
                   className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                     errors.condition_id ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
                   }`}
@@ -364,7 +417,11 @@ export default function Publish() {
                     </option>
                   ))}
                 </select>
-                {errors.condition_id && <p className="text-xs text-accent mt-1">{errors.condition_id}</p>}
+                {errors.condition_id && (
+                  <p id="condition-error" className="text-xs text-accent mt-1">
+                    {errors.condition_id}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -381,7 +438,11 @@ export default function Publish() {
                   if (errors.listing_location) setErrors((prev) => ({ ...prev, listing_location: undefined }))
                 }}
               />
-              {errors.listing_location && <p className="text-xs text-accent mt-1">{errors.listing_location}</p>}
+              {errors.listing_location && (
+                <p id="location-error" className="text-xs text-accent mt-1">
+                  {errors.listing_location}
+                </p>
+              )}
             </div>
 
             {/* What you want in return (Wish) */}
@@ -403,11 +464,17 @@ export default function Publish() {
                 }}
                 maxLength={1000}
                 placeholder="Ex.: Livros de ficção científica, jogos de tabuleiro ou material de pintura"
+                aria-invalid={Boolean(errors.wish)}
+                aria-describedby={errors.wish ? 'wish-error' : undefined}
                 className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                   errors.wish ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
                 }`}
               />
-              {errors.wish && <p className="text-xs text-accent mt-1">{errors.wish}</p>}
+              {errors.wish && (
+                <p id="wish-error" className="text-xs text-accent mt-1">
+                  {errors.wish}
+                </p>
+              )}
             </div>
 
             {/* Description */}
@@ -429,11 +496,17 @@ export default function Publish() {
                 }}
                 maxLength={2000}
                 placeholder="Descreve o teu artigo com mais pormenores: tempo de utilização, funcionamento, acessórios incluídos ou pequenas marcas de desgaste."
+                aria-invalid={Boolean(errors.listing_dsc)}
+                aria-describedby={errors.listing_dsc ? 'description-error' : undefined}
                 className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors resize-y disabled:opacity-50 disabled:cursor-not-allowed ${
                   errors.listing_dsc ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
                 }`}
               />
-              {errors.listing_dsc && <p className="text-xs text-accent mt-1">{errors.listing_dsc}</p>}
+              {errors.listing_dsc && (
+                <p id="description-error" className="text-xs text-accent mt-1">
+                  {errors.listing_dsc}
+                </p>
+              )}
             </div>
 
             {/* Photos */}
@@ -451,7 +524,7 @@ export default function Publish() {
               <div className="flex flex-wrap gap-3 items-center">
                 {photos.map((file, index) => (
                   <PhotoThumbnail
-                    key={`${file.name}-${file.lastModified}-${index}`}
+                    key={`${file.name}-${file.size}-${file.lastModified}`}
                     file={file}
                     index={index}
                     disabled={isSubmitting}

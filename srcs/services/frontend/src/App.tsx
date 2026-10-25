@@ -44,23 +44,18 @@ export default function App() {
                 </RequireAuth>
             } />
             <Route path="/listing/:id" element={<ListingDetail />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
+
+            {/* ---- Private routes ----
+                RequireAuth (src/components/RequireAuth.tsx) redirects logged-out
+                visitors to /login. The real protection is on the backend; this
+                is only so they don't hit a broken page. */}
             <Route path="/publish" element={
                 <RequireAuth>
                     <Publish />
                 </RequireAuth>
             } />
-            <Route path="/privacy" element={<Privacy />} />
-            <Route path="/terms" element={<Terms />} />
-
-            {/* ---- Private routes ----
-                Wrap each in <RequireAuth> once its page exists, e.g.:
-                  <Route
-                    path="/publish"
-                    element={<RequireAuth><Publish /></RequireAuth>}
-                  />
-                RequireAuth (src/components/RequireAuth.tsx) redirects logged-out
-                visitors to /login. The real protection is on the backend; this
-                is only so they don't hit a broken page. */}
 
             <Route path="*" element={<NotFound />} />
           </Route>
