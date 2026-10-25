@@ -5,6 +5,43 @@ import Avatar from '../components/Avatar'
 import ListingCard from '../components/ListingCard'
 import { mockUsers } from '../data/mockUsers'
 import { mockListings } from '../data/mockListings'
+import type { ApiCategory, ApiCondition, ApiListingSummary } from '../lib/api'
+import type { CategoryId, Condition, Listing } from '../types/listing'
+import type { PublicUser } from '../types/user'
+
+// TEMPORARY until #93: the mocks use the old listing shape, while ListingCard
+// now takes the API shape. Delete this block when the page uses GET /users/{id}.
+// Ids and English names are the ones in mariadb/seeds.sql.
+const MOCK_CATEGORY: Record<CategoryId, ApiCategory> = {
+  roupa: { id: 2, category_name: 'Clothing' },
+  eletronica: { id: 5, category_name: 'Electronics' },
+  casa: { id: 7, category_name: 'Home' },
+  livros: { id: 1, category_name: 'Books' },
+  plantas: { id: 9, category_name: 'Other' },
+  colecionaveis: { id: 3, category_name: 'Collectibles' },
+  outros: { id: 9, category_name: 'Other' },
+}
+
+const MOCK_CONDITION: Record<Condition, ApiCondition> = {
+  'novo': { id: 1, condition_name: 'New' },
+  'como novo': { id: 2, condition_name: 'Like New' },
+  'usado': { id: 4, condition_name: 'Fair' },
+  'com marcas': { id: 4, condition_name: 'Fair' },
+}
+
+function toApiListing(listing: Listing, owner: PublicUser): ApiListingSummary {
+  return {
+    id: Number(listing.id),
+    title: listing.title,
+    category: MOCK_CATEGORY[listing.category],
+    condition: MOCK_CONDITION[listing.condition],
+    listing_location: listing.location,
+    wish: listing.wants,
+    owner,
+    cover_image: null,
+    created_at: '',
+  }
+}
 
 export default function UserProfile() {
   const { id } = useParams<{ id: string }>()
@@ -17,13 +54,13 @@ export default function UserProfile() {
   )
 
   // Memoize filtered listings and declare hook before early return (Rules of Hooks).
-  // TODO: Replace mockListings.filter with real API fetch (e.g. GET /api/listings?owner_id=:id)
-  // once the backend endpoint is implemented.
+  // TODO(#93): Replace the mocks with GET /api/users/{id}, which returns the
+  // user and their available listings already in the API shape.
   const userListings = useMemo(() => {
     if (!profileUser) return []
-    return mockListings.filter(
-      (listing) => listing.owner.toLowerCase() === profileUser.user_name.toLowerCase(),
-    )
+    return mockListings
+      .filter((listing) => listing.owner.toLowerCase() === profileUser.user_name.toLowerCase())
+      .map((listing) => toApiListing(listing, profileUser))
   }, [profileUser])
 
   if (!profileUser) {
