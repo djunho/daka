@@ -1,10 +1,14 @@
-import { useState, useEffect, useCallback, type ChangeEvent } from 'react'
+import { useState, useEffect, useCallback, type FormEvent, type ChangeEvent } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import {
   apiListCategories,
   apiListConditions,
+  apiCreateListing,
+  apiUploadListingImage,
   ApiCategory,
   ApiCondition,
   ApiError,
+  CreateListingData,
 } from '../lib/api'
 import LocationAutocomplete from '../components/LocationAutocomplete'
 import { useObjectUrl } from '../hooks/useObjectUrl'
@@ -23,10 +27,11 @@ interface FormErrors {
 interface PhotoThumbnailProps {
   file: File
   index: number
+  disabled?: boolean
   onRemove: (index: number) => void
 }
 
-function PhotoThumbnail({ file, index, onRemove }: PhotoThumbnailProps) {
+function PhotoThumbnail({ file, index, disabled = false, onRemove }: PhotoThumbnailProps) {
   const previewUrl = useObjectUrl(file)
 
   return (
@@ -41,33 +46,36 @@ function PhotoThumbnail({ file, index, onRemove }: PhotoThumbnailProps) {
         <div className="w-full h-full bg-paper animate-pulse" />
       )}
 
-      {/* Badge da Foto Principal (Capa) */}
+      {/* Primary photo badge (cover image) */}
       {index === 0 && (
         <span className="absolute bottom-1.5 left-1.5 bg-ink/80 text-surface text-[10px] font-semibold px-2 py-0.5 rounded-md backdrop-blur-xs">
           Principal
         </span>
       )}
 
-      {/* Botão de remoção */}
-      <button
-        type="button"
-        onClick={() => onRemove(index)}
-        aria-label={`Remover foto ${index + 1}`}
-        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-surface/90 text-accent hover:bg-surface border border-line/40 flex items-center justify-center text-xs shadow-sm transition-transform hover:scale-110"
-      >
-        ✕
-      </button>
+      {/* Photo removal button */}
+      {!disabled && (
+        <button
+          type="button"
+          onClick={() => onRemove(index)}
+          aria-label={`Remover foto ${index + 1}`}
+          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-surface/90 text-accent hover:bg-surface border border-line/40 flex items-center justify-center text-xs shadow-sm transition-transform hover:scale-110"
+        >
+          ✕
+        </button>
+      )}
     </div>
   )
 }
 
 export default function Publish() {
+  const navigate = useNavigate()
   const [categories, setCategories] = useState<ApiCategory[]>([])
   const [conditions, setConditions] = useState<ApiCondition[]>([])
   const [isLoadingMeta, setIsLoadingMeta] = useState(true)
   const [metaError, setMetaError] = useState<string | null>(null)
 
-  // Estado dos campos do formulário
+  // Form input fields state
   const [title, setTitle] = useState('')
   const [categoryId, setCategoryId] = useState<number | ''>('')
   const [conditionId, setConditionId] = useState<number | ''>('')
@@ -76,9 +84,14 @@ export default function Publish() {
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
 
-  // Estado das fotografias
+  // Photo selection state
   const [photos, setPhotos] = useState<File[]>([])
   const [photoError, setPhotoError] = useState<string | null>(null)
+
+  // Form submission lifecycle state
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submittingStatus, setSubmittingStatus] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const loadMetadata = useCallback(async () => {
     setIsLoadingMeta(true)
@@ -132,7 +145,7 @@ export default function Publish() {
     setPhotoError(null)
   }
 
-  // Validação client-side rigorosa
+  // Client-side validation mirroring backend ListingCreateIn schema
   const validate = (): boolean => {
     const newErrors: FormErrors = {}
     const trimmedTitle = title.trim()
@@ -170,10 +183,56 @@ export default function Publish() {
     return Object.keys(newErrors).length === 0
   }
 
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setSubmitError(null)
+
+    if (!validate()) {
+      return
+    }
+
+    setIsSubmitting(true)
+    setSubmittingStatus('A publicar anúncio…')
+
+    try {
+      const payload: CreateListingData = {
+        title: title.trim(),
+        category_id: Number(categoryId),
+        condition_id: Number(conditionId),
+        listing_location: location.trim() || null,
+        wish: wish.trim() || null,
+        listing_dsc: description.trim() || null,
+      }
+
+      // Create listing record first to obtain its generated ID
+      const newListing = await apiCreateListing(payload)
+
+      // Sequentially upload photos to POST /api/listings/{id}/images
+      if (photos.length > 0) {
+        for (let i = 0; i < photos.length; i++) {
+          setSubmittingStatus(`A enviar fotografia ${i + 1} de ${photos.length}…`)
+          await apiUploadListingImage(newListing.id, photos[i])
+        }
+      }
+
+      // Redirect user to the newly created listing page
+      navigate(`/listing/${newListing.id}`)
+    } catch (err) {
+      setSubmitError(
+        err instanceof ApiError
+          ? err.message
+          : 'Não foi possível publicar o anúncio. Por favor, tenta novamente.',
+      )
+    } finally {
+      setIsSubmitting(false)
+      setSubmittingStatus(null)
+    }
+  }
+
   return (
     <main className="max-w-2xl mx-auto px-4 py-8">
       <div className="bg-surface border border-line rounded-2xl p-6 sm:p-8 shadow-sm">
-        {/* Cabeçalho */}
+        {/* Header */}
         <div className="border-b border-line pb-4 mb-6">
           <h1 className="font-display text-2xl font-bold text-ink">Publicar anúncio</h1>
           <p className="text-sm text-muted mt-1">
@@ -181,7 +240,7 @@ export default function Publish() {
           </p>
         </div>
 
-        {/* Estado: A carregar */}
+        {/* Metadata loading state */}
         {isLoadingMeta && (
           <div className="py-12 text-center">
             <div className="inline-block w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin mb-3" />
@@ -189,7 +248,7 @@ export default function Publish() {
           </div>
         )}
 
-        {/* Estado: Erro ao carregar */}
+        {/* Metadata error state */}
         {!isLoadingMeta && metaError && (
           <div className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-center my-4">
             <p className="text-sm text-accent mb-3">{metaError}</p>
@@ -203,17 +262,32 @@ export default function Publish() {
           </div>
         )}
 
-        {/* Formulário com Campos */}
+        {/* Listing creation form */}
         {!isLoadingMeta && !metaError && (
           <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              validate()
-            }}
+            onSubmit={handleSubmit}
             className="space-y-6"
             noValidate
           >
-            {/* Título */}
+            {/* Submission error alert */}
+            {submitError && (
+              <div
+                className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-accent text-sm flex items-center justify-between gap-3"
+                role="alert"
+              >
+                <span>{submitError}</span>
+                <button
+                  type="button"
+                  onClick={() => setSubmitError(null)}
+                  className="text-accent hover:text-ink text-xs font-bold p-1 transition-colors"
+                  aria-label="Fechar alerta"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Title */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label htmlFor="title" className="text-xs uppercase tracking-wider font-bold text-muted">
@@ -224,6 +298,7 @@ export default function Publish() {
               <input
                 id="title"
                 type="text"
+                disabled={isSubmitting}
                 value={title}
                 onChange={(e) => {
                   setTitle(e.target.value)
@@ -231,14 +306,14 @@ export default function Publish() {
                 }}
                 maxLength={150}
                 placeholder="Ex.: Bicicleta de montanha em bom estado"
-                className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors ${
+                className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                   errors.title ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
                 }`}
               />
               {errors.title && <p className="text-xs text-accent mt-1">{errors.title}</p>}
             </div>
 
-            {/* Categoria e Condição em grid */}
+            {/* Category and Condition grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="category" className="block text-xs uppercase tracking-wider font-bold text-muted mb-1.5">
@@ -246,12 +321,13 @@ export default function Publish() {
                 </label>
                 <select
                   id="category"
+                  disabled={isSubmitting}
                   value={categoryId}
                   onChange={(e) => {
                     setCategoryId(e.target.value ? Number(e.target.value) : '')
                     if (errors.category_id) setErrors((prev) => ({ ...prev, category_id: undefined }))
                   }}
-                  className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink focus:outline-none transition-colors ${
+                  className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                     errors.category_id ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
                   }`}
                 >
@@ -271,12 +347,13 @@ export default function Publish() {
                 </label>
                 <select
                   id="condition"
+                  disabled={isSubmitting}
                   value={conditionId}
                   onChange={(e) => {
                     setConditionId(e.target.value ? Number(e.target.value) : '')
                     if (errors.condition_id) setErrors((prev) => ({ ...prev, condition_id: undefined }))
                   }}
-                  className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink focus:outline-none transition-colors ${
+                  className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                     errors.condition_id ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
                   }`}
                 >
@@ -291,12 +368,13 @@ export default function Publish() {
               </div>
             </div>
 
-            {/* Localização com Autocomplete */}
+            {/* Standardized Location Autocomplete */}
             <div>
               <LocationAutocomplete
                 id="listing_location"
                 label="Localização de preferência"
                 value={location}
+                disabled={isSubmitting}
                 placeholder="Escreve uma localidade (ex.: Guimarães, Porto, Lisboa)"
                 onChange={(val) => {
                   setLocation(val)
@@ -306,7 +384,7 @@ export default function Publish() {
               {errors.listing_location && <p className="text-xs text-accent mt-1">{errors.listing_location}</p>}
             </div>
 
-            {/* O que procuro em troca (Wish) */}
+            {/* What you want in return (Wish) */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label htmlFor="wish" className="text-xs uppercase tracking-wider font-bold text-muted">
@@ -317,6 +395,7 @@ export default function Publish() {
               <input
                 id="wish"
                 type="text"
+                disabled={isSubmitting}
                 value={wish}
                 onChange={(e) => {
                   setWish(e.target.value)
@@ -324,14 +403,14 @@ export default function Publish() {
                 }}
                 maxLength={1000}
                 placeholder="Ex.: Livros de ficção científica, jogos de tabuleiro ou material de pintura"
-                className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors ${
+                className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                   errors.wish ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
                 }`}
               />
               {errors.wish && <p className="text-xs text-accent mt-1">{errors.wish}</p>}
             </div>
 
-            {/* Descrição */}
+            {/* Description */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label htmlFor="description" className="text-xs uppercase tracking-wider font-bold text-muted">
@@ -342,6 +421,7 @@ export default function Publish() {
               <textarea
                 id="description"
                 rows={4}
+                disabled={isSubmitting}
                 value={description}
                 onChange={(e) => {
                   setDescription(e.target.value)
@@ -349,14 +429,14 @@ export default function Publish() {
                 }}
                 maxLength={2000}
                 placeholder="Descreve o teu artigo com mais pormenores: tempo de utilização, funcionamento, acessórios incluídos ou pequenas marcas de desgaste."
-                className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors resize-y ${
+                className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors resize-y disabled:opacity-50 disabled:cursor-not-allowed ${
                   errors.listing_dsc ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
                 }`}
               />
               {errors.listing_dsc && <p className="text-xs text-accent mt-1">{errors.listing_dsc}</p>}
             </div>
 
-            {/* Fotografias */}
+            {/* Photos */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs uppercase tracking-wider font-bold text-muted">
@@ -374,18 +454,26 @@ export default function Publish() {
                     key={`${file.name}-${file.lastModified}-${index}`}
                     file={file}
                     index={index}
+                    disabled={isSubmitting}
                     onRemove={handleRemovePhoto}
                   />
                 ))}
 
                 {photos.length < 6 && (
-                  <label className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl border-2 border-dashed border-line hover:border-brand bg-paper/50 hover:bg-paper flex flex-col items-center justify-center cursor-pointer transition-colors text-muted hover:text-brand shrink-0">
+                  <label
+                    className={`w-24 h-24 sm:w-28 sm:h-28 rounded-xl border-2 border-dashed border-line bg-paper/50 flex flex-col items-center justify-center transition-colors text-muted shrink-0 ${
+                      isSubmitting
+                        ? 'opacity-40 cursor-not-allowed'
+                        : 'hover:border-brand hover:bg-paper hover:text-brand cursor-pointer'
+                    }`}
+                  >
                     <span className="text-2xl leading-none font-light">+</span>
                     <span className="text-[11px] font-medium mt-1">Adicionar</span>
                     <input
                       type="file"
                       accept={IMAGE_ACCEPT}
                       multiple
+                      disabled={isSubmitting}
                       className="hidden"
                       onChange={handlePhotoSelect}
                     />
@@ -396,7 +484,30 @@ export default function Publish() {
               {photoError && <p className="text-xs text-accent mt-2">{photoError}</p>}
             </div>
 
-            {/* No próximo passo adicionaremos aqui o botão de submissão e chamada às APIs */}
+            {/* Form footer actions */}
+            <div className="pt-6 border-t border-line flex flex-col-reverse sm:flex-row items-center justify-end gap-3">
+              <Link
+                to="/"
+                className={`w-full sm:w-auto px-5 py-2.5 rounded-full text-sm font-semibold text-muted hover:text-ink text-center transition-colors ${
+                  isSubmitting ? 'pointer-events-none opacity-40' : ''
+                }`}
+              >
+                Cancelar
+              </Link>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full sm:w-auto px-6 py-2.5 rounded-full font-semibold text-sm bg-brand text-surface hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all inline-flex items-center justify-center gap-2"
+              >
+                {isSubmitting && (
+                  <span
+                    aria-hidden="true"
+                    className="inline-block w-4 h-4 border-2 border-surface border-t-transparent rounded-full animate-spin"
+                  />
+                )}
+                <span>{submittingStatus ?? 'Publicar anúncio'}</span>
+              </button>
+            </div>
           </form>
         )}
       </div>
