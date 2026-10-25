@@ -32,6 +32,7 @@ export default function Home() {
 
     setLoading(true)
     setError(null)
+    setMoreError(null)
     apiListListings({ category_id: active ?? undefined, limit: PAGE_SIZE })
       .then((page) => {
         if (ignore) return
