@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ChangeEvent } from 'react'
 import {
   apiListCategories,
   apiListConditions,
@@ -7,6 +7,8 @@ import {
   ApiError,
 } from '../lib/api'
 import LocationAutocomplete from '../components/LocationAutocomplete'
+import { useObjectUrl } from '../hooks/useObjectUrl'
+import { validateImage, IMAGE_ACCEPT } from '../lib/images'
 
 // Type-safe container for field-level validation messages matching backend schema fields.
 interface FormErrors {
@@ -16,6 +18,47 @@ interface FormErrors {
   listing_location?: string
   wish?: string
   listing_dsc?: string
+}
+
+interface PhotoThumbnailProps {
+  file: File
+  index: number
+  onRemove: (index: number) => void
+}
+
+function PhotoThumbnail({ file, index, onRemove }: PhotoThumbnailProps) {
+  const previewUrl = useObjectUrl(file)
+
+  return (
+    <div className="relative group w-24 h-24 sm:w-28 sm:h-28 rounded-xl border border-line bg-paper overflow-hidden flex items-center justify-center shrink-0">
+      {previewUrl ? (
+        <img
+          src={previewUrl}
+          alt={`Foto ${index + 1}`}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-full h-full bg-paper animate-pulse" />
+      )}
+
+      {/* Badge da Foto Principal (Capa) */}
+      {index === 0 && (
+        <span className="absolute bottom-1.5 left-1.5 bg-ink/80 text-surface text-[10px] font-semibold px-2 py-0.5 rounded-md backdrop-blur-xs">
+          Principal
+        </span>
+      )}
+
+      {/* Botão de remoção */}
+      <button
+        type="button"
+        onClick={() => onRemove(index)}
+        aria-label={`Remover foto ${index + 1}`}
+        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-surface/90 text-accent hover:bg-surface border border-line/40 flex items-center justify-center text-xs shadow-sm transition-transform hover:scale-110"
+      >
+        ✕
+      </button>
+    </div>
+  )
 }
 
 export default function Publish() {
@@ -32,6 +75,10 @@ export default function Publish() {
   const [wish, setWish] = useState('')
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
+
+  // Estado das fotografias
+  const [photos, setPhotos] = useState<File[]>([])
+  const [photoError, setPhotoError] = useState<string | null>(null)
 
   const loadMetadata = useCallback(async () => {
     setIsLoadingMeta(true)
@@ -57,6 +104,33 @@ export default function Publish() {
   useEffect(() => {
     loadMetadata()
   }, [loadMetadata])
+
+  const handlePhotoSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    setPhotoError(null)
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (files.length === 0) return
+
+    if (photos.length + files.length > 6) {
+      setPhotoError('Podes adicionar no máximo 6 fotografias por anúncio.')
+      return
+    }
+
+    for (const f of files) {
+      const err = validateImage(f)
+      if (err) {
+        setPhotoError(`${f.name}: ${err}`)
+        return
+      }
+    }
+
+    setPhotos((prev) => [...prev, ...files])
+  }
+
+  const handleRemovePhoto = (indexToRemove: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== indexToRemove))
+    setPhotoError(null)
+  }
 
   // Validação client-side rigorosa
   const validate = (): boolean => {
@@ -282,7 +356,47 @@ export default function Publish() {
               {errors.listing_dsc && <p className="text-xs text-accent mt-1">{errors.listing_dsc}</p>}
             </div>
 
-            {/* No próximo passo adicionaremos aqui o bloco de fotos e botão de submissão */}
+            {/* Fotografias */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs uppercase tracking-wider font-bold text-muted">
+                  Fotografias do artigo <span className="text-muted font-normal lowercase">(opcional)</span>
+                </label>
+                <span className="text-[11px] text-muted">{photos.length}/6</span>
+              </div>
+              <p className="text-xs text-muted mb-3">
+                A primeira foto será a capa do anúncio. Formatos aceites: JPEG, PNG ou WebP até 2 MB cada.
+              </p>
+
+              <div className="flex flex-wrap gap-3 items-center">
+                {photos.map((file, index) => (
+                  <PhotoThumbnail
+                    key={`${file.name}-${file.lastModified}-${index}`}
+                    file={file}
+                    index={index}
+                    onRemove={handleRemovePhoto}
+                  />
+                ))}
+
+                {photos.length < 6 && (
+                  <label className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl border-2 border-dashed border-line hover:border-brand bg-paper/50 hover:bg-paper flex flex-col items-center justify-center cursor-pointer transition-colors text-muted hover:text-brand shrink-0">
+                    <span className="text-2xl leading-none font-light">+</span>
+                    <span className="text-[11px] font-medium mt-1">Adicionar</span>
+                    <input
+                      type="file"
+                      accept={IMAGE_ACCEPT}
+                      multiple
+                      className="hidden"
+                      onChange={handlePhotoSelect}
+                    />
+                  </label>
+                )}
+              </div>
+
+              {photoError && <p className="text-xs text-accent mt-2">{photoError}</p>}
+            </div>
+
+            {/* No próximo passo adicionaremos aqui o botão de submissão e chamada às APIs */}
           </form>
         )}
       </div>
