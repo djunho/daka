@@ -442,6 +442,8 @@ export default function Publish() {
                 value={location}
                 disabled={isSubmitting}
                 placeholder="Escreve uma localidade (ex.: Guimarães, Porto, Lisboa)"
+                ariaInvalid={Boolean(errors.listing_location)}
+                ariaDescribedBy={errors.listing_location ? 'location-error' : undefined}
                 onChange={(val) => {
                   setLocation(val)
                   if (errors.listing_location) setErrors((prev) => ({ ...prev, listing_location: undefined }))
