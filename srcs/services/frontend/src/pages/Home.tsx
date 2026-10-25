@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import ListingCard from '../components/ListingCard'
 import { categoryLabel } from '../types/listing'
 import { apiListCategories, type ApiCategory, apiListListings, type ApiListingSummary } from '../lib/api'
@@ -6,8 +7,12 @@ import { apiListCategories, type ApiCategory, apiListListings, type ApiListingSu
 const PAGE_SIZE = 12
 
 export default function Home() {
-  // Category filter — the chosen Category ID or null to show all
-  const [active, setActive] = useState<number | null>(null)
+  // Filters live in the URL (/?q=...&category_id=...), so they survive a reload and can be shared.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const q = searchParams.get('q') ?? ''
+  const categoryId = Number(searchParams.get('category_id'))
+  const active = Number.isInteger(categoryId) && categoryId > 0 ? categoryId : null
+
   const [categories, setCategories] = useState<ApiCategory[]>([])
   const [listings, setListings] = useState<ApiListingSummary[]>([])
   const [total, setTotal] = useState<number>(0)
@@ -25,15 +30,15 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    // Set to true by the cleanup below when `active` changes again. A slow
-    // response for an old category then arrives with ignore === true and is
-    // dropped, instead of overwriting the listings of the chip now selected.
+    // Set to true by the cleanup below when a filter changes again. A slow
+    // response for the old filters then arrives with ignore === true and is
+    // dropped, instead of overwriting the listings for the current ones.
     let ignore = false
 
     setLoading(true)
     setError(null)
     setMoreError(null)
-    apiListListings({ category_id: active ?? undefined, limit: PAGE_SIZE })
+    apiListListings({ q, category_id: active ?? undefined, limit: PAGE_SIZE })
       .then((page) => {
         if (ignore) return
         setListings(page.items)
@@ -51,12 +56,23 @@ export default function Home() {
     return () => {
       ignore = true
     }
-  }, [active])
+  }, [active, q])
+
+  // Changes one filter in the URL and keeps the others. null removes it.
+  function setFilter(name: string, value: string | null) {
+    const next = new URLSearchParams(searchParams)
+    if (value) {
+      next.set(name, value)
+    } else {
+      next.delete(name)
+    }
+    setSearchParams(next)
+  }
 
   function loadMore() {
     setLoadingMore(true)
     setMoreError(null)
-    apiListListings({ category_id: active ?? undefined, limit: PAGE_SIZE, offset: listings.length })
+    apiListListings({ q, category_id: active ?? undefined, limit: PAGE_SIZE, offset: listings.length })
       .then((page) => {
         setListings((prev) => [...prev, ...page.items])
         setTotal(page.total)
@@ -89,7 +105,7 @@ export default function Home() {
             key={cat.id}
             className="chip"
             aria-pressed={active === cat.id}
-            onClick={() => setActive(active === cat.id ? null : cat.id)}
+            onClick={() => setFilter('category_id', active === cat.id ? null : String(cat.id))}
             disabled={loadingMore}
           >
             {categoryLabel(cat)}
@@ -102,6 +118,7 @@ export default function Home() {
           <p className="feed-count">
             {total} {total === 1 ? 'anúncio' : 'anúncios'}
             {activeCategory ? ` em ${categoryLabel(activeCategory)}` : ''}
+            {q ? ` para "${q}"` : ''}
           </p>
         )}
 
