@@ -6,11 +6,11 @@ import {
   apiCreateListing,
   apiUpdateListing,
   apiUploadListingImage,
-  ApiCategory,
-  ApiCondition,
-  ApiError,
-  CreateListingData,
+  type ApiCategory,
+  type ApiCondition,
+  type CreateListingData,
 } from '../lib/api'
+import { getPortugueseErrorMessage } from '../lib/errors'
 import LocationAutocomplete from '../components/LocationAutocomplete'
 import { useObjectUrl } from '../hooks/useObjectUrl'
 import { validateImage, IMAGE_ACCEPT } from '../lib/images'
@@ -113,9 +113,10 @@ export default function Publish() {
       setConditions(conds)
     } catch (err) {
       setMetaError(
-        err instanceof ApiError
-          ? err.message
-          : 'Não foi possível carregar as opções de publicação. Por favor, tenta novamente.',
+        getPortugueseErrorMessage(
+          err,
+          'Não foi possível carregar as opções de publicação. Por favor, tenta novamente.',
+        ),
       )
     } finally {
       setIsLoadingMeta(false)
@@ -262,9 +263,14 @@ export default function Publish() {
       navigate(`/listing/${listingId}`)
     } catch (err) {
       setSubmitError(
-        err instanceof ApiError
-          ? err.message
-          : 'Não foi possível publicar o anúncio. Por favor, tenta novamente.',
+        getPortugueseErrorMessage(
+          err,
+          'Não foi possível publicar o anúncio. Por favor, tenta novamente.',
+          {
+            404: 'O anúncio não foi encontrado.',
+            409: `O anúncio já atingiu o limite máximo de ${MAX_PHOTOS} fotografias.`,
+          },
+        ),
       )
     } finally {
       setIsSubmitting(false)
