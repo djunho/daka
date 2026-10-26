@@ -1,18 +1,21 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   ApiError,
   apiGetListing,
   apiListCategories,
   apiListConditions,
+  apiUpdateListing,
   type ApiCategory,
   type ApiCondition,
   type ApiListingDetail,
 } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import { getPortugueseErrorMessage } from '../lib/errors'
 import ListingFields from '../components/ListingFields'
 import {
   EMPTY_LISTING_FORM,
+  changedListingFields,
   clearFieldErrors,
   focusFirstError,
   listingToFormValues,
@@ -26,6 +29,7 @@ import {
 export default function EditListing() {
   const { id } = useParams()
   const { user: currentUser } = useAuth()
+  const navigate = useNavigate()
   // Same check as ListingDetail: an id that is not a positive whole number
   // can never exist.
   const listingId = Number(id)
@@ -40,6 +44,10 @@ export default function EditListing() {
 
   const [values, setValues] = useState<ListingFormValues>(EMPTY_LISTING_FORM)
   const [errors, setErrors] = useState<ListingFormErrors>({})
+
+  // Save flow: the request in flight and its error.
+  const [saving, setSaving] = useState<boolean>(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!validId) return
@@ -86,12 +94,40 @@ export default function EditListing() {
     setErrors((prev) => clearFieldErrors(prev, changes))
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (!listing) return
+    setSaveError(null)
+
     const newErrors = validateListingForm(values)
     setErrors(newErrors)
     if (focusFirstError(newErrors)) return
-    // Next step: send the changes with PATCH /listings/{id}.
+
+    const changes = changedListingFields(listingToFormValues(listing), values)
+    // Nothing changed: the backend refuses an empty PATCH, and there is
+    // nothing to save anyway.
+    if (Object.keys(changes).length === 0) {
+      navigate(`/listing/${listing.id}`)
+      return
+    }
+
+    setSaving(true)
+    try {
+      await apiUpdateListing(listing.id, changes)
+      // replace: Back from the listing must not reopen this form. The Layout
+      // shows the notice on the listing page.
+      navigate(`/listing/${listing.id}`, {
+        replace: true,
+        state: { notice: 'O teu anúncio foi atualizado.' },
+      })
+    } catch (err) {
+      setSaveError(
+        getPortugueseErrorMessage(err, 'Não foi possível guardar as alterações. Tenta outra vez.', {
+          404: 'Este anúncio já não existe: pode ter sido removido.',
+        }),
+      )
+      setSaving(false)
+    }
   }
 
   if (!validId || notFound) {
@@ -170,12 +206,21 @@ export default function EditListing() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+          {saveError && (
+            <p
+              role="alert"
+              className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-sm text-accent"
+            >
+              {saveError}
+            </p>
+          )}
+
           <ListingFields
             values={values}
             errors={errors}
             categories={categories}
             conditions={conditions}
-            disabled={false}
+            disabled={saving}
             onChange={handleFieldChange}
           />
 
@@ -183,17 +228,24 @@ export default function EditListing() {
               outside any @layer, which beats text and font utilities on the
               button itself. */}
           <div className="pt-6 border-t border-line flex flex-col-reverse sm:flex-row items-center justify-end gap-3 text-sm font-semibold">
+            {/* While saving, leaving would hide whether the changes were kept. */}
             <Link
               to={`/listing/${listing.id}`}
-              className="w-full sm:w-auto px-5 py-2.5 rounded-full text-muted hover:text-ink text-center transition-colors"
+              aria-disabled={saving}
+              tabIndex={saving ? -1 : undefined}
+              onClick={(e) => {
+                if (saving) e.preventDefault()
+              }}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-full text-muted hover:text-ink text-center transition-colors aria-disabled:pointer-events-none aria-disabled:opacity-40"
             >
               Cancelar
             </Link>
             <button
               type="submit"
-              className="w-full sm:w-auto px-6 py-2.5 rounded-full bg-brand text-surface hover:opacity-95 transition-opacity"
+              disabled={saving}
+              className="w-full sm:w-auto px-6 py-2.5 rounded-full bg-brand text-surface transition-opacity enabled:hover:opacity-95 disabled:opacity-50"
             >
-              Guardar alterações
+              {saving ? 'A guardar…' : 'Guardar alterações'}
             </button>
           </div>
         </form>

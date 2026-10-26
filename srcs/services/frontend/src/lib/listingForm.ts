@@ -1,4 +1,4 @@
-import type { ApiListingDetail, CreateListingData } from './api'
+import type { ApiListingDetail, CreateListingData, UpdateListingData } from './api'
 
 // The fields shared by the publish and edit forms. The keys are the backend's
 // (ListingCreateIn / ListingUpdateIn), so values, errors and the request body
@@ -115,4 +115,20 @@ export function toListingPayload(values: ListingFormValues): CreateListingData {
     wish: values.wish.trim() || null,
     listing_dsc: values.listing_dsc.trim() || null,
   }
+}
+
+// Only the fields whose value changed, for PATCH /listings/{id}. It compares
+// the cleaned values (trimmed, null when empty), so adding a space at the end
+// of a field does not count as a change.
+export function changedListingFields(
+  before: ListingFormValues,
+  after: ListingFormValues,
+): UpdateListingData {
+  const old = toListingPayload(before)
+  const next = toListingPayload(after)
+  return Object.fromEntries(
+    (Object.keys(next) as Array<keyof CreateListingData>)
+      .filter((name) => next[name] !== old[name])
+      .map((name) => [name, next[name]]),
+  )
 }
