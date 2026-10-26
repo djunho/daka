@@ -10,6 +10,7 @@ import ListingDetail from './pages/ListingDetail'
 import Privacy from './pages/Privacy'
 import Terms from './pages/Terms'
 import NotFound from './pages/NotFound'
+import Publish from './pages/Publish'
 
 // The router reads the address bar and decides which page component to show.
 // BrowserRouter enables it; Routes picks the first Route whose path matches.
@@ -47,14 +48,14 @@ export default function App() {
             <Route path="/terms" element={<Terms />} />
 
             {/* ---- Private routes ----
-                Wrap each in <RequireAuth> once its page exists, e.g.:
-                  <Route
-                    path="/publish"
-                    element={<RequireAuth><Publish /></RequireAuth>}
-                  />
                 RequireAuth (src/components/RequireAuth.tsx) redirects logged-out
                 visitors to /login. The real protection is on the backend; this
                 is only so they don't hit a broken page. */}
+            <Route path="/publish" element={
+                <RequireAuth>
+                    <Publish />
+                </RequireAuth>
+            } />
 
             <Route path="*" element={<NotFound />} />
           </Route>

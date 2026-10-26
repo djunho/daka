@@ -54,6 +54,9 @@ export default function Home() {
   }, [active])
 
   function loadMore() {
+    // A second click before the first page arrives would ask for the same
+    // offset again and add those listings twice.
+    if (loadingMore) return
     setLoadingMore(true)
     setMoreError(null)
     apiListListings({ category_id: active ?? undefined, limit: PAGE_SIZE, offset: listings.length })
