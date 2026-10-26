@@ -14,6 +14,7 @@ import { getPortugueseErrorMessage } from '../lib/errors'
 import LocationAutocomplete from '../components/LocationAutocomplete'
 import { useObjectUrl } from '../hooks/useObjectUrl'
 import { validateImage, IMAGE_ACCEPT } from '../lib/images'
+import { categoryLabel, conditionLabel } from '../types/listing'
 
 // Type-safe container for field-level validation messages matching backend schema fields.
 interface FormErrors {
@@ -390,7 +391,7 @@ export default function Publish() {
                   <option value="">Seleciona uma categoria...</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.category_name}
+                      {categoryLabel(c)}
                     </option>
                   ))}
                 </select>
@@ -422,7 +423,7 @@ export default function Publish() {
                   <option value="">Seleciona o estado...</option>
                   {conditions.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.condition_name}
+                      {conditionLabel(c)}
                     </option>
                   ))}
                 </select>
