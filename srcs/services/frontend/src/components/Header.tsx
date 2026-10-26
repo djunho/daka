@@ -58,14 +58,14 @@ export default function Header() {
             to="/login"
             className="px-4 py-2 rounded-full font-medium text-ink hover:bg-paper transition-colors"
           >
-            Entrar
+            Iniciar sessão
           </Link>
         ) : (
           <UserMenu name={user.user_name} avatar={user.avatar} onLogout={logout} />
         )}
 
         <Link
-          to="/login"
+          to="/publish"
           className="flex items-center gap-1 px-4 py-2 rounded-full font-semibold bg-brand text-surface hover:opacity-95 transition-opacity"
         >
           <span aria-hidden="true" className="text-lg leading-none">+</span>

@@ -93,6 +93,10 @@ export default function Home() {
   }
 
   function loadMore() {
+    // A second click before the first page arrives would ask for the same
+    // offset again and add those listings twice.
+    if (loadingMore) return
+
     // Remember which feed this page belongs to (see feedRequest above).
     const request = feedRequest.current
 
