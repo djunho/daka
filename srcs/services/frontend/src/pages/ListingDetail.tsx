@@ -88,13 +88,14 @@ export default function ListingDetail() {
   // `|| !listing` lets TypeScript know `listing` is set from here on.
   if (loading || !listing) {
     return (
-      <main
-        className="max-w-5xl mx-auto px-4 py-8"
-        role="status"
-        aria-label="A carregar anúncio"
-      >
+      <main className="max-w-5xl mx-auto px-4 py-8">
+        {/* Read by screen readers only; the skeleton below is just visual. */}
+        <p role="status" className="sr-only">A carregar anúncio…</p>
         {/* Skeleton: a grey outline of the page while it loads. */}
-        <div className="flex flex-col gap-8 md:grid md:grid-cols-[3fr_2fr] animate-pulse">
+        <div
+          className="flex flex-col gap-8 md:grid md:grid-cols-[3fr_2fr] animate-pulse"
+          aria-hidden="true"
+        >
           <div className="aspect-[4/3] rounded-2xl bg-surface border border-line" />
           <div className="space-y-4">
             <div className="h-8 w-3/4 rounded bg-surface" />
