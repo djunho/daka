@@ -24,6 +24,9 @@ export default function ListingDetail() {
     // previous response arrives, that stale response is dropped.
     let ignore = false
 
+    // Going from one listing straight to another keeps this page mounted:
+    // drop the previous listing so it is never shown under the new URL.
+    setListing(null)
     setLoading(true)
     setNotFound(false)
     setError(null)
@@ -71,7 +74,9 @@ export default function ListingDetail() {
     )
   }
 
-  if (loading || !listing) {
+  // The id check covers the first render after the URL changes, before the
+  // effect above has run and cleared the previous listing.
+  if (loading || !listing || listing.id !== listingId) {
     return (
       <main className="page">
         <p className="page-text" role="status">A carregar anúncio…</p>
