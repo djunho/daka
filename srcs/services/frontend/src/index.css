@@ -179,9 +179,11 @@ button { font: inherit; cursor: pointer; }
   background: var(--tint, var(--brand-soft));
   display: flex; align-items: flex-end; padding: 10px;
 }
+/* Same pill as .badge, so the label stays readable on top of any photo. */
 .card-cat {
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--surface); color: var(--color-label);
   font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
-  color: var(--ink); opacity: .55;
 }
 .badge {
   position: absolute; top: 10px; right: 10px;
