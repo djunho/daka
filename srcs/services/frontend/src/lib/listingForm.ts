@@ -1,4 +1,4 @@
-import type { CreateListingData } from './api'
+import type { ApiListingDetail, CreateListingData } from './api'
 
 // The fields shared by the publish and edit forms. The keys are the backend's
 // (ListingCreateIn / ListingUpdateIn), so values, errors and the request body
@@ -22,6 +22,30 @@ export const EMPTY_LISTING_FORM: ListingFormValues = {
   listing_location: '',
   wish: '',
   listing_dsc: '',
+}
+
+// The form filled with a listing's current data, for the edit page.
+export function listingToFormValues(listing: ApiListingDetail): ListingFormValues {
+  return {
+    title: listing.title,
+    category_id: listing.category.id,
+    condition_id: listing.condition.id,
+    listing_location: listing.listing_location ?? '',
+    wish: listing.wish ?? '',
+    listing_dsc: listing.listing_dsc ?? '',
+  }
+}
+
+// The errors left after the user changes some fields: those fields' errors go.
+export function clearFieldErrors(
+  errors: ListingFormErrors,
+  changes: Partial<ListingFormValues>,
+): ListingFormErrors {
+  const next = { ...errors }
+  for (const name of Object.keys(changes) as Array<keyof ListingFormValues>) {
+    delete next[name]
+  }
+  return next
 }
 
 // The id of each field's input, so the first invalid one can get the focus.

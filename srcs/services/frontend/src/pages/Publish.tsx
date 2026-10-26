@@ -15,6 +15,7 @@ import { useObjectUrl } from '../hooks/useObjectUrl'
 import { validateImage, IMAGE_ACCEPT } from '../lib/images'
 import {
   EMPTY_LISTING_FORM,
+  clearFieldErrors,
   focusFirstError,
   toListingPayload,
   validateListingForm,
@@ -161,13 +162,7 @@ export default function Publish() {
   // Saves the fields that changed and clears their error messages.
   const handleFieldChange = (changes: Partial<ListingFormValues>) => {
     setValues((prev) => ({ ...prev, ...changes }))
-    setErrors((prev) => {
-      const next = { ...prev }
-      for (const name of Object.keys(changes) as Array<keyof ListingFormValues>) {
-        delete next[name]
-      }
-      return next
-    })
+    setErrors((prev) => clearFieldErrors(prev, changes))
   }
 
   // Client-side validation mirroring backend ListingCreateIn schema
