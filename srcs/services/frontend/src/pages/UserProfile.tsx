@@ -28,6 +28,9 @@ export default function UserProfile() {
     // that stale response is dropped.
     let ignore = false
 
+    // Going from one profile straight to another keeps this page mounted:
+    // drop the previous profile so it is never shown under the new URL.
+    setProfile(null)
     setLoading(true)
     setNotFound(false)
     setError(null)
@@ -90,7 +93,9 @@ export default function UserProfile() {
   }
 
   // `|| !profile` lets TypeScript know `profile` is set from here on.
-  if (loading || !profile) {
+  // The id check covers the first render after the URL changes, before the
+  // effect above has run and cleared the previous profile.
+  if (loading || !profile || profile.id !== userId) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-8">
         {/* Read by screen readers only; the skeleton below is just visual. */}
