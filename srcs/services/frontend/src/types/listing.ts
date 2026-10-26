@@ -5,8 +5,7 @@ import type { ApiCategory, ApiCondition } from '../lib/api'
 // data for a real fetch.
 export type Condition = 'novo' | 'como novo' | 'usado' | 'com marcas'
 
-// A category id is the short, stable code we store and compare in code
-// (no spaces, no accents). The human-facing name lives in CATEGORIES below.
+// Category code used by the mock listings (data/mockListings.ts) only.
 export type CategoryId =
   | 'roupa'
   | 'eletronica'
@@ -26,80 +25,60 @@ export interface Listing {
   owner: string        // username of who posted it
 }
 
-// One entry per category: the code id, the label shown in the UI, and a
-// short hint describing what fits in it.
-export interface Category {
-  id: CategoryId
-  label: string
-  hint: string
+// The categories and conditions come from the API (apiListCategories,
+// apiListConditions, and inside each listing), with English names only. The
+// UI translates them by that name, not by id: ids depend on the order the
+// rows were inserted, names are what the seeds define (mariadb/seeds.sql).
+// A name missing here (e.g. a category added later in the backend) shows the
+// API's English name, and a card without a photo falls back to --brand-soft.
+export const CATEGORY_LABELS: Record<string, string> = {
+  Books: 'Livros',
+  Clothing: 'Roupas & Acessórios',
+  Collectibles: 'Colecionáveis',
+  Computers: 'Informática',
+  Electronics: 'Eletrónicos',
+  Games: 'Jogos',
+  Home: 'Casa & Móveis',
+  Music: 'Música',
+  Other: 'Outros',
+  Sports: 'Desporto',
+  Tools: 'Ferramentas',
+  Toys: 'Brinquedos',
 }
 
-export const CATEGORIES: Category[] = [
-  { id: 'roupa',         label: 'Roupa & Acessórios', hint: 'roupa, calçado, joias' },
-  { id: 'eletronica',    label: 'Eletrónicos',        hint: 'portáteis, consolas, gadgets' },
-  { id: 'casa',          label: 'Casa & Móveis',      hint: 'mobiliário, decoração, utensílios' },
-  { id: 'livros',        label: 'Livros & Jogos',     hint: 'livros, board games, videojogos' },
-  { id: 'plantas',       label: 'Plantas & Jardim',   hint: 'plantas, vasos, sementes' },
-  { id: 'colecionaveis', label: 'Colecionáveis',      hint: 'cartas, figuras, moedas, selos' },
-  { id: 'outros',        label: 'Outros',             hint: 'tudo o resto' },
-]
-
-// Quick lookup by id — handy for showing a category's label from a listing.
-export const CATEGORY_BY_ID: Record<CategoryId, Category> = Object.fromEntries(
-  CATEGORIES.map((c) => [c.id, c]),
-) as Record<CategoryId, Category>
-
-// Keys are the ids from mariadb/seeds.sql (insertion order). A category or
-// condition added there must also be added here; until then the helpers below
-// fall back to the English name from the API.
-export const CATEGORY_LABELS: Record<number, string> = {
-  1: 'Livros',
-  2: 'Roupas & Acessórios',
-  3: 'Colecionáveis',
-  4: 'Informática',
-  5: 'Eletrónicos',
-  6: 'Jogos',
-  7: 'Casa & Móveis',
-  8: 'Música',
-  9: 'Outros',
-  10: 'Desporto',
-  11: 'Ferramentas',
-  12: 'Brinquedos',
+export const CATEGORY_TINTS: Record<string, string> = {
+  Books: '#F4C2C2',
+  Clothing: '#BFD7ED',
+  Collectibles: '#C7E9C0',
+  Computers: '#FFF1B6',
+  Electronics: '#DCC6E0',
+  Games: '#FFD6BA',
+  Home: '#C9C3E6',
+  Music: '#B8E0D2',
+  Other: '#F7B7A3',
+  Sports: '#CDE7F0',
+  Tools: '#E8DCC8',
+  Toys: '#E8B4BC',
 }
 
-export const CATEGORY_TINTS: Record<number, string> = {
-  1: '#F4C2C2',
-  2: '#BFD7ED',
-  3: '#C7E9C0',
-  4: '#FFF1B6',
-  5: '#DCC6E0',
-  6: '#FFD6BA',
-  7: '#C9C3E6',
-  8: '#B8E0D2',
-  9: '#F7B7A3',
-  10: '#CDE7F0',
-  11: '#E8DCC8',
-  12: '#E8B4BC',
-}
-
-export const CONDITION_LABELS: Record<number, string> = {
-  1: 'Novo',
-  2: 'Como novo',
-  3: 'Bom estado',
-  4: 'Usado',
-  5: 'Precisa de arranjo',
+export const CONDITION_LABELS: Record<string, string> = {
+  'New': 'Novo',
+  'Like New': 'Como novo',
+  'Good': 'Bom estado',
+  'Fair': 'Usado',
+  'Needs Repair': 'Precisa de arranjo',
 }
 
 export function categoryLabel(category: ApiCategory): string {
-  return CATEGORY_LABELS[category.id] ?? category.category_name
+  return CATEGORY_LABELS[category.category_name] ?? category.category_name
 }
 
 // Background of a card without a photo. Undefined for a category missing from
 // CATEGORY_TINTS, so the CSS falls back to --brand-soft (see .card-media).
 export function categoryTint(category: ApiCategory): string | undefined {
-  return CATEGORY_TINTS[category.id]
+  return CATEGORY_TINTS[category.category_name]
 }
 
 export function conditionLabel(condition: ApiCondition): string {
-  return CONDITION_LABELS[condition.id] ?? condition.condition_name
+  return CONDITION_LABELS[condition.condition_name] ?? condition.condition_name
 }
