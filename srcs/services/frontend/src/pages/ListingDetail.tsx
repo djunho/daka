@@ -28,6 +28,9 @@ export default function ListingDetail() {
     // previous response arrives, that stale response is dropped.
     let ignore = false
 
+    // Going from one listing straight to another keeps this page mounted:
+    // drop the previous listing so it is never shown under the new URL.
+    setListing(null)
     setLoading(true)
     setNotFound(false)
     setError(null)
@@ -86,7 +89,9 @@ export default function ListingDetail() {
   }
 
   // `|| !listing` lets TypeScript know `listing` is set from here on.
-  if (loading || !listing) {
+  // The id check covers the first render after the URL changes, before the
+  // effect above has run and cleared the previous listing.
+  if (loading || !listing || listing.id !== listingId) {
     return (
       <main className="max-w-5xl mx-auto px-4 py-8">
         {/* Read by screen readers only; the skeleton below is just visual. */}

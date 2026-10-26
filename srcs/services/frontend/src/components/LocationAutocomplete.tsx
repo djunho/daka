@@ -15,6 +15,8 @@ export interface LocationAutocompleteProps {
   placeholder?: string
   readOnly?: boolean
   disabled?: boolean
+  ariaInvalid?: boolean
+  ariaDescribedBy?: string
   onChange: (value: string) => void
 }
 
@@ -22,7 +24,6 @@ export interface LocationAutocompleteProps {
 // Tweak these values to adjust autocomplete behavior across the application
 const MAX_SUGGESTIONS = 8     // Maximum number of suggestions displayed in the dropdown
 const MIN_SEARCH_LENGTH = 3   // Minimum characters required to trigger autocomplete search
-const MAX_INPUT_LENGTH = 100  // Maximum character length allowed (matches backend schema)
 
 // Pre-indexed location item with pre-normalized strings for high-performance filtering.
 // Normalizing 3,400 items on every keystroke takes ~9 ms (up to 40+ ms on slower mobile devices).
@@ -61,6 +62,8 @@ export default function LocationAutocomplete({
   placeholder,
   readOnly = false,
   disabled = false,
+  ariaInvalid = false,
+  ariaDescribedBy,
   onChange,
 }: LocationAutocompleteProps) {
   const [inputValue, setInputValue] = useState(value)
@@ -273,8 +276,11 @@ export default function LocationAutocomplete({
   }
 
   const inputClass =
-    'w-full px-4 py-2.5 border border-line rounded-xl text-ink text-sm placeholder:text-muted ' +
-    'hover:border-brand/50 hover:bg-paper focus:outline-none focus:border-brand ' +
+    'w-full px-4 py-2.5 border rounded-xl text-ink text-sm placeholder:text-muted ' +
+    'hover:bg-paper focus:outline-none transition-colors ' +
+    (ariaInvalid
+      ? 'border-accent focus:border-accent '
+      : 'border-line hover:border-brand/50 focus:border-brand ') +
     (readOnly
       ? 'bg-paper/60 cursor-default caret-transparent selection:bg-transparent '
       : 'cursor-text bg-surface ') +
@@ -311,9 +317,10 @@ export default function LocationAutocomplete({
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
-          maxLength={MAX_INPUT_LENGTH}
           role="combobox"
           // Accessible Rich Internet Applications (ARIA)
+          aria-invalid={ariaInvalid}
+          aria-describedby={ariaDescribedBy}
           aria-expanded={isOpen}
           aria-autocomplete="list"
           aria-controls={isOpen ? `${id}-suggestions` : undefined}
