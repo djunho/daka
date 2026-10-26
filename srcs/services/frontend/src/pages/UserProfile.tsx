@@ -92,13 +92,14 @@ export default function UserProfile() {
   // `|| !profile` lets TypeScript know `profile` is set from here on.
   if (loading || !profile) {
     return (
-      <main
-        className="max-w-2xl mx-auto px-4 py-8"
-        role="status"
-        aria-label="A carregar perfil"
-      >
+      <main className="max-w-2xl mx-auto px-4 py-8">
+        {/* Read by screen readers only; the skeleton below is just visual. */}
+        <p role="status" className="sr-only">A carregar perfil…</p>
         {/* Skeleton: a grey outline of the profile card while it loads. */}
-        <div className="bg-surface border border-line rounded-2xl p-6 shadow-sm animate-pulse">
+        <div
+          className="bg-surface border border-line rounded-2xl p-6 shadow-sm animate-pulse"
+          aria-hidden="true"
+        >
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 rounded-full bg-paper shrink-0" />
             <div>
