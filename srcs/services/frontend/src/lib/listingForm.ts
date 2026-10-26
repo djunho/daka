@@ -12,6 +12,9 @@ export type ListingFormValues = {
   listing_dsc: string
 }
 
+// Maximum number of photos per listing, mirroring backend MAX_IMAGES_PER_LISTING.
+export const MAX_LISTING_PHOTOS = 6
+
 // Type-safe container for field-level validation messages.
 export type ListingFormErrors = Partial<Record<keyof ListingFormValues, string>>
 

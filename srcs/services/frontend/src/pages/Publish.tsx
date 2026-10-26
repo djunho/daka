@@ -15,6 +15,7 @@ import { useObjectUrl } from '../hooks/useObjectUrl'
 import { validateImage, IMAGE_ACCEPT } from '../lib/images'
 import {
   EMPTY_LISTING_FORM,
+  MAX_LISTING_PHOTOS,
   clearFieldErrors,
   focusFirstError,
   toListingPayload,
@@ -22,9 +23,6 @@ import {
   type ListingFormErrors,
   type ListingFormValues,
 } from '../lib/listingForm'
-
-// Maximum number of photos per listing, mirroring backend MAX_IMAGES_PER_LISTING.
-const MAX_PHOTOS = 6
 
 interface PhotoThumbnailProps {
   file: File
@@ -126,8 +124,8 @@ export default function Publish() {
     e.target.value = ''
     if (files.length === 0) return
 
-    if (photos.length + files.length > MAX_PHOTOS) {
-      setPhotoError(`Podes adicionar no máximo ${MAX_PHOTOS} fotografias por anúncio.`)
+    if (photos.length + files.length > MAX_LISTING_PHOTOS) {
+      setPhotoError(`Podes adicionar no máximo ${MAX_LISTING_PHOTOS} fotografias por anúncio.`)
       return
     }
 
@@ -214,7 +212,7 @@ export default function Publish() {
           'Não foi possível publicar o anúncio. Por favor, tenta novamente.',
           {
             404: 'O anúncio não foi encontrado.',
-            409: `O anúncio já atingiu o limite máximo de ${MAX_PHOTOS} fotografias.`,
+            409: `O anúncio já atingiu o limite máximo de ${MAX_LISTING_PHOTOS} fotografias.`,
           },
         ),
       )
@@ -297,7 +295,7 @@ export default function Publish() {
                 <label className="text-xs uppercase tracking-wider font-bold text-muted">
                   Fotografias do artigo <span className="text-muted font-normal lowercase">(opcional)</span>
                 </label>
-                <span className="text-[11px] text-muted">{photos.length}/{MAX_PHOTOS}</span>
+                <span className="text-[11px] text-muted">{photos.length}/{MAX_LISTING_PHOTOS}</span>
               </div>
               <p className="text-xs text-muted mb-3">
                 A primeira foto será a capa do anúncio. Formatos aceites: JPEG, PNG ou WebP até 2 MB cada.
@@ -314,7 +312,7 @@ export default function Publish() {
                   />
                 ))}
 
-                {photos.length < MAX_PHOTOS && (
+                {photos.length < MAX_LISTING_PHOTOS && (
                   <label
                     className={`w-24 h-24 sm:w-28 sm:h-28 rounded-xl border-2 border-dashed border-line bg-paper/50 flex flex-col items-center justify-center transition-colors text-muted shrink-0 ${
                       isSubmitting

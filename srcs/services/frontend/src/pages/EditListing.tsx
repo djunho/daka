@@ -13,6 +13,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { getPortugueseErrorMessage } from '../lib/errors'
 import ListingFields from '../components/ListingFields'
+import ListingPhotoManager from '../components/ListingPhotoManager'
 import {
   EMPTY_LISTING_FORM,
   changedListingFields,
@@ -48,6 +49,9 @@ export default function EditListing() {
   // Save flow: the request in flight and its error.
   const [saving, setSaving] = useState<boolean>(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  // Photos are saved one action at a time, not by the form. Remembered so that
+  // going back to the listing still tells the owner it was updated.
+  const [photosChanged, setPhotosChanged] = useState<boolean>(false)
 
   useEffect(() => {
     if (!validId) return
@@ -57,6 +61,7 @@ export default function EditListing() {
     let ignore = false
 
     setListing(null)
+    setPhotosChanged(false)
     setLoading(true)
     setNotFound(false)
     setError(null)
@@ -88,6 +93,11 @@ export default function EditListing() {
     }
   }, [listingId, validId])
 
+  function handlePhotosChange(updated: ApiListingDetail) {
+    setListing(updated)
+    setPhotosChanged(true)
+  }
+
   // Saves the fields that changed and clears their error messages.
   function handleFieldChange(changes: Partial<ListingFormValues>) {
     setValues((prev) => ({ ...prev, ...changes }))
@@ -104,10 +114,13 @@ export default function EditListing() {
     if (focusFirstError(newErrors)) return
 
     const changes = changedListingFields(listingToFormValues(listing), values)
-    // Nothing changed: the backend refuses an empty PATCH, and there is
-    // nothing to save anyway.
+    // No text changed: the backend refuses an empty PATCH, so skip it. The
+    // notice still shows when the photos changed, as they are already saved.
     if (Object.keys(changes).length === 0) {
-      navigate(`/listing/${listing.id}`)
+      navigate(`/listing/${listing.id}`, {
+        replace: true,
+        state: photosChanged ? { notice: 'O teu anúncio foi atualizado.' } : null,
+      })
       return
     }
 
@@ -203,6 +216,12 @@ export default function EditListing() {
         <div className="border-b border-line pb-4 mb-6">
           <h1 className="font-display text-2xl font-bold text-ink">Editar anúncio</h1>
           <p className="text-sm text-muted mt-1 wrap-break-word">{listing.title}</p>
+        </div>
+
+        {/* Photos first: they are saved one action at a time, while the text
+            fields below wait for "Guardar alterações". */}
+        <div className="border-b border-line pb-6 mb-6">
+          <ListingPhotoManager listing={listing} onChange={handlePhotosChange} />
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6" noValidate>
