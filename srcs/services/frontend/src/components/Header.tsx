@@ -20,11 +20,16 @@ export default function Header() {
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()
     const q = query.trim()
+    // Only the search text changes: the category and location filters
+    // already in the URL stay.
+    const next = new URLSearchParams(searchParams)
     if (q) {
-      navigate(`/?q=${encodeURIComponent(q)}`)
+      next.set('q', q)
     } else {
-      navigate('/')
+      next.delete('q')
     }
+    const qs = next.toString()
+    navigate(qs ? `/?${qs}` : '/')
   }
 
   return (
