@@ -33,6 +33,15 @@ DAKA will adopt a chat-centric negotiation model with the following rules:
   interested user about one requested listing.
 - A negotiation can be created without an offer.
 - A negotiation can contain multiple proposals over time.
+- A negotiation can contain multiple pending proposals simultaneously.
+- Each pending proposal represents an alternative that the listing owner may
+  accept or reject while the negotiation is open.
+- The interested user may withdraw an individual pending proposal.
+- When one proposal is accepted, the accepted proposal moves to `Accepted` and
+  the negotiation moves to `Agreed`.
+- All other pending proposals move atomically to `NotSelected`.
+- After the negotiation reaches `Agreed`, no new proposals may be created or
+  accepted.
 - Each proposal references exactly one listing offered by the interested user.
 - Multi-item proposals and item combinations are outside the current scope.
 - Chat history contains text messages only.
@@ -89,6 +98,11 @@ and a separate proposal banner.
 - The banner keeps the chat interface simple and focused on text.
 - The model can be extended with multi-item proposals later if product needs
   justify the additional complexity.
+- Users can present multiple alternative proposals without fragmenting the
+  negotiation or creating separate chat histories.
+- The listing owner can compare available alternatives before choosing one.
+- Proposal history remains explicit: accepted, rejected, withdrawn, and
+  non-selected proposals can be distinguished.
 
 ### Negative Consequences
 
@@ -98,6 +112,13 @@ and a separate proposal banner.
   through REST.
 - The banner does not show proposal changes in their exact conversational
   position.
+- The proposal banner must support presenting and navigating multiple pending
+  proposals.
+- The frontend must synchronize the set of pending proposals after proposal
+  actions performed through REST.
+- The proposal lifecycle requires an additional `NotSelected` state.
+- Accepting one proposal requires updating the other pending proposals in the
+  same operation.
 
 ### Risks
 
@@ -108,6 +129,13 @@ and a separate proposal banner.
   is open.
 - The team must define consistent transitions for negotiation and proposal
   states to prevent contradictory records.
+- Concurrent acceptance attempts could result in more than one accepted
+  proposal unless the transition is protected by a database transaction and
+  row-level locking.
+- The banner may display stale proposal data if REST changes are not followed
+  by refetching or polling.
+- Proposal state transitions may become inconsistent if acceptance, negotiation
+  state changes, and closure of the remaining pending proposals are not atomic.
 
 ---
 
@@ -124,6 +152,15 @@ and a separate proposal banner.
   presence if presence is included in the implementation scope.
 - Preserve proposal records after rejection, withdrawal, or acceptance.
 - Protect proposal state changes transactionally.
+- Allow multiple `Pending` proposals per negotiation.
+- Add `NotSelected` to the proposal states.
+- When one proposal is accepted, update it to `Accepted`, update the
+  negotiation to `Agreed`, and update all other pending proposals to
+  `NotSelected` in the same transaction.
+- Do not enforce a database constraint limiting a negotiation to one pending
+  proposal.
+- Present pending proposals in the fixed banner area without inserting them
+  into the text-message history.
 
 ---
 
