@@ -1,30 +1,5 @@
 import type { ApiCategory, ApiCondition } from '../lib/api'
 
-// The shape of a listing. It matches what the backend will return later
-// in GET /api/listings — so the page won't change when we swap the mock
-// data for a real fetch.
-export type Condition = 'novo' | 'como novo' | 'usado' | 'com marcas'
-
-// Category code used by the mock listings (data/mockListings.ts) only.
-export type CategoryId =
-  | 'roupa'
-  | 'eletronica'
-  | 'casa'
-  | 'livros'
-  | 'plantas'
-  | 'colecionaveis'
-  | 'outros'
-
-export interface Listing {
-  id: string
-  title: string        // what the person HAS
-  wants: string        // what the person WANTS
-  category: CategoryId
-  condition: Condition
-  location: string
-  owner: string        // username of who posted it
-}
-
 // The categories and conditions come from the API (apiListCategories,
 // apiListConditions, and inside each listing), with English names only. The
 // UI translates them by that name, not by id: ids depend on the order the
