@@ -138,6 +138,11 @@ export type ApiListingPage = {
   offset: number
 }
 
+export type ApiPublicProfile = ApiPublicUser & {
+  created_at: string
+  listings: ApiListingSummary[]
+}
+
 // --- The four auth calls, named so components read like prose. ---
 
 export function apiRegister(user_name: string, email: string, password: string) {
@@ -279,4 +284,9 @@ export function apiDeleteListingImage(id: number, imageId: number) {
   return request<ApiListingDetail>(`/listings/${id}/images/${imageId}`, {
     method: 'DELETE'
   })
+}
+
+// Requires a session: the backend answers 401 without one.
+export function apiGetPublicProfile(id: number) {
+  return request<ApiPublicProfile>(`/users/${id}`)
 }

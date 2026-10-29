@@ -1,69 +1,65 @@
-import { useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
 import ListingCard from '../components/ListingCard'
-import { mockUsers } from '../data/mockUsers'
-import { mockListings } from '../data/mockListings'
-import type { ApiCategory, ApiCondition, ApiListingSummary } from '../lib/api'
-import type { CategoryId, Condition, Listing } from '../types/listing'
-import type { PublicUser } from '../types/user'
-
-// TEMPORARY until #93: the mocks use the old listing shape, while ListingCard
-// now takes the API shape. Delete this block when the page uses GET /users/{id}.
-// Ids and English names are the ones in mariadb/seeds.sql.
-const MOCK_CATEGORY: Record<CategoryId, ApiCategory> = {
-  roupa: { id: 2, category_name: 'Clothing' },
-  eletronica: { id: 5, category_name: 'Electronics' },
-  casa: { id: 7, category_name: 'Home' },
-  livros: { id: 1, category_name: 'Books' },
-  plantas: { id: 9, category_name: 'Other' },
-  colecionaveis: { id: 3, category_name: 'Collectibles' },
-  outros: { id: 9, category_name: 'Other' },
-}
-
-const MOCK_CONDITION: Record<Condition, ApiCondition> = {
-  'novo': { id: 1, condition_name: 'New' },
-  'como novo': { id: 2, condition_name: 'Like New' },
-  'usado': { id: 4, condition_name: 'Fair' },
-  'com marcas': { id: 4, condition_name: 'Fair' },
-}
-
-function toApiListing(listing: Listing, owner: PublicUser): ApiListingSummary {
-  return {
-    id: Number(listing.id),
-    title: listing.title,
-    category: MOCK_CATEGORY[listing.category],
-    condition: MOCK_CONDITION[listing.condition],
-    listing_location: listing.location,
-    wish: listing.wants,
-    owner,
-    cover_image: null,
-    created_at: '',
-  }
-}
+import { ApiError, apiGetPublicProfile, type ApiPublicProfile } from '../lib/api'
 
 export default function UserProfile() {
   const { id } = useParams<{ id: string }>()
   const { user: currentUser } = useAuth()
 
-  // Find user by ID or by username in mock data
-  // This will allow to use the URL with either the numeric ID or the username, e.g. /users/1 or /users/djunho
-  const profileUser = mockUsers.find(
-    (u) => String(u.id) === id || u.user_name.toLowerCase() === id?.toLowerCase(),
-  )
+  // The backend looks users up by numeric id only. Anything else
+  // ("/users/rita") can never match, so it goes straight to "not found"
+  // instead of asking the backend and showing its 422 as a generic error.
+  const userId = Number(id)
+  const validId = Number.isInteger(userId) && userId > 0
 
-  // Memoize filtered listings and declare hook before early return (Rules of Hooks).
-  // TODO(#93): Replace the mocks with GET /api/users/{id}, which returns the
-  // user and their available listings already in the API shape.
-  const userListings = useMemo(() => {
-    if (!profileUser) return []
-    return mockListings
-      .filter((listing) => listing.owner.toLowerCase() === profileUser.user_name.toLowerCase())
-      .map((listing) => toApiListing(listing, profileUser))
-  }, [profileUser])
+  const [profile, setProfile] = useState<ApiPublicProfile | null>(null)
+  const [loading, setLoading] = useState<boolean>(true)
+  const [notFound, setNotFound] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
 
-  if (!profileUser) {
+  // Hooks stay above the early returns below (Rules of Hooks).
+  useEffect(() => {
+    if (!validId) return
+
+    // When the id in the URL changes before the previous response arrives,
+    // that stale response is dropped.
+    let ignore = false
+
+    // Going from one profile straight to another keeps this page mounted:
+    // drop the previous profile so it is never shown under the new URL.
+    setProfile(null)
+    setLoading(true)
+    setNotFound(false)
+    setError(null)
+    apiGetPublicProfile(userId)
+      .then((data) => {
+        if (ignore) return
+        setProfile(data)
+      })
+      .catch((err) => {
+        if (ignore) return
+        // 404 covers both a user that never existed and one that deleted
+        // their account (soft delete).
+        if (err instanceof ApiError && err.status === 404) {
+          setNotFound(true)
+        } else {
+          setError('Não foi possível carregar o perfil. Tenta outra vez.')
+        }
+      })
+      .finally(() => {
+        if (ignore) return
+        setLoading(false)
+      })
+
+    return () => {
+      ignore = true
+    }
+  }, [userId, validId])
+
+  if (!validId || notFound) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-8">
         <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
@@ -81,14 +77,51 @@ export default function UserProfile() {
     )
   }
 
+  if (error) {
+    return (
+      <main className="max-w-2xl mx-auto px-4 py-8">
+        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
+          <p role="alert" className="text-sm text-muted mb-6">
+            {error}
+          </p>
+          <Link className="btn" to="/">
+            Voltar ao início
+          </Link>
+        </div>
+      </main>
+    )
+  }
+
+  // `|| !profile` lets TypeScript know `profile` is set from here on.
+  // The id check covers the first render after the URL changes, before the
+  // effect above has run and cleared the previous profile.
+  if (loading || !profile || profile.id !== userId) {
+    return (
+      <main className="max-w-2xl mx-auto px-4 py-8">
+        {/* Read by screen readers only; the skeleton below is just visual. */}
+        <p role="status" className="sr-only">A carregar perfil…</p>
+        {/* Skeleton: a grey outline of the profile card while it loads. */}
+        <div
+          className="bg-surface border border-line rounded-2xl p-6 shadow-sm animate-pulse"
+          aria-hidden="true"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-20 h-20 rounded-full bg-paper shrink-0" />
+            <div>
+              <div className="h-6 w-40 rounded bg-paper" />
+              <div className="h-4 w-28 rounded bg-paper mt-2" />
+            </div>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
   // Check if the viewer is looking at their own profile
-  const isOwnProfile =
-    currentUser &&
-    (currentUser.id === profileUser.id ||
-      currentUser.user_name.toLowerCase() === profileUser.user_name.toLowerCase())
+  const isOwnProfile = currentUser?.id === profile.id
 
   // Format date: "janeiro de 2026"
-  const memberSince = new Date(profileUser.created_at).toLocaleDateString('pt-PT', {
+  const memberSince = new Date(profile.created_at).toLocaleDateString('pt-PT', {
     month: 'long',
     year: 'numeric',
   })
@@ -100,16 +133,16 @@ export default function UserProfile() {
       <div className="bg-surface border border-line rounded-2xl p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-line">
           <div className="flex items-center gap-4">
-            <Avatar avatar={profileUser.avatar} user_name={profileUser.user_name} />
+            <Avatar avatar={profile.avatar} user_name={profile.user_name} />
             <div>
               <h1 className="font-display text-2xl font-bold text-ink">
-                {profileUser.user_name}
+                {profile.user_name}
               </h1>
               <p className="text-sm text-muted">Membro desde {memberSince}</p>
-              {profileUser.user_location && (
+              {profile.user_location && (
                 <p className="text-xs text-muted flex items-center gap-1 mt-1">
                   <span aria-hidden="true">📍</span>
-                  <span>{profileUser.user_location}</span>
+                  <span>{profile.user_location}</span>
                 </p>
               )}
             </div>
@@ -132,13 +165,13 @@ export default function UserProfile() {
           <div className="bg-paper/60 border border-line rounded-xl p-3.5">
             <span className="block text-xs font-medium text-muted mb-1">Localização</span>
             <span className="text-sm font-semibold text-ink">
-              {profileUser.user_location || 'Não indicada'}
+              {profile.user_location || 'Não indicada'}
             </span>
           </div>
           <div className="bg-paper/60 border border-line rounded-xl p-3.5">
             <span className="block text-xs font-medium text-muted mb-1">Artigos para troca</span>
             <span className="text-sm font-semibold text-ink">
-              {userListings.length} {userListings.length === 1 ? 'anúncio ativo' : 'anúncios ativos'}
+              {profile.listings.length} {profile.listings.length === 1 ? 'anúncio ativo' : 'anúncios ativos'}
             </span>
           </div>
         </div>
@@ -148,20 +181,20 @@ export default function UserProfile() {
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-xl font-bold text-ink">
-            Artigos de {profileUser.user_name}
+            Artigos de {profile.user_name}
           </h2>
           <span className="text-xs font-semibold bg-paper px-2.5 py-1 rounded-full text-muted border border-line">
-            {userListings.length} {userListings.length === 1 ? 'anúncio' : 'anúncios'}
+            {profile.listings.length} {profile.listings.length === 1 ? 'anúncio' : 'anúncios'}
           </span>
         </div>
 
-        {userListings.length === 0 ? (
+        {profile.listings.length === 0 ? (
           <div className="empty">
             <p>Este utilizador ainda não tem anúncios ativos para troca.</p>
           </div>
         ) : (
           <div className="grid">
-            {userListings.map((listing) => (
+            {profile.listings.map((listing) => (
               <ListingCard key={listing.id} listing={listing} />
             ))}
           </div>
