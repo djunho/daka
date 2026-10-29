@@ -24,11 +24,24 @@ VALUES
 INSERT INTO listings_states (state_name)
 VALUES
 	('Available'),
-	('Removed'),
-	('Expired');
+	('Reserved'),
+	('Traded'),
+	('Expired'),
+	('Removed');
 
-INSERT INTO trade_states (state_name)
+INSERT INTO negotiation_states (state_name)
 VALUES
 	('Open'),
-	('Finished'),
-	('Cancelled');
+	('Agreed'),
+	('Completed'),
+	('Cancelled'),
+	('Unavailable');
+
+INSERT INTO proposal_states (state_name)
+VALUES
+	('Pending'),
+	('Accepted'),
+	('Rejected'),
+	('Withdrawn'),
+	('NotSelected'),
+	('ItemUnavailable');
