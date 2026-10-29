@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ApiError, apiGetListing, type ApiListingDetail } from '../lib/api'
 import { categoryLabel, conditionLabel } from '../types/listing'
+import ListingGallery from '../components/ListingGallery'
+import { useAuth } from '../context/AuthContext'
+import Avatar from '../components/Avatar'
 
 // useParams reads the :id piece from the URL (/listing/3 -> id === "3").
 // This is the router feature that lets one component serve many listings.
 export default function ListingDetail() {
   const { id } = useParams()
+  const { user: currentUser } = useAuth()
   // Anything that is not a positive whole number ("/listing/abc") can never
   // exist, so it goes straight to "not found" without asking the backend.
   const listingId = Number(id)
@@ -57,66 +61,151 @@ export default function ListingDetail() {
 
   if (!validId || notFound) {
     return (
-      <main className="page">
-        <h1 className="page-title">Anúncio não encontrado</h1>
-        <p className="page-text">Não há nenhum anúncio com o id {id}.</p>
-        <Link className="btn" to="/">Voltar ao início</Link>
+      <main className="max-w-2xl mx-auto px-4 py-8">
+        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
+          <h1 className="font-display text-2xl font-bold text-ink mb-2">
+            Anúncio não encontrado
+          </h1>
+          <p className="text-sm text-muted mb-6">
+            O anúncio que procuras não existe ou já foi removido.
+          </p>
+          <Link className="btn" to="/">Voltar ao início</Link>
+        </div>
       </main>
     )
   }
 
   if (error) {
     return (
-      <main className="page">
-        <p className="page-text" role="alert">{error}</p>
-        <Link className="btn" to="/">Voltar ao início</Link>
+      <main className="max-w-2xl mx-auto px-4 py-8">
+        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
+          <p role="alert" className="text-sm text-muted mb-6">
+            {error}
+          </p>
+          <Link className="btn" to="/">Voltar ao início</Link>
+        </div>
       </main>
     )
   }
 
+  // `|| !listing` lets TypeScript know `listing` is set from here on.
   // The id check covers the first render after the URL changes, before the
   // effect above has run and cleared the previous listing.
   if (loading || !listing || listing.id !== listingId) {
     return (
-      <main className="page">
-        <p className="page-text" role="status">A carregar anúncio…</p>
+      <main className="max-w-5xl mx-auto px-4 py-8">
+        {/* Read by screen readers only; the skeleton below is just visual. */}
+        <p role="status" className="sr-only">A carregar anúncio…</p>
+        {/* Skeleton: a grey outline of the page while it loads. */}
+        <div
+          className="flex flex-col gap-8 md:grid md:grid-cols-[3fr_2fr] animate-pulse"
+          aria-hidden="true"
+        >
+          <div className="aspect-[4/3] rounded-2xl bg-surface border border-line" />
+          <div className="space-y-4">
+            <div className="h-8 w-3/4 rounded bg-surface" />
+            <div className="h-4 w-1/2 rounded bg-surface" />
+            <div className="h-4 w-2/3 rounded bg-surface" />
+            <div className="h-24 w-full rounded bg-surface" />
+          </div>
+        </div>
       </main>
     )
   }
 
-  const { title, wish, listing_dsc, category, condition, listing_location, owner, cover_image } = listing
+  const { title, wish, listing_dsc, category, condition, listing_location, owner, images, created_at } = listing
+
+  // "25 de outubro de 2026"
+  const publishedAt = new Date(created_at).toLocaleDateString('pt-PT', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+
+  // The owner gets their own actions here later (edit / remove, #88 part 2).
+  const isOwner = currentUser?.id === owner.id
 
   return (
-    <main className="page">
-      {cover_image && (
-        <img
-          src={cover_image}
-          alt={title}
-          className="w-full aspect-[4/3] object-cover rounded-2xl border border-line mb-6"
-        />
-      )}
-      <h1 className="page-title">{title}</h1>
-      {wish && (
-        <p className="page-text">
-          <span className="swap-arrow" aria-hidden="true">⇄</span>{' '}
-          quer: <strong>{wish}</strong>
-        </p>
-      )}
-      <p className="page-text">
-        {categoryLabel(category)} · {conditionLabel(condition)} ·{' '}
-        {listing_location && <>{listing_location} ·{' '}</>}
-        <Link
-          to={`/users/${owner.id}`}
-          className="text-brand font-medium hover:underline"
-        >
-          @{owner.user_name}
-        </Link>
-      </p>
-      {listing_dsc && <p className="page-text whitespace-pre-line">{listing_dsc}</p>}
-      <p className="page-text">
-        (Página de detalhe em construção — o botão de propor troca entra aqui.)
-      </p>
-      <Link className="btn" to="/">Voltar ao início</Link>
+    <main className="max-w-5xl mx-auto px-4 py-8">
+      <div className="flex flex-col gap-8 md:grid md:grid-cols-[3fr_2fr]">
+        {/* Left column: photos. */}
+        <section aria-label="Fotografias">
+          <ListingGallery key={listing.id} images={images} title={title} category={category} />
+        </section>
+
+        {/* Right column: listing info and owner card (88d). */}
+        <div className="space-y-6">
+          <div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <span className="text-xs font-semibold bg-surface text-label border border-line px-2.5 py-1 rounded-full">
+                {categoryLabel(category)}
+              </span>
+              <span className="text-xs font-semibold bg-surface text-label border border-line px-2.5 py-1 rounded-full">
+                {conditionLabel(condition)}
+              </span>
+            </div>
+            <h1 className="font-display text-3xl font-bold text-ink leading-tight wrap-break-word">
+              {title}
+            </h1>
+            <p className="text-sm text-muted mt-2">
+              {listing_location && (
+                <>
+                  <span aria-hidden="true">📍</span> {listing_location} ·{' '}
+                </>
+              )}
+              Publicado a {publishedAt}
+            </p>
+          </div>
+
+          {wish && (
+            <div className="bg-surface border border-line rounded-xl p-4">
+              <span className="block text-xs font-medium text-muted mb-1">Em troca, procura</span>
+              <p className="font-semibold text-accent wrap-break-word">
+                <span aria-hidden="true">⇄</span> {wish}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <h2 className="font-display text-lg font-bold text-ink mb-2">Descrição</h2>
+            {listing_dsc ? (
+              <p className="text-ink whitespace-pre-line wrap-break-word">{listing_dsc}</p>
+            ) : (
+              <p className="text-sm text-muted">O anunciante não escreveu uma descrição.</p>
+            )}
+          </div>
+
+          {/* Owner card */}
+          <div className="bg-surface border border-line rounded-2xl p-4 shadow-sm">
+            <span className="block text-xs font-medium text-muted mb-3">Anunciado por</span>
+            <div className="flex items-center gap-3">
+              <Avatar avatar={owner.avatar} user_name={owner.user_name} size="sm" />
+              <div className="min-w-0">
+                <Link
+                  to={`/users/${owner.id}`}
+                  className="font-semibold text-ink hover:text-brand hover:underline wrap-break-word"
+                >
+                  {owner.user_name}
+                </Link>
+                {owner.user_location && (
+                  <p className="text-xs text-muted">
+                    <span aria-hidden="true">📍</span> {owner.user_location}
+                  </p>
+                )}
+              </div>
+            </div>
+            {isOwner && (
+              <p className="text-sm font-medium text-brand mt-4 pt-4 border-t border-line">
+                Este é o teu anúncio.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <Link className="btn" to="/">Voltar ao início</Link>
+      </div>
     </main>
   )
 }
