@@ -1,48 +1,59 @@
-// The shape of a listing. It matches what the backend will return later
-// in GET /api/listings — so the page won't change when we swap the mock
-// data for a real fetch.
-export type Condition = 'novo' | 'como novo' | 'usado' | 'com marcas'
+import type { ApiCategory, ApiCondition } from '../lib/api'
 
-// A category id is the short, stable code we store and compare in code
-// (no spaces, no accents). The human-facing name lives in CATEGORIES below.
-export type CategoryId =
-  | 'roupa'
-  | 'eletronica'
-  | 'casa'
-  | 'livros'
-  | 'plantas'
-  | 'colecionaveis'
-  | 'outros'
-
-export interface Listing {
-  id: string
-  title: string        // what the person HAS
-  wants: string        // what the person WANTS
-  category: CategoryId
-  condition: Condition
-  location: string
-  owner: string        // username of who posted it
+// The categories and conditions come from the API (apiListCategories,
+// apiListConditions, and inside each listing), with English names only. The
+// UI translates them by that name, not by id: ids depend on the order the
+// rows were inserted, names are what the seeds define (mariadb/seeds.sql).
+// A name missing here (e.g. a category added later in the backend) shows the
+// API's English name, and a card without a photo falls back to --brand-soft.
+export const CATEGORY_LABELS: Record<string, string> = {
+  Books: 'Livros',
+  Clothing: 'Roupas & Acessórios',
+  Collectibles: 'Colecionáveis',
+  Computers: 'Informática',
+  Electronics: 'Eletrónicos',
+  Games: 'Jogos',
+  Home: 'Casa & Móveis',
+  Music: 'Música',
+  Other: 'Outros',
+  Sports: 'Desporto',
+  Tools: 'Ferramentas',
+  Toys: 'Brinquedos',
 }
 
-// One entry per category: the code id, the label shown in the UI, and a
-// short hint describing what fits in it.
-export interface Category {
-  id: CategoryId
-  label: string
-  hint: string
+export const CATEGORY_TINTS: Record<string, string> = {
+  Books: '#F4C2C2',
+  Clothing: '#BFD7ED',
+  Collectibles: '#C7E9C0',
+  Computers: '#FFF1B6',
+  Electronics: '#DCC6E0',
+  Games: '#FFD6BA',
+  Home: '#C9C3E6',
+  Music: '#B8E0D2',
+  Other: '#F7B7A3',
+  Sports: '#CDE7F0',
+  Tools: '#E8DCC8',
+  Toys: '#E8B4BC',
 }
 
-export const CATEGORIES: Category[] = [
-  { id: 'roupa',         label: 'Roupa & Acessórios', hint: 'roupa, calçado, joias' },
-  { id: 'eletronica',    label: 'Eletrónicos',        hint: 'portáteis, consolas, gadgets' },
-  { id: 'casa',          label: 'Casa & Móveis',      hint: 'mobiliário, decoração, utensílios' },
-  { id: 'livros',        label: 'Livros & Jogos',     hint: 'livros, board games, videojogos' },
-  { id: 'plantas',       label: 'Plantas & Jardim',   hint: 'plantas, vasos, sementes' },
-  { id: 'colecionaveis', label: 'Colecionáveis',      hint: 'cartas, figuras, moedas, selos' },
-  { id: 'outros',        label: 'Outros',             hint: 'tudo o resto' },
-]
+export const CONDITION_LABELS: Record<string, string> = {
+  'New': 'Novo',
+  'Like New': 'Como novo',
+  'Good': 'Bom estado',
+  'Fair': 'Usado',
+  'Needs Repair': 'Precisa de arranjo',
+}
 
-// Quick lookup by id — handy for showing a category's label from a listing.
-export const CATEGORY_BY_ID: Record<CategoryId, Category> = Object.fromEntries(
-  CATEGORIES.map((c) => [c.id, c]),
-) as Record<CategoryId, Category>
+export function categoryLabel(category: ApiCategory): string {
+  return CATEGORY_LABELS[category.category_name] ?? category.category_name
+}
+
+// Background of a card without a photo. Undefined for a category missing from
+// CATEGORY_TINTS, so the CSS falls back to --brand-soft (see .card-media).
+export function categoryTint(category: ApiCategory): string | undefined {
+  return CATEGORY_TINTS[category.category_name]
+}
+
+export function conditionLabel(condition: ApiCondition): string {
+  return CONDITION_LABELS[condition.condition_name] ?? condition.condition_name
+}

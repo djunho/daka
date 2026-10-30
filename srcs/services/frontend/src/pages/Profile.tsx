@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import ProfileField from '../components/ProfileField'
+import LocationAutocomplete from '../components/LocationAutocomplete'
 import Avatar from '../components/Avatar'
 import ImagePicker from '../components/ImagePicker'
 import { useObjectUrl } from '../hooks/useObjectUrl'
@@ -347,14 +348,16 @@ export default function Profile() {
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
           />
 
-          {/* Location Field */}
-          <ProfileField
+          {/* Location Field with Autocomplete */}
+          <LocationAutocomplete
             id="user_location"
             label="Localização"
             value={formData.user_location || ''}
-            placeholder="Sem localização definida"
-            readOnly={!isEditing || saving}
-            onChange={(e) => setFormData({ ...formData, user_location: e.target.value })}
+            placeholder={isEditing ? 'Escreva a sua localidade (ex.: Guimarães, Porto, Lisboa)' : 'Sem localização definida'}
+            readOnly={!isEditing}
+            disabled={saving}
+            // Spread operator preserves other form fields (user_name, email) while updating location
+            onChange={(val) => setFormData({ ...formData, user_location: val })}
           />
         </div>
 

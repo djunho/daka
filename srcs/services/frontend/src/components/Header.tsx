@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
 
@@ -8,6 +8,29 @@ import { useAuth } from '../context/AuthContext'
 // "Post" stays in both states.
 export default function Header() {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const [query, setQuery] = useState(searchParams.get('q') ?? '')
+
+  // Keep the input in sync with the URL, e.g. clearing it when the logo is clicked.
+  useEffect(() => {
+    setQuery(searchParams.get('q') ?? '')
+  }, [searchParams])
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault()
+    const q = query.trim()
+    // Only the search text changes: the category and location filters
+    // already in the URL stay.
+    const next = new URLSearchParams(searchParams)
+    if (q) {
+      next.set('q', q)
+    } else {
+      next.delete('q')
+    }
+    const qs = next.toString()
+    navigate(qs ? `/?${qs}` : '/')
+  }
 
   return (
     <header className="sticky top-0 z-10 flex items-center gap-4 px-6 py-3 bg-surface/90 backdrop-blur-md border-b border-line">
@@ -19,12 +42,17 @@ export default function Header() {
       </Link>
 
       {/* --- Search --- */}
-      <input
-        type="search"
-        placeholder="Pesquisar trocas…"
-        aria-label="Pesquisar trocas disponíveis"
-        className="flex-1 max-w-[440px] mx-auto px-4 py-2.5 bg-paper border border-line rounded-full text-ink placeholder:text-muted focus:border-brand focus:outline-none transition-colors"
-      />
+      <form role="search" onSubmit={handleSearch} className="flex-1 max-w-[440px] mx-auto">
+        <input
+          type="search"
+          placeholder="Pesquisar trocas…"
+          aria-label="Pesquisar trocas disponíveis"
+          className="w-full px-4 py-2.5 bg-paper border border-line rounded-full text-ink placeholder:text-muted focus:border-brand focus:outline-none transition-colors"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          maxLength={150}
+        />
+      </form>
 
       {/* --- Right side --- */}
       <div className="flex items-center gap-2.5 shrink-0">
@@ -35,14 +63,14 @@ export default function Header() {
             to="/login"
             className="px-4 py-2 rounded-full font-medium text-ink hover:bg-paper transition-colors"
           >
-            Entrar
+            Iniciar sessão
           </Link>
         ) : (
           <UserMenu name={user.user_name} avatar={user.avatar} onLogout={logout} />
         )}
 
         <Link
-          to="/login"
+          to="/publish"
           className="flex items-center gap-1 px-4 py-2 rounded-full font-semibold bg-brand text-surface hover:opacity-95 transition-opacity"
         >
           <span aria-hidden="true" className="text-lg leading-none">+</span>
