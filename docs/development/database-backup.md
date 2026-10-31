@@ -55,12 +55,16 @@ fresh backup first, stop the backend to prevent writes during the restore, and
 select the exact dump file explicitly:
 
 ```bash
-docker compose -f srcs/docker-compose.yml stop backend
+docker compose -f srcs/docker-compose.yml stop backend && \
 docker compose -f srcs/docker-compose.yml exec -T db sh -c \
   'mariadb --user=root --password="$MYSQL_ROOT_PASSWORD"' \
-  < ../daka-backups/daka-YYYYMMDD-HHMMSS.sql
+  < ../daka-backups/daka-YYYYMMDD-HHMMSS.sql && \
 docker compose -f srcs/docker-compose.yml start backend
 ```
+
+The `&&` chain deliberately leaves the backend stopped if the import fails.
+Inspect the database error, correct it, and rerun the restore before starting
+the backend manually.
 
 Verify the restored database before deleting any older backup:
 
