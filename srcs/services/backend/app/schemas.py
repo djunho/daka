@@ -38,6 +38,8 @@ MIN_PASSWORD_LENGTH = 8
 LISTINGS_PAGE_SIZE = 12
 DEFAULT_TRADES_PAGE_SIZE = 20
 MAX_TRADES_PAGE_SIZE = 100
+DEFAULT_NEGOTIATIONS_PAGE_SIZE = 20
+MAX_NEGOTIATIONS_PAGE_SIZE = 100
 MAX_LISTINGS_PAGE_SIZE = 100
 
 # ---------------------------------------------------------------------------
@@ -333,7 +335,99 @@ class PublicProfileOut(BaseModel):
 
 
 # ===========================================================================
-# TRADES SCHEMAS
+# NEGOTIATION AND PROPOSAL SCHEMAS
+# ===========================================================================
+class NegotiationCreateIn(BaseModel):
+    """Body accepted by POST /api/negotiations."""
+
+    listing_id: int = Field(gt=0)
+
+
+class ProposalCreateIn(BaseModel):
+    """Body accepted by POST /api/negotiations/{id}/proposals.
+
+    The field is required even though its value may be null. This keeps an
+    explicit distinction between a deliberate no-listing proposal and a
+    malformed request that omitted the proposal content.
+    """
+
+    offered_listing_id: int | None = Field(gt=0)
+
+
+class NegotiationStateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    state_name: Literal[
+        "Open",
+        "Agreed",
+        "Completed",
+        "Cancelled",
+        "Unavailable",
+    ]
+
+
+class ProposalStateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    state_name: Literal[
+        "Pending",
+        "Accepted",
+        "Rejected",
+        "Withdrawn",
+        "NotSelected",
+        "ItemUnavailable",
+    ]
+
+
+class ProposalOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    offered_listing: ListingSummaryOut | None
+    state: ProposalStateOut
+    created_at: datetime
+    responded_at: datetime | None
+
+
+class NegotiationSummaryOut(BaseModel):
+    """Compact representation returned by GET /api/negotiations."""
+
+    id: int
+    requested_listing: ListingSummaryOut
+    other_participant: PublicUserOut
+    state: NegotiationStateOut
+    active_proposal: ProposalOut | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class NegotiationPageOut(BaseModel):
+    items: list[NegotiationSummaryOut]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=MAX_NEGOTIATIONS_PAGE_SIZE)
+    offset: int = Field(ge=0)
+
+
+class NegotiationDetailOut(BaseModel):
+    id: int
+    requested_listing: ListingDetailOut
+    owner: PublicUserOut
+    interested_user: PublicUserOut
+    state: NegotiationStateOut
+    proposals: list[ProposalOut] = Field(default_factory=list)
+    cancelled_by: PublicUserOut | None
+    cancelled_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+# ===========================================================================
+# LEGACY TRADE SCHEMAS
+# Remove these with the old router after its consumers move to the contracts
+# above. Keeping them temporarily prevents an intermediate commit from
+# breaking imports across the backend.
 # ===========================================================================
 class TradeCreateIn(BaseModel):
     """Body accepted by POST /api/trades."""
