@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { ApiError, apiGetListing, type ApiListingDetail } from '../lib/api'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { ApiError, apiDeleteListing, apiGetListing, type ApiListingDetail } from '../lib/api'
 import { categoryLabel, conditionLabel } from '../types/listing'
 import ListingGallery from '../components/ListingGallery'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 // useParams reads the :id piece from the URL (/listing/3 -> id === "3").
 // This is the router feature that lets one component serve many listings.
 export default function ListingDetail() {
   const { id } = useParams()
   const { user: currentUser } = useAuth()
+  const navigate = useNavigate()
   // Anything that is not a positive whole number ("/listing/abc") can never
   // exist, so it goes straight to "not found" without asking the backend.
   const listingId = Number(id)
@@ -20,6 +22,11 @@ export default function ListingDetail() {
   const [loading, setLoading] = useState<boolean>(true)
   const [notFound, setNotFound] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Remove flow: the confirmation dialog, the request in flight and its error.
+  const [confirmRemove, setConfirmRemove] = useState<boolean>(false)
+  const [removing, setRemoving] = useState<boolean>(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!validId) return
@@ -58,6 +65,27 @@ export default function ListingDetail() {
       ignore = true
     }
   }, [listingId, validId])
+
+  function openRemoveDialog() {
+    // A previous failed attempt should not greet the next one.
+    setRemoveError(null)
+    setConfirmRemove(true)
+  }
+
+  function handleRemove() {
+    setRemoving(true)
+    setRemoveError(null)
+    apiDeleteListing(listingId)
+      .then(() => {
+        // replace: Back must not return to a listing that no longer exists.
+        // The Layout shows the notice on the next page (88h).
+        navigate('/', { replace: true, state: { notice: 'O teu anúncio foi removido.' } })
+      })
+      .catch(() => {
+        setRemoveError('Não foi possível remover o anúncio. Tenta outra vez.')
+        setRemoving(false)
+      })
+  }
 
   if (!validId || notFound) {
     return (
@@ -122,7 +150,7 @@ export default function ListingDetail() {
     year: 'numeric',
   })
 
-  // The owner gets their own actions here later (edit / remove, #88 part 2).
+  // Only the owner can remove the listing (editing comes in a later PR).
   const isOwner = currentUser?.id === owner.id
 
   return (
@@ -195,9 +223,19 @@ export default function ListingDetail() {
               </div>
             </div>
             {isOwner && (
-              <p className="text-sm font-medium text-brand mt-4 pt-4 border-t border-line">
-                Este é o teu anúncio.
-              </p>
+              // The font classes sit on this div on purpose: index.css has
+              // `button { font: inherit }` outside any @layer, which beats
+              // Tailwind's text-*/font-* utilities on the button itself.
+              <div className="mt-4 pt-4 border-t border-line space-y-3 text-sm font-semibold">
+                <p className="font-medium text-brand">Este é o teu anúncio.</p>
+                <button
+                  type="button"
+                  onClick={openRemoveDialog}
+                  className="text-accent border border-accent rounded-xl px-4 py-2 hover:bg-accent hover:text-white transition-colors"
+                >
+                  Remover anúncio
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -206,6 +244,19 @@ export default function ListingDetail() {
       <div className="mt-8">
         <Link className="btn" to="/">Voltar ao início</Link>
       </div>
+      {isOwner && (
+        <ConfirmDialog
+          open={confirmRemove}
+          title="Remover anúncio"
+          message={`Tens a certeza de que queres remover «${title}»? Deixa de aparecer na plataforma e as propostas de troca abertas são canceladas.`}
+          confirmLabel="Sim, remover"
+          busyLabel="A remover…"
+          busy={removing}
+          error={removeError}
+          onConfirm={handleRemove}
+          onCancel={() => setConfirmRemove(false)}
+        />
+      )}
     </main>
   )
 }
