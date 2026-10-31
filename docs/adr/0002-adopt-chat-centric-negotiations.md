@@ -1,8 +1,10 @@
-# ADR-0001 - Adopt a Chat-Centric Negotiation Model
+# ADR-0002 - Adopt a Chat-Centric Negotiation Model
 
 **Status:** Accepted
 
 **Date:** 28-10-2026
+
+**Last updated:** 31-10-2026
 
 **Author(s):** DAKA Team
 
@@ -36,13 +38,32 @@ DAKA will adopt a chat-centric negotiation model with the following rules:
 - A negotiation can contain multiple pending proposals simultaneously.
 - Each pending proposal represents an alternative that the listing owner may
   accept or reject while the negotiation is open.
+- A proposal may omit the offered listing when the interested user has no item
+  to offer in return.
+- Within one negotiation, the same offered listing may appear in at most one
+  proposal, and at most one proposal may omit the offered listing.
 - The interested user may withdraw an individual pending proposal.
 - When one proposal is accepted, the accepted proposal moves to `Accepted` and
   the negotiation moves to `Agreed`.
-- All other pending proposals move atomically to `NotSelected`.
+- The requested listing and, when present, the offered listing move atomically
+  from `Available` to `Reserved`.
+- Other pending proposals and negotiations involving the reserved listings
+  remain unchanged until the agreed negotiation is completed or cancelled.
 - After the negotiation reaches `Agreed`, no new proposals may be created or
   accepted.
-- Each proposal references exactly one listing offered by the interested user.
+- When the negotiation is completed, the reserved listings move to `Traded`.
+  Other pending proposals in that negotiation move to `NotSelected`, while
+  competing negotiations and proposals affected by a now-traded listing move
+  to `Unavailable` and `ItemUnavailable`, respectively.
+- When an agreed negotiation is cancelled, its reserved listings return to
+  `Available`. The accepted proposal remains `Accepted` as history.
+- When an open or agreed negotiation is cancelled, its pending proposals move
+  to `Withdrawn` if the interested user cancelled it or to `Rejected` if the
+  listing owner cancelled it.
+- A pending proposal moves to `ItemUnavailable` when a required listing becomes
+  `Removed`, `Expired`, or `Traded`; reservation alone does not close competing
+  proposals.
+- Each proposal references zero or one listing offered by the interested user.
 - Multi-item proposals and item combinations are outside the current scope.
 - Chat history contains text messages only.
 - Text messages are exchanged through WebSocket and persisted in the database.
@@ -51,9 +72,15 @@ DAKA will adopt a chat-centric negotiation model with the following rules:
   being inserted into the message history.
 - Previous proposals remain stored as negotiation history even though they are
   not rendered as chat messages.
+- Listing states are `Available`, `Reserved`, `Traded`, `Expired`, and
+  `Removed`.
+- Negotiation states are `Open`, `Agreed`, `Completed`, `Cancelled`, and
+  `Unavailable`.
+- Proposal states are `Pending`, `Accepted`, `Rejected`, `Withdrawn`,
+  `NotSelected`, and `ItemUnavailable`.
 
 The current `Trade` domain will therefore be separated into `Negotiation` and
-`Proposal`. Messages will belong to a negotiation, and each proposal will
+`Proposal`. Messages will belong to a negotiation, and each proposal may
 reference one offered listing.
 
 ---
@@ -91,6 +118,8 @@ and a separate proposal banner.
 ### Positive Consequences
 
 - Users can start a conversation without committing an item.
+- Users without a listing to offer can still make a proposal that may progress
+  through agreement and completion.
 - Rejected or withdrawn proposals do not end the conversation.
 - A single chat history is preserved for each requested listing and interested
   user.
@@ -117,8 +146,9 @@ and a separate proposal banner.
 - The frontend must synchronize the set of pending proposals after proposal
   actions performed through REST.
 - The proposal lifecycle requires an additional `NotSelected` state.
-- Accepting one proposal requires updating the other pending proposals in the
-  same operation.
+- Completing an agreed negotiation requires closing its remaining pending
+  proposals and the competing negotiations and proposals made impossible by
+  the traded listings.
 
 ### Risks
 
@@ -135,7 +165,9 @@ and a separate proposal banner.
 - The banner may display stale proposal data if REST changes are not followed
   by refetching or polling.
 - Proposal state transitions may become inconsistent if acceptance, negotiation
-  state changes, and closure of the remaining pending proposals are not atomic.
+  state changes, and listing reservations are not atomic.
+- Completion may leave competing negotiations or proposals active unless all
+  records affected by the traded listings are updated atomically.
 
 ---
 
@@ -143,8 +175,14 @@ and a separate proposal banner.
 
 - Add `negotiations`, `negotiation_states`, `proposals`, and `proposal_states`.
 - Change messages to reference `negotiation_id` instead of `trade_id`.
-- Do not add `proposal_items`, because each proposal references one offered
+- Do not add `proposal_items`, because a proposal references at most one offered
   listing directly.
+- Allow `proposals.offered_listing_id` to be null.
+- Enforce at most one proposal for the same offered listing within a
+  negotiation and at most one proposal without an offered listing within a
+  negotiation. Because SQL unique constraints treat null values as distinct,
+  normalize the nullable listing reference through a generated key before
+  applying the composite unique constraint.
 - Do not add message or event types; the chat stores text messages only.
 - Use REST for creating, withdrawing, rejecting, and accepting proposals, and
   for cancelling or completing negotiations.
@@ -155,8 +193,15 @@ and a separate proposal banner.
 - Allow multiple `Pending` proposals per negotiation.
 - Add `NotSelected` to the proposal states.
 - When one proposal is accepted, update it to `Accepted`, update the
-  negotiation to `Agreed`, and update all other pending proposals to
-  `NotSelected` in the same transaction.
+  negotiation to `Agreed`, and reserve the requested listing and the optional
+  offered listing in the same transaction. Leave other pending proposals
+  unchanged until completion or cancellation.
+- On completion, move the reserved listings to `Traded`, move the other pending
+  proposals in the completed negotiation to `NotSelected`, and close competing
+  negotiations and proposals made impossible by the traded listings.
+- On cancellation, preserve an accepted proposal as history and move pending
+  proposals to `Withdrawn` or `Rejected` according to which participant
+  cancelled the negotiation.
 - Do not enforce a database constraint limiting a negotiation to one pending
   proposal.
 - Present pending proposals in the fixed banner area without inserting them
@@ -167,6 +212,9 @@ and a separate proposal banner.
 ## References
 
 - RFC: *Evolution of the Negotiation and Trade Model*, 22-10-2026.
+- GitHub Issue #62: Negotiations and Proposals epic.
+- GitHub Issue #95: Negotiation and proposal REST API.
+- GitHub Issue #119: Negotiation, proposal, and message database model.
 - GitHub Issue #65: Chat implementation.
 
 ---
