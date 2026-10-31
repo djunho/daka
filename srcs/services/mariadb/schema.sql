@@ -135,10 +135,18 @@ CREATE TABLE negotiations (
 CREATE TABLE proposals (
 	id 						INT AUTO_INCREMENT PRIMARY KEY,
 	negotiation_id			INT NOT NULL,
-	offered_listing_id		INT NOT NULL,
+	offered_listing_id		INT NULL,
+	-- MariaDB allows multiple NULL values in a regular UNIQUE constraint.
+	-- Normalizing NULL to 0 makes no-offer proposals participate in the same
+	-- composite uniqueness rule as proposals that include an offered listing.
+	offered_listing_unique_key INT
+		AS (COALESCE(offered_listing_id, 0)) STORED,
 	proposal_state_id		INT NOT NULL,
 	created_at 				TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	responded_at 			DATETIME NULL,
+
+	CONSTRAINT uq_proposals_negotiation_offer
+		UNIQUE (negotiation_id, offered_listing_unique_key),
 
 	FOREIGN KEY (negotiation_id)
 		REFERENCES negotiations(id),
