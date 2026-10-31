@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.routers import auth, listings, trades, users
+from app.routers import auth, listings, negotiations, users
 
 
 # root_path="/api": nginx forwards /api/ here, so the auto-generated docs
@@ -33,7 +33,7 @@ app.add_middleware(
 # table of contents instead of growing into a thousand-line file.
 app.include_router(auth.router)
 app.include_router(listings.router)
-app.include_router(trades.router)
+app.include_router(negotiations.router)
 app.include_router(users.router)
 
 # --- Prometheus metrics -----------------------------------------------------

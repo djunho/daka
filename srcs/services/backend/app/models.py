@@ -121,15 +121,6 @@ class ListingState(Base):
     state_name: Mapped[str] = mapped_column(String(50))
 
 
-class TradeState(Base):
-    """Lookup table for a trade's status: Open, Finished, Cancelled."""
-
-    __tablename__ = "trade_states"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    state_name: Mapped[str] = mapped_column(String(50))
-
-
 class NegotiationState(Base):
     """Lookup table: Open, Agreed, Completed, Cancelled, Unavailable."""
 
@@ -280,36 +271,6 @@ class Proposal(Base):
     state: Mapped["ProposalState"] = relationship()
 
 
-class Trade(Base):
-    """Legacy model kept until the old trade router is removed."""
-
-    __tablename__ = "trades"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    listing_requested_id: Mapped[int] = mapped_column(ForeignKey("listings.id"))
-    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    # Nullable: the sender may request a listing without offering one in return.
-    listing_offered_id: Mapped[int | None] = mapped_column(ForeignKey("listings.id"))
-    trade_state_id: Mapped[int] = mapped_column(ForeignKey("trade_states.id"))
-    initial_msg: Mapped[str] = mapped_column(String(250))
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
-
-    # This table references "listings" TWICE (requested + offered), so
-    # SQLAlchemy cannot guess which foreign key each relationship uses. We tell
-    # it explicitly with ``foreign_keys``.
-    requested_listing: Mapped["Listing"] = relationship(
-        foreign_keys=[listing_requested_id]
-    )
-    offered_listing: Mapped["Listing | None"] = relationship(
-        foreign_keys=[listing_offered_id]
-    )
-    sender: Mapped["User"] = relationship(foreign_keys=[sender_id])
-    state: Mapped["TradeState"] = relationship()
-
-
 class Message(Base):
     """A single chat message inside a negotiation."""
 
@@ -340,7 +301,7 @@ class Report(Base):
     reason: Mapped[str] = mapped_column(String(250))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    # Like Trade, this table references "users" TWICE (reporter + reported), so
+    # This table references "users" twice (reporter + reported), so
     # each relationship states its foreign key explicitly.
     reporter: Mapped["User"] = relationship(foreign_keys=[reporter_id])
     reported_user: Mapped["User | None"] = relationship(foreign_keys=[reported_user_id])
