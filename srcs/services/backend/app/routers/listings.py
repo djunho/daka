@@ -16,7 +16,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import or_
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -30,8 +30,10 @@ from app.models import (
     Image,
     Listing,
     ListingState,
-    Trade,
-    TradeState,
+    Negotiation,
+    NegotiationState,
+    Proposal,
+    ProposalState,
     User,
 )
 from app.schemas import (
@@ -392,6 +394,9 @@ def update_listing(
             "description": "Not allowed to delete this listing."
         },
         status.HTTP_404_NOT_FOUND: {"description": "Listing not found."},
+        status.HTTP_409_CONFLICT: {
+            "description": "Reserved or traded listings cannot be removed."
+        },
     },
 )
 def delete_listing(
@@ -401,10 +406,10 @@ def delete_listing(
 ) -> None:
     """Soft-delete one of the logged-in user's listings.
 
-    The listing and its history remain in the database for moderation and
-    completed trades. Open trades are cancelled because the offer is no longer
-    available, and favorites are removed because they only apply to public
-    listings.
+    The listing and its history remain in the database for moderation. Open
+    negotiations requesting it become unavailable, while pending proposals
+    offering it become unavailable individually. Favorites are removed because
+    they only apply to public listings.
     """
     listing = db.get(Listing, id, with_for_update=True)
     if listing is None:
@@ -419,39 +424,93 @@ def delete_listing(
             detail="You can only delete your own listings.",
         )
 
-    removed = (
-        db.query(ListingState)
-        .filter(ListingState.state_name == "Removed")
-        .first()
-    )
-    open_trade = (
-        db.query(TradeState).filter(TradeState.state_name == "Open").first()
-    )
-    cancelled_trade = (
-        db.query(TradeState)
-        .filter(TradeState.state_name == "Cancelled")
-        .first()
-    )
-    if removed is None or open_trade is None or cancelled_trade is None:
+    listing_states = {
+        state.state_name: state
+        for state in db.query(ListingState)
+        .filter(ListingState.state_name.in_(("Removed", "Reserved", "Traded")))
+        .all()
+    }
+    negotiation_states = {
+        state.state_name: state
+        for state in db.query(NegotiationState)
+        .filter(NegotiationState.state_name.in_(("Open", "Unavailable")))
+        .all()
+    }
+    proposal_states = {
+        state.state_name: state
+        for state in db.query(ProposalState)
+        .filter(ProposalState.state_name.in_(("Pending", "ItemUnavailable")))
+        .all()
+    }
+    if (
+        len(listing_states) != 3
+        or len(negotiation_states) != 2
+        or len(proposal_states) != 2
+    ):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Listing or trade states are not configured.",
+            detail="Listing, negotiation, or proposal states are not configured.",
         )
 
-    if listing.state_id == removed.id:
+    if listing.state_id == listing_states["Removed"].id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Listing not found.",
         )
 
-    listing.state_id = removed.id
-    db.query(Trade).filter(
-        or_(
-            Trade.listing_requested_id == listing.id,
-            Trade.listing_offered_id == listing.id,
-        ),
-        Trade.trade_state_id == open_trade.id,
-    ).update({Trade.trade_state_id: cancelled_trade.id}, synchronize_session=False)
+    if listing.state_id in {
+        listing_states["Reserved"].id,
+        listing_states["Traded"].id,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Reserved or traded listings cannot be removed.",
+        )
+
+    affected_negotiation_ids = [
+        negotiation_id
+        for (negotiation_id,) in db.query(Negotiation.id)
+        .filter(
+            Negotiation.listing_id == listing.id,
+            Negotiation.negotiation_state_id == negotiation_states["Open"].id,
+        )
+        .with_for_update()
+        .all()
+    ]
+
+    if affected_negotiation_ids:
+        db.query(Proposal).filter(
+            Proposal.negotiation_id.in_(affected_negotiation_ids),
+            Proposal.proposal_state_id == proposal_states["Pending"].id,
+        ).update(
+            {
+                Proposal.proposal_state_id: proposal_states["ItemUnavailable"].id,
+                Proposal.responded_at: func.now(),
+            },
+            synchronize_session=False,
+        )
+        db.query(Negotiation).filter(
+            Negotiation.id.in_(affected_negotiation_ids)
+        ).update(
+            {
+                Negotiation.negotiation_state_id: negotiation_states[
+                    "Unavailable"
+                ].id
+            },
+            synchronize_session=False,
+        )
+
+    db.query(Proposal).filter(
+        Proposal.offered_listing_id == listing.id,
+        Proposal.proposal_state_id == proposal_states["Pending"].id,
+    ).update(
+        {
+            Proposal.proposal_state_id: proposal_states["ItemUnavailable"].id,
+            Proposal.responded_at: func.now(),
+        },
+        synchronize_session=False,
+    )
+    listing.state_id = listing_states["Removed"].id
     db.query(Favorite).filter(Favorite.listing_id == listing.id).delete(
         synchronize_session=False
     )

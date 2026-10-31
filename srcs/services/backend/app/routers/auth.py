@@ -33,8 +33,10 @@ from app.models import (
     Favorite,
     Listing,
     ListingState,
-    Trade,
-    TradeState,
+    Negotiation,
+    NegotiationState,
+    Proposal,
+    ProposalState,
     User,
     UserSession,
 )
@@ -543,25 +545,46 @@ def delete_me(
         .all()
     ]
 
-    removed_state = (
-        db.query(ListingState)
-        .filter(ListingState.state_name == "Removed")
-        .first()
-    )
-    open_trade_state = (
-        db.query(TradeState)
-        .filter(TradeState.state_name == "Open")
-        .first()
-    )
-    cancelled_trade_state = (
-        db.query(TradeState)
-        .filter(TradeState.state_name == "Cancelled")
-        .first()
-    )
+    listing_states = {
+        state.state_name: state
+        for state in db.query(ListingState)
+        .filter(
+            ListingState.state_name.in_(
+                ("Available", "Reserved", "Traded", "Removed")
+            )
+        )
+        .all()
+    }
+    negotiation_states = {
+        state.state_name: state
+        for state in db.query(NegotiationState)
+        .filter(
+            NegotiationState.state_name.in_(
+                ("Open", "Agreed", "Cancelled", "Unavailable")
+            )
+        )
+        .all()
+    }
+    proposal_states = {
+        state.state_name: state
+        for state in db.query(ProposalState)
+        .filter(
+            ProposalState.state_name.in_(
+                (
+                    "Pending",
+                    "Accepted",
+                    "Rejected",
+                    "Withdrawn",
+                    "ItemUnavailable",
+                )
+            )
+        )
+        .all()
+    }
     if (
-        removed_state is None
-        or open_trade_state is None
-        or cancelled_trade_state is None
+        len(listing_states) != 4
+        or len(negotiation_states) != 4
+        or len(proposal_states) != 5
     ):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -569,25 +592,146 @@ def delete_me(
         )
 
     try:
-        # Keep the user, listings, reports, trades, messages, and images in
-        # the database. Only active visibility and access are removed.
+        # Participant cancellation takes precedence over item unavailability.
+        # The interested user's open and agreed negotiations are cancelled.
+        # Agreed negotiations owned by the deleted user are also cancelled so
+        # their reserved listings can be released before the owner's listings
+        # are removed.
+        negotiations_to_cancel = (
+            db.query(Negotiation)
+            .filter(
+                or_(
+                    Negotiation.interested_user_id == user_id,
+                    (
+                        Negotiation.listing_id.in_(listing_ids)
+                        & (
+                            Negotiation.negotiation_state_id
+                            == negotiation_states["Agreed"].id
+                        )
+                    ),
+                ),
+                Negotiation.negotiation_state_id.in_(
+                    (
+                        negotiation_states["Open"].id,
+                        negotiation_states["Agreed"].id,
+                    )
+                ),
+            )
+            .with_for_update()
+            .all()
+        )
+
+        for negotiation in negotiations_to_cancel:
+            cancelled_by_interested = negotiation.interested_user_id == user_id
+            terminal_proposal_state = proposal_states[
+                "Withdrawn" if cancelled_by_interested else "Rejected"
+            ]
+            db.query(Proposal).filter(
+                Proposal.negotiation_id == negotiation.id,
+                Proposal.proposal_state_id == proposal_states["Pending"].id,
+            ).update(
+                {
+                    Proposal.proposal_state_id: terminal_proposal_state.id,
+                    Proposal.responded_at: deleted_at,
+                },
+                synchronize_session=False,
+            )
+
+            if (
+                negotiation.negotiation_state_id
+                == negotiation_states["Agreed"].id
+            ):
+                accepted_proposal = (
+                    db.query(Proposal)
+                    .filter(
+                        Proposal.negotiation_id == negotiation.id,
+                        Proposal.proposal_state_id
+                        == proposal_states["Accepted"].id,
+                    )
+                    .with_for_update()
+                    .one_or_none()
+                )
+                involved_listing_ids = [negotiation.listing_id]
+                if (
+                    accepted_proposal is not None
+                    and accepted_proposal.offered_listing_id is not None
+                ):
+                    involved_listing_ids.append(
+                        accepted_proposal.offered_listing_id
+                    )
+                db.query(Listing).filter(
+                    Listing.id.in_(involved_listing_ids),
+                    Listing.state_id == listing_states["Reserved"].id,
+                ).update(
+                    {Listing.state_id: listing_states["Available"].id},
+                    synchronize_session=False,
+                )
+
+            negotiation.negotiation_state_id = negotiation_states["Cancelled"].id
+            negotiation.cancelled_by_user_id = user_id
+            negotiation.cancelled_at = deleted_at
+
+        # Keep historical rows. Listings that already reached Traded preserve
+        # that terminal state; every other owned listing leaves active use.
         db.query(Listing).filter(
             Listing.user_id == user_id,
             Listing.id.in_(listing_ids),
-            Listing.state_id != removed_state.id,
+            Listing.state_id.notin_(
+                (
+                    listing_states["Traded"].id,
+                    listing_states["Removed"].id,
+                )
+            ),
         ).update(
-            {Listing.state_id: removed_state.id},
+            {Listing.state_id: listing_states["Removed"].id},
             synchronize_session=False,
         )
-        db.query(Trade).filter(
-            or_(
-                Trade.sender_id == user_id,
-                Trade.listing_requested_id.in_(listing_ids),
-                Trade.listing_offered_id.in_(listing_ids),
-            ),
-            Trade.trade_state_id == open_trade_state.id,
+
+        unavailable_negotiation_ids = [
+            negotiation_id
+            for (negotiation_id,) in db.query(Negotiation.id)
+            .filter(
+                Negotiation.listing_id.in_(listing_ids),
+                Negotiation.negotiation_state_id
+                == negotiation_states["Open"].id,
+            )
+            .with_for_update()
+            .all()
+        ]
+        if unavailable_negotiation_ids:
+            db.query(Proposal).filter(
+                Proposal.negotiation_id.in_(unavailable_negotiation_ids),
+                Proposal.proposal_state_id == proposal_states["Pending"].id,
+            ).update(
+                {
+                    Proposal.proposal_state_id: proposal_states[
+                        "ItemUnavailable"
+                    ].id,
+                    Proposal.responded_at: deleted_at,
+                },
+                synchronize_session=False,
+            )
+            db.query(Negotiation).filter(
+                Negotiation.id.in_(unavailable_negotiation_ids)
+            ).update(
+                {
+                    Negotiation.negotiation_state_id: negotiation_states[
+                        "Unavailable"
+                    ].id
+                },
+                synchronize_session=False,
+            )
+
+        db.query(Proposal).filter(
+            Proposal.offered_listing_id.in_(listing_ids),
+            Proposal.proposal_state_id == proposal_states["Pending"].id,
         ).update(
-            {Trade.trade_state_id: cancelled_trade_state.id},
+            {
+                Proposal.proposal_state_id: proposal_states[
+                    "ItemUnavailable"
+                ].id,
+                Proposal.responded_at: deleted_at,
+            },
             synchronize_session=False,
         )
         db.query(Favorite).filter(
