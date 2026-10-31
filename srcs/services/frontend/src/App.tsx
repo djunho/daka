@@ -11,6 +11,7 @@ import Privacy from './pages/Privacy'
 import Terms from './pages/Terms'
 import NotFound from './pages/NotFound'
 import Publish from './pages/Publish'
+import EditListing from './pages/EditListing'
 
 // The router reads the address bar and decides which page component to show.
 // BrowserRouter enables it; Routes picks the first Route whose path matches.
@@ -54,6 +55,11 @@ export default function App() {
             <Route path="/publish" element={
                 <RequireAuth>
                     <Publish />
+                </RequireAuth>
+            } />
+            <Route path="/listing/:id/edit" element={
+                <RequireAuth>
+                    <EditListing />
                 </RequireAuth>
             } />
 

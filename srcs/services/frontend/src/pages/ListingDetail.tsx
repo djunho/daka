@@ -150,7 +150,7 @@ export default function ListingDetail() {
     year: 'numeric',
   })
 
-  // Only the owner can remove the listing (editing comes in a later PR).
+  // Only the owner can edit or remove the listing.
   const isOwner = currentUser?.id === owner.id
 
   return (
@@ -228,13 +228,21 @@ export default function ListingDetail() {
               // Tailwind's text-*/font-* utilities on the button itself.
               <div className="mt-4 pt-4 border-t border-line space-y-3 text-sm font-semibold">
                 <p className="font-medium text-brand">Este é o teu anúncio.</p>
-                <button
-                  type="button"
-                  onClick={openRemoveDialog}
-                  className="text-accent border border-accent rounded-xl px-4 py-2 hover:bg-accent hover:text-white transition-colors"
-                >
-                  Remover anúncio
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    to={`/listing/${listing.id}/edit`}
+                    className="bg-brand text-white rounded-xl px-4 py-2 hover:opacity-90 transition-opacity"
+                  >
+                    Editar anúncio
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={openRemoveDialog}
+                    className="text-accent border border-accent rounded-xl px-4 py-2 hover:bg-accent hover:text-white transition-colors"
+                  >
+                    Remover anúncio
+                  </button>
+                </div>
               </div>
             )}
           </div>

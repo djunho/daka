@@ -8,26 +8,21 @@ import {
   apiUploadListingImage,
   type ApiCategory,
   type ApiCondition,
-  type CreateListingData,
 } from '../lib/api'
 import { getPortugueseErrorMessage } from '../lib/errors'
-import LocationAutocomplete from '../components/LocationAutocomplete'
+import ListingFields from '../components/ListingFields'
 import { useObjectUrl } from '../hooks/useObjectUrl'
 import { validateImage, IMAGE_ACCEPT } from '../lib/images'
-import { categoryLabel, conditionLabel } from '../types/listing'
-
-// Type-safe container for field-level validation messages matching backend schema fields.
-interface FormErrors {
-  title?: string
-  category_id?: string
-  condition_id?: string
-  listing_location?: string
-  wish?: string
-  listing_dsc?: string
-}
-
-// Maximum number of photos per listing, mirroring backend MAX_IMAGES_PER_LISTING.
-const MAX_PHOTOS = 6
+import {
+  EMPTY_LISTING_FORM,
+  MAX_LISTING_PHOTOS,
+  clearFieldErrors,
+  focusFirstError,
+  toListingPayload,
+  validateListingForm,
+  type ListingFormErrors,
+  type ListingFormValues,
+} from '../lib/listingForm'
 
 interface PhotoThumbnailProps {
   file: File
@@ -81,13 +76,8 @@ export default function Publish() {
   const [metaError, setMetaError] = useState<string | null>(null)
 
   // Form input fields state
-  const [title, setTitle] = useState('')
-  const [categoryId, setCategoryId] = useState<number | ''>('')
-  const [conditionId, setConditionId] = useState<number | ''>('')
-  const [location, setLocation] = useState('')
-  const [wish, setWish] = useState('')
-  const [description, setDescription] = useState('')
-  const [errors, setErrors] = useState<FormErrors>({})
+  const [values, setValues] = useState<ListingFormValues>(EMPTY_LISTING_FORM)
+  const [errors, setErrors] = useState<ListingFormErrors>({})
 
   // Photo selection state
   const [photos, setPhotos] = useState<File[]>([])
@@ -134,8 +124,8 @@ export default function Publish() {
     e.target.value = ''
     if (files.length === 0) return
 
-    if (photos.length + files.length > MAX_PHOTOS) {
-      setPhotoError(`Podes adicionar no máximo ${MAX_PHOTOS} fotografias por anúncio.`)
+    if (photos.length + files.length > MAX_LISTING_PHOTOS) {
+      setPhotoError(`Podes adicionar no máximo ${MAX_LISTING_PHOTOS} fotografias por anúncio.`)
       return
     }
 
@@ -167,57 +157,17 @@ export default function Publish() {
     setPhotoError(null)
   }
 
+  // Saves the fields that changed and clears their error messages.
+  const handleFieldChange = (changes: Partial<ListingFormValues>) => {
+    setValues((prev) => ({ ...prev, ...changes }))
+    setErrors((prev) => clearFieldErrors(prev, changes))
+  }
+
   // Client-side validation mirroring backend ListingCreateIn schema
   const validate = (): boolean => {
-    const newErrors: FormErrors = {}
-    const trimmedTitle = title.trim()
-    const titleLength = [...trimmedTitle].length
-
-    if (!trimmedTitle) {
-      newErrors.title = 'O título do anúncio é obrigatório.'
-    } else if (titleLength < 3) {
-      newErrors.title = 'O título deve ter pelo menos 3 caracteres visíveis.'
-    } else if (titleLength > 150) {
-      newErrors.title = 'O título não pode ter mais de 150 caracteres.'
-    }
-
-    if (!categoryId) {
-      newErrors.category_id = 'Seleciona uma categoria.'
-    }
-
-    if (!conditionId) {
-      newErrors.condition_id = 'Seleciona o estado do artigo.'
-    }
-
-    if ([...location.trim()].length > 100) {
-      newErrors.listing_location = 'A localização não pode ter mais de 100 caracteres.'
-    }
-
-    if ([...wish.trim()].length > 1000) {
-      newErrors.wish = 'O que procuras em troca não pode ter mais de 1000 caracteres.'
-    }
-
-    if ([...description.trim()].length > 2000) {
-      newErrors.listing_dsc = 'A descrição não pode ter mais de 2000 caracteres.'
-    }
-
+    const newErrors = validateListingForm(values)
     setErrors(newErrors)
-
-    const firstErrorField = (Object.keys(newErrors) as Array<keyof FormErrors>)[0]
-    if (firstErrorField) {
-      const fieldInputIds: Record<keyof FormErrors, string> = {
-        title: 'title',
-        category_id: 'category',
-        condition_id: 'condition',
-        listing_location: 'listing_location',
-        wish: 'wish',
-        listing_dsc: 'description',
-      }
-      document.getElementById(fieldInputIds[firstErrorField])?.focus()
-      return false
-    }
-
-    return true
+    return !focusFirstError(newErrors)
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -232,14 +182,7 @@ export default function Publish() {
     setSubmittingStatus('A publicar anúncio…')
 
     try {
-      const payload: CreateListingData = {
-        title: title.trim(),
-        category_id: Number(categoryId),
-        condition_id: Number(conditionId),
-        listing_location: location.trim() || null,
-        wish: wish.trim() || null,
-        listing_dsc: description.trim() || null,
-      }
+      const payload = toListingPayload(values)
 
       // Create listing record first or resume if already created on prior partial failure
       let listingId = createdListingIdRef.current
@@ -269,7 +212,7 @@ export default function Publish() {
           'Não foi possível publicar o anúncio. Por favor, tenta novamente.',
           {
             404: 'O anúncio não foi encontrado.',
-            409: `O anúncio já atingiu o limite máximo de ${MAX_PHOTOS} fotografias.`,
+            409: `O anúncio já atingiu o limite máximo de ${MAX_LISTING_PHOTOS} fotografias.`,
           },
         ),
       )
@@ -337,187 +280,14 @@ export default function Publish() {
               </div>
             )}
 
-            {/* Title */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="title" className="text-xs uppercase tracking-wider font-bold text-muted">
-                  Título do anúncio <span className="text-accent">*</span>
-                </label>
-                <span className="text-[11px] text-muted">{[...title].length}/150</span>
-              </div>
-              <input
-                id="title"
-                type="text"
-                disabled={isSubmitting}
-                value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value)
-                  if (errors.title) setErrors((prev) => ({ ...prev, title: undefined }))
-                }}
-                placeholder="Ex.: Bicicleta de montanha em bom estado"
-                aria-invalid={Boolean(errors.title)}
-                aria-describedby={errors.title ? 'title-error' : undefined}
-                className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                  errors.title ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
-                }`}
-              />
-              {errors.title && (
-                <p id="title-error" className="text-xs text-accent mt-1">
-                  {errors.title}
-                </p>
-              )}
-            </div>
-
-            {/* Category and Condition grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="category" className="block text-xs uppercase tracking-wider font-bold text-muted mb-1.5">
-                  Categoria <span className="text-accent">*</span>
-                </label>
-                <select
-                  id="category"
-                  disabled={isSubmitting}
-                  value={categoryId}
-                  onChange={(e) => {
-                    setCategoryId(e.target.value ? Number(e.target.value) : '')
-                    if (errors.category_id) setErrors((prev) => ({ ...prev, category_id: undefined }))
-                  }}
-                  aria-invalid={Boolean(errors.category_id)}
-                  aria-describedby={errors.category_id ? 'category-error' : undefined}
-                  className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                    errors.category_id ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
-                  }`}
-                >
-                  <option value="">Seleciona uma categoria...</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {categoryLabel(c)}
-                    </option>
-                  ))}
-                </select>
-                {errors.category_id && (
-                  <p id="category-error" className="text-xs text-accent mt-1">
-                    {errors.category_id}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="condition" className="block text-xs uppercase tracking-wider font-bold text-muted mb-1.5">
-                  Estado do artigo <span className="text-accent">*</span>
-                </label>
-                <select
-                  id="condition"
-                  disabled={isSubmitting}
-                  value={conditionId}
-                  onChange={(e) => {
-                    setConditionId(e.target.value ? Number(e.target.value) : '')
-                    if (errors.condition_id) setErrors((prev) => ({ ...prev, condition_id: undefined }))
-                  }}
-                  aria-invalid={Boolean(errors.condition_id)}
-                  aria-describedby={errors.condition_id ? 'condition-error' : undefined}
-                  className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                    errors.condition_id ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
-                  }`}
-                >
-                  <option value="">Seleciona o estado...</option>
-                  {conditions.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {conditionLabel(c)}
-                    </option>
-                  ))}
-                </select>
-                {errors.condition_id && (
-                  <p id="condition-error" className="text-xs text-accent mt-1">
-                    {errors.condition_id}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Standardized Location Autocomplete */}
-            <div>
-              <LocationAutocomplete
-                id="listing_location"
-                label="Localização de preferência"
-                value={location}
-                disabled={isSubmitting}
-                placeholder="Escreve uma localidade (ex.: Guimarães, Porto, Lisboa)"
-                ariaInvalid={Boolean(errors.listing_location)}
-                ariaDescribedBy={errors.listing_location ? 'location-error' : undefined}
-                onChange={(val) => {
-                  setLocation(val)
-                  if (errors.listing_location) setErrors((prev) => ({ ...prev, listing_location: undefined }))
-                }}
-              />
-              {errors.listing_location && (
-                <p id="location-error" className="text-xs text-accent mt-1">
-                  {errors.listing_location}
-                </p>
-              )}
-            </div>
-
-            {/* What you want in return (Wish) */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="wish" className="text-xs uppercase tracking-wider font-bold text-muted">
-                  O que procuras em troca? <span className="text-muted font-normal lowercase">(opcional)</span>
-                </label>
-                <span className="text-[11px] text-muted">{[...wish].length}/1000</span>
-              </div>
-              <input
-                id="wish"
-                type="text"
-                disabled={isSubmitting}
-                value={wish}
-                onChange={(e) => {
-                  setWish(e.target.value)
-                  if (errors.wish) setErrors((prev) => ({ ...prev, wish: undefined }))
-                }}
-                placeholder="Ex.: Livros de ficção científica, jogos de tabuleiro ou material de pintura"
-                aria-invalid={Boolean(errors.wish)}
-                aria-describedby={errors.wish ? 'wish-error' : undefined}
-                className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                  errors.wish ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
-                }`}
-              />
-              {errors.wish && (
-                <p id="wish-error" className="text-xs text-accent mt-1">
-                  {errors.wish}
-                </p>
-              )}
-            </div>
-
-            {/* Description */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="description" className="text-xs uppercase tracking-wider font-bold text-muted">
-                  Descrição detalhada <span className="text-muted font-normal lowercase">(opcional)</span>
-                </label>
-                <span className="text-[11px] text-muted">{[...description].length}/2000</span>
-              </div>
-              <textarea
-                id="description"
-                rows={4}
-                disabled={isSubmitting}
-                value={description}
-                onChange={(e) => {
-                  setDescription(e.target.value)
-                  if (errors.listing_dsc) setErrors((prev) => ({ ...prev, listing_dsc: undefined }))
-                }}
-                placeholder="Descreve o teu artigo com mais pormenores: tempo de utilização, funcionamento, acessórios incluídos ou pequenas marcas de desgaste."
-                aria-invalid={Boolean(errors.listing_dsc)}
-                aria-describedby={errors.listing_dsc ? 'description-error' : undefined}
-                className={`w-full bg-paper border rounded-xl px-4 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none transition-colors resize-y disabled:opacity-50 disabled:cursor-not-allowed ${
-                  errors.listing_dsc ? 'border-accent focus:border-accent' : 'border-line focus:border-brand'
-                }`}
-              />
-              {errors.listing_dsc && (
-                <p id="description-error" className="text-xs text-accent mt-1">
-                  {errors.listing_dsc}
-                </p>
-              )}
-            </div>
+            <ListingFields
+              values={values}
+              errors={errors}
+              categories={categories}
+              conditions={conditions}
+              disabled={isSubmitting}
+              onChange={handleFieldChange}
+            />
 
             {/* Photos */}
             <div>
@@ -525,7 +295,7 @@ export default function Publish() {
                 <label className="text-xs uppercase tracking-wider font-bold text-muted">
                   Fotografias do artigo <span className="text-muted font-normal lowercase">(opcional)</span>
                 </label>
-                <span className="text-[11px] text-muted">{photos.length}/{MAX_PHOTOS}</span>
+                <span className="text-[11px] text-muted">{photos.length}/{MAX_LISTING_PHOTOS}</span>
               </div>
               <p className="text-xs text-muted mb-3">
                 A primeira foto será a capa do anúncio. Formatos aceites: JPEG, PNG ou WebP até 2 MB cada.
@@ -542,7 +312,7 @@ export default function Publish() {
                   />
                 ))}
 
-                {photos.length < MAX_PHOTOS && (
+                {photos.length < MAX_LISTING_PHOTOS && (
                   <label
                     className={`w-24 h-24 sm:w-28 sm:h-28 rounded-xl border-2 border-dashed border-line bg-paper/50 flex flex-col items-center justify-center transition-colors text-muted shrink-0 ${
                       isSubmitting
