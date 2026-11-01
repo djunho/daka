@@ -121,10 +121,6 @@
   letter-spacing: -.02em;
   color: var(--ink);
 }
-.hero-tagline {
-  color: var(--brand);
-  font-weight: 600;
-}
 .wordmark b { color: var(--brand); }
 .search {
   flex: 1; max-width: 420px;
@@ -133,17 +129,6 @@
   background: var(--paper); color: var(--ink);
 }
 .header-actions { display: flex; gap: 10px; margin-left: auto; }
-
-/* ============ Hero ============ */
-.hero { padding: 44px 24px 8px; }
-.hero-title {
-  font-family: var(--font-display);
-  font-weight: 700; letter-spacing: -.03em;
-  font-size: clamp(32px, 6vw, 52px);
-  margin: 0;
-}
-.hero-title .swap-word { color: var(--accent); }
-.hero-sub { color: var(--muted); font-size: 18px; margin: 8px 0 0; max-width: 46ch; }
 
 /* ============ Chips de categoria ============ */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 20px 24px 8px; }
