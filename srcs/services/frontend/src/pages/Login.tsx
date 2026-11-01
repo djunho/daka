@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
+import Button from '../components/Button'
 import { ApiError } from '../lib/api'
 
 // The authentication screen, now with real state and client-side validation.
@@ -353,10 +354,12 @@ export default function Login() {
               </div>
             </Field>
 
-            <button
+            <Button
               type="submit"
-              disabled={submitting}
-              className="w-full py-3 bg-brand text-surface font-semibold rounded-xl hover:opacity-95 transition-opacity mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
+              variant="primary"
+              size="lg"
+              loading={submitting}
+              className="w-full mt-2"
             >
               {submitting
                 ? isSignup
@@ -365,7 +368,7 @@ export default function Login() {
                 : isSignup
                   ? 'Criar conta gratuita'
                   : 'Entrar no Daka'}
-            </button>
+            </Button>
           </form>
         </div>
 

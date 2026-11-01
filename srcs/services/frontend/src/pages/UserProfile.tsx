@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
+import { buttonClasses } from '../components/Button'
 import ListingCard from '../components/ListingCard'
 import { ApiError, apiGetPublicProfile, type ApiPublicProfile } from '../lib/api'
 
@@ -69,7 +70,7 @@ export default function UserProfile() {
           <p className="text-sm text-muted mb-6">
             O utilizador que procuras não existe ou foi removido.
           </p>
-          <Link className="btn" to="/">
+          <Link className={buttonClasses()} to="/">
             Voltar ao início
           </Link>
         </div>
@@ -84,7 +85,7 @@ export default function UserProfile() {
           <p role="alert" className="text-sm text-muted mb-6">
             {error}
           </p>
-          <Link className="btn" to="/">
+          <Link className={buttonClasses()} to="/">
             Voltar ao início
           </Link>
         </div>
@@ -152,7 +153,7 @@ export default function UserProfile() {
             <div>
               <Link
                 to="/profile"
-                className="text-xs font-semibold bg-brand text-surface px-3 py-2 rounded-lg hover:opacity-95 transition-opacity inline-flex items-center gap-1.5"
+                className={buttonClasses({ variant: 'primary', size: 'sm' })}
               >
                 Editar o meu perfil
               </Link>
@@ -202,7 +203,7 @@ export default function UserProfile() {
       </section>
 
       <div className="pt-2">
-        <Link className="btn" to="/">
+        <Link className={buttonClasses()} to="/">
           Voltar ao início
         </Link>
       </div>

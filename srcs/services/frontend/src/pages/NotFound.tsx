@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { buttonClasses } from '../components/Button'
 
 // Shown for any URL that matched no route (the path="*" in App.tsx).
 export default function NotFound() {
@@ -6,7 +7,7 @@ export default function NotFound() {
     <main className="page">
       <h1 className="page-title">404 — página não encontrada</h1>
       <p className="page-text">Este endereço não existe no Daka.</p>
-      <Link className="btn" to="/">Voltar ao início</Link>
+      <Link className={buttonClasses()} to="/">Voltar ao início</Link>
     </main>
   )
 }

@@ -152,12 +152,9 @@ export default function ListingPhotoManager({ listing, onChange }: ListingPhotoM
           >
             <img src={image.image_path} alt={`Foto ${index + 1}`} className="w-full h-full object-cover" />
 
-            {/* Font classes on the wrappers: index.css has `button { font: inherit }`
-                outside any @layer, which beats text and font utilities on the
-                buttons themselves. */}
-            <div className="absolute bottom-1.5 left-1.5 text-[10px] font-semibold">
+            <div className="absolute bottom-1.5 left-1.5">
               {image.is_primary ? (
-                <span className="bg-ink/80 text-surface px-2 py-0.5 rounded-md backdrop-blur-xs">
+                <span className="bg-ink/80 text-surface text-[10px] font-semibold px-2 py-0.5 rounded-md backdrop-blur-xs">
                   Principal
                 </span>
               ) : (
@@ -166,20 +163,20 @@ export default function ListingPhotoManager({ listing, onChange }: ListingPhotoM
                   onClick={() => handleSetPrimary(image)}
                   disabled={busy !== null}
                   aria-label={`Tornar a foto ${index + 1} principal`}
-                  className="bg-surface/90 text-ink px-2 py-0.5 rounded-md border border-line/40 shadow-sm enabled:hover:bg-surface disabled:opacity-40"
+                  className="bg-surface/90 text-ink text-[10px] font-semibold px-2 py-0.5 rounded-md border border-line/40 shadow-sm enabled:hover:bg-surface disabled:opacity-40"
                 >
                   Tornar principal
                 </button>
               )}
             </div>
 
-            <div className="absolute top-1.5 right-1.5 text-xs">
+            <div className="absolute top-1.5 right-1.5">
               <button
                 type="button"
                 onClick={() => openDeleteDialog(image)}
                 disabled={busy !== null}
                 aria-label={`Apagar foto ${index + 1}`}
-                className="w-6 h-6 rounded-full bg-surface/90 text-accent border border-line/40 flex items-center justify-center shadow-sm enabled:hover:bg-surface disabled:opacity-40"
+                className="w-6 h-6 rounded-full bg-surface/90 text-accent text-xs border border-line/40 flex items-center justify-center shadow-sm enabled:hover:bg-surface disabled:opacity-40"
               >
                 <span aria-hidden="true">✕</span>
               </button>

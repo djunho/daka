@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, type FormEvent, type ChangeEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import Button, { buttonClasses } from '../components/Button'
 import {
   apiListCategories,
   apiListConditions,
@@ -353,25 +354,18 @@ export default function Publish() {
                 onClick={(e) => {
                   if (isSubmitting) e.preventDefault()
                 }}
-                className={`w-full sm:w-auto px-5 py-2.5 rounded-full text-sm font-semibold text-muted hover:text-ink text-center transition-colors ${
-                  isSubmitting ? 'pointer-events-none opacity-40 cursor-not-allowed' : ''
-                }`}
+                className={buttonClasses({ variant: 'ghost', className: 'w-full sm:w-auto' })}
               >
                 Cancelar
               </Link>
-              <button
+              <Button
                 type="submit"
-                disabled={isSubmitting}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-full font-semibold text-sm bg-brand text-surface hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all inline-flex items-center justify-center gap-2"
+                variant="primary"
+                loading={isSubmitting}
+                className="w-full sm:w-auto"
               >
-                {isSubmitting && (
-                  <span
-                    aria-hidden="true"
-                    className="inline-block w-4 h-4 border-2 border-surface border-t-transparent rounded-full animate-spin"
-                  />
-                )}
                 <span>{submittingStatus ?? 'Publicar anúncio'}</span>
-              </button>
+              </Button>
             </div>
           </form>
         )}
