@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import Button, { buttonClasses } from '../components/Button'
 import {
   ApiError,
   apiGetListing,
@@ -153,7 +154,7 @@ export default function EditListing() {
           <p className="text-sm text-muted mb-6">
             O anúncio que procuras não existe ou já foi removido.
           </p>
-          <Link className="btn" to="/">Voltar ao início</Link>
+          <Link className={buttonClasses()} to="/">Voltar ao início</Link>
         </div>
       </main>
     )
@@ -166,7 +167,7 @@ export default function EditListing() {
           <p role="alert" className="text-sm text-muted mb-6">
             {error}
           </p>
-          <Link className="btn" to={`/listing/${listingId}`}>Voltar ao anúncio</Link>
+          <Link className={buttonClasses()} to={`/listing/${listingId}`}>Voltar ao anúncio</Link>
         </div>
       </main>
     )
@@ -204,7 +205,7 @@ export default function EditListing() {
           <p className="text-sm text-muted mb-6">
             Só quem publicou o anúncio o pode alterar.
           </p>
-          <Link className="btn" to={`/listing/${listing.id}`}>Ver anúncio</Link>
+          <Link className={buttonClasses()} to={`/listing/${listing.id}`}>Ver anúncio</Link>
         </div>
       </main>
     )
@@ -243,10 +244,7 @@ export default function EditListing() {
             onChange={handleFieldChange}
           />
 
-          {/* Font classes on the wrapper: index.css has `button { font: inherit }`
-              outside any @layer, which beats text and font utilities on the
-              button itself. */}
-          <div className="pt-6 border-t border-line flex flex-col-reverse sm:flex-row items-center justify-end gap-3 text-sm font-semibold">
+          <div className="pt-6 border-t border-line flex flex-col-reverse sm:flex-row items-center justify-end gap-3">
             {/* While saving, leaving would hide whether the changes were kept. */}
             <Link
               to={`/listing/${listing.id}`}
@@ -255,17 +253,18 @@ export default function EditListing() {
               onClick={(e) => {
                 if (saving) e.preventDefault()
               }}
-              className="w-full sm:w-auto px-5 py-2.5 rounded-full text-muted hover:text-ink text-center transition-colors aria-disabled:pointer-events-none aria-disabled:opacity-40"
+              className={buttonClasses({ variant: 'ghost', className: 'w-full sm:w-auto' })}
             >
               Cancelar
             </Link>
-            <button
+            <Button
               type="submit"
-              disabled={saving}
-              className="w-full sm:w-auto px-6 py-2.5 rounded-full bg-brand text-surface transition-opacity enabled:hover:opacity-95 disabled:opacity-50"
+              variant="primary"
+              loading={saving}
+              className="w-full sm:w-auto"
             >
               {saving ? 'A guardar…' : 'Guardar alterações'}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

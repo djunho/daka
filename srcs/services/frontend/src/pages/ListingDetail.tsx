@@ -5,6 +5,7 @@ import { categoryLabel, conditionLabel } from '../types/listing'
 import ListingGallery from '../components/ListingGallery'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
+import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 // useParams reads the :id piece from the URL (/listing/3 -> id === "3").
@@ -97,7 +98,7 @@ export default function ListingDetail() {
           <p className="text-sm text-muted mb-6">
             O anúncio que procuras não existe ou já foi removido.
           </p>
-          <Link className="btn" to="/">Voltar ao início</Link>
+          <Link className={buttonClasses()} to="/">Voltar ao início</Link>
         </div>
       </main>
     )
@@ -110,7 +111,7 @@ export default function ListingDetail() {
           <p role="alert" className="text-sm text-muted mb-6">
             {error}
           </p>
-          <Link className="btn" to="/">Voltar ao início</Link>
+          <Link className={buttonClasses()} to="/">Voltar ao início</Link>
         </div>
       </main>
     )
@@ -223,25 +224,18 @@ export default function ListingDetail() {
               </div>
             </div>
             {isOwner && (
-              // The font classes sit on this div on purpose: index.css has
-              // `button { font: inherit }` outside any @layer, which beats
-              // Tailwind's text-*/font-* utilities on the button itself.
-              <div className="mt-4 pt-4 border-t border-line space-y-3 text-sm font-semibold">
-                <p className="font-medium text-brand">Este é o teu anúncio.</p>
+              <div className="mt-4 pt-4 border-t border-line space-y-3">
+                <p className="text-sm font-medium text-brand">Este é o teu anúncio.</p>
                 <div className="flex flex-wrap gap-2">
                   <Link
                     to={`/listing/${listing.id}/edit`}
-                    className="bg-brand text-white rounded-xl px-4 py-2 hover:opacity-90 transition-opacity"
+                    className={buttonClasses({ variant: 'primary', size: 'sm' })}
                   >
                     Editar anúncio
                   </Link>
-                  <button
-                    type="button"
-                    onClick={openRemoveDialog}
-                    className="text-accent border border-accent rounded-xl px-4 py-2 hover:bg-accent hover:text-white transition-colors"
-                  >
+                  <Button variant="dangerOutline" size="sm" onClick={openRemoveDialog}>
                     Remover anúncio
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -250,7 +244,7 @@ export default function ListingDetail() {
       </div>
 
       <div className="mt-8">
-        <Link className="btn" to="/">Voltar ao início</Link>
+        <Link className={buttonClasses()} to="/">Voltar ao início</Link>
       </div>
       {isOwner && (
         <ConfirmDialog

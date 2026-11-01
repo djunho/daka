@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from 'react'
+import Button from './Button'
 
 type ConfirmDialogProps = {
   open: boolean
@@ -49,6 +50,17 @@ export default function ConfirmDialog({
         e.preventDefault()
         if (!busy) onCancel()
       }}
+      // A second rapid Esc in Chromium can bypass preventDefault() on cancel
+      // and force-close the native <dialog>. Re-open it if still busy, or sync
+      // parent state if closed while idle.
+      onClose={() => {
+        if (!open) return
+        if (busy) {
+          dialogRef.current?.showModal()
+        } else {
+          onCancel()
+        }
+      }}
       className="m-auto w-[calc(100%-2rem)] max-w-md bg-surface border border-line rounded-2xl p-6 shadow-2xl space-y-4 backdrop:bg-ink/40 backdrop:backdrop-blur-xs"
     >
       <h2 id={titleId} className="text-base font-bold text-ink">
@@ -64,26 +76,13 @@ export default function ConfirmDialog({
         </p>
       )}
 
-      {/* Font classes on the wrapper: index.css has `button { font: inherit }`
-          outside any @layer, which beats text and font utilities on the
-          buttons themselves. */}
-      <div className="flex items-center justify-end gap-3 pt-3 text-sm font-semibold">
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={busy}
-          className="px-4 py-2 text-muted transition-colors enabled:hover:text-ink disabled:opacity-40"
-        >
+      <div className="flex items-center justify-end gap-3 pt-3">
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
           Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={busy}
-          className="px-4 py-2 bg-accent text-white rounded-xl transition-opacity enabled:hover:opacity-90 disabled:opacity-40"
-        >
+        </Button>
+        <Button variant="danger" size="sm" onClick={onConfirm} loading={busy}>
           {busy ? busyLabel : confirmLabel}
-        </button>
+        </Button>
       </div>
     </dialog>
   )

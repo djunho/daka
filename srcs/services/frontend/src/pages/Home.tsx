@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import Button from '../components/Button'
 import ListingCard from '../components/ListingCard'
 import { categoryLabel } from '../types/listing'
 import { apiListCategories, type ApiCategory, apiListListings, type ApiListingSummary } from '../lib/api'
@@ -164,7 +165,7 @@ export default function Home() {
             maxLength={100}
             className="flex-1 px-4 py-2.5 bg-paper border border-line rounded-full text-ink placeholder:text-muted focus:border-brand focus:outline-none transition-colors"
           />
-          <button type="submit" className="btn">Filtrar</button>
+          <Button type="submit">Filtrar</Button>
         </form>
 
         {/* Outside the form on purpose: it clears every filter, not just the
@@ -212,13 +213,9 @@ export default function Home() {
 
         {!loading && !error && listings.length < total && (
           <div className="flex flex-col items-center gap-2 mt-8">
-            <button
-              className="btn disabled:opacity-60"
-              onClick={loadMore}
-              disabled={loadingMore}
-            >
+            <Button onClick={loadMore} loading={loadingMore}>
               {loadingMore ? 'A carregar…' : 'Carregar mais'}
-            </button>
+            </Button>
             {moreError && <p role="alert" className="text-sm text-accent">{moreError}</p>}
           </div>
         )}
