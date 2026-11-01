@@ -135,15 +135,6 @@
   .search { display: none; }
 }
 
-/* ============ Páginas simples (placeholders, legais, 404) ============ */
-.page { max-width: 720px; margin: 0 auto; padding: 48px 24px; }
-.page-title {
-  font-family: var(--font-display);
-  font-weight: 700; letter-spacing: -.02em;
-  font-size: 32px; margin: 0 0 16px;
-}
-.page-text { color: var(--muted); font-size: 17px; margin: 0 0 16px; }
-
 /* ============ Footer ============ */
 .app-footer {
   display: flex; justify-content: center; gap: 12px;

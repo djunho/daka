@@ -44,8 +44,8 @@ export default function Profile() {
 
   if (!user) {
       return (
-          <main className="page">
-          <h1 className="page-title">Erro ao carregar dados do utilizador</h1>
+          <main className="max-w-[720px] mx-auto px-6 py-12">
+          <h1 className="font-display font-bold tracking-tight text-[32px] mb-4">Erro ao carregar dados do utilizador</h1>
           <Link className={buttonClasses()} to="/">Voltar ao início</Link>
           </main>
       )
