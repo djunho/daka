@@ -411,34 +411,30 @@ def delete_listing(
     offering it become unavailable individually. Favorites are removed because
     they only apply to public listings.
     """
-    listing = db.get(Listing, id, with_for_update=True)
-    if listing is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Listing not found.",
-        )
-
-    if listing.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only delete your own listings.",
-        )
-
+    user_id = current_user.id
+    db.rollback()
+    # Resolve lookup ids before starting the transaction that acquires row locks.
     listing_states = {
-        state.state_name: state
-        for state in db.query(ListingState)
+        state_name: state_id
+        for state_name, state_id in db.query(
+            ListingState.state_name, ListingState.id
+        )
         .filter(ListingState.state_name.in_(("Removed", "Reserved", "Traded")))
         .all()
     }
     negotiation_states = {
-        state.state_name: state
-        for state in db.query(NegotiationState)
+        state_name: state_id
+        for state_name, state_id in db.query(
+            NegotiationState.state_name, NegotiationState.id
+        )
         .filter(NegotiationState.state_name.in_(("Open", "Unavailable")))
         .all()
     }
     proposal_states = {
-        state.state_name: state
-        for state in db.query(ProposalState)
+        state_name: state_id
+        for state_name, state_id in db.query(
+            ProposalState.state_name, ProposalState.id
+        )
         .filter(ProposalState.state_name.in_(("Pending", "ItemUnavailable")))
         .all()
     }
@@ -452,39 +448,55 @@ def delete_listing(
             detail="Listing, negotiation, or proposal states are not configured.",
         )
 
-    if listing.state_id == listing_states["Removed"].id:
+    db.rollback()
+    # Match the negotiation lifecycle lock order: negotiations, then listings.
+    affected_negotiation_ids = [
+        negotiation_id
+        for (negotiation_id,) in db.query(Negotiation.id)
+        .filter(
+            Negotiation.listing_id == id,
+            Negotiation.negotiation_state_id == negotiation_states["Open"],
+        )
+        .order_by(Negotiation.id)
+        .with_for_update()
+        .all()
+    ]
+
+    listing = db.get(Listing, id, with_for_update=True)
+    if listing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
+
+    if listing.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own listings.",
+        )
+
+    if listing.state_id == listing_states["Removed"]:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Listing not found.",
         )
 
     if listing.state_id in {
-        listing_states["Reserved"].id,
-        listing_states["Traded"].id,
+        listing_states["Reserved"],
+        listing_states["Traded"],
     }:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Reserved or traded listings cannot be removed.",
         )
 
-    affected_negotiation_ids = [
-        negotiation_id
-        for (negotiation_id,) in db.query(Negotiation.id)
-        .filter(
-            Negotiation.listing_id == listing.id,
-            Negotiation.negotiation_state_id == negotiation_states["Open"].id,
-        )
-        .with_for_update()
-        .all()
-    ]
-
     if affected_negotiation_ids:
         db.query(Proposal).filter(
             Proposal.negotiation_id.in_(affected_negotiation_ids),
-            Proposal.proposal_state_id == proposal_states["Pending"].id,
+            Proposal.proposal_state_id == proposal_states["Pending"],
         ).update(
             {
-                Proposal.proposal_state_id: proposal_states["ItemUnavailable"].id,
+                Proposal.proposal_state_id: proposal_states["ItemUnavailable"],
                 Proposal.responded_at: func.now(),
             },
             synchronize_session=False,
@@ -495,22 +507,22 @@ def delete_listing(
             {
                 Negotiation.negotiation_state_id: negotiation_states[
                     "Unavailable"
-                ].id
+                ]
             },
             synchronize_session=False,
         )
 
     db.query(Proposal).filter(
         Proposal.offered_listing_id == listing.id,
-        Proposal.proposal_state_id == proposal_states["Pending"].id,
+        Proposal.proposal_state_id == proposal_states["Pending"],
     ).update(
         {
-            Proposal.proposal_state_id: proposal_states["ItemUnavailable"].id,
+            Proposal.proposal_state_id: proposal_states["ItemUnavailable"],
             Proposal.responded_at: func.now(),
         },
         synchronize_session=False,
     )
-    listing.state_id = listing_states["Removed"].id
+    listing.state_id = listing_states["Removed"]
     db.query(Favorite).filter(Favorite.listing_id == listing.id).delete(
         synchronize_session=False
     )

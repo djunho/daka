@@ -118,7 +118,7 @@ class ListingState(Base):
     __tablename__ = "listings_states"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    state_name: Mapped[str] = mapped_column(String(50))
+    state_name: Mapped[str] = mapped_column(String(50), unique=True)
 
 
 class NegotiationState(Base):
