@@ -130,22 +130,9 @@
 }
 .header-actions { display: flex; gap: 10px; margin-left: auto; }
 
-/* ============ Feed ============ */
-.feed { padding: 8px 24px 48px; }
-.feed-count { color: var(--muted); font-size: 14px; margin: 8px 0 16px; }
-.grid {
-  display: grid; gap: var(--gap);
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-}
-.empty {
-  padding: 48px; text-align: center; color: var(--muted);
-  border: 1px dashed var(--line); border-radius: var(--radius);
-}
-
 /* ============ Responsivo / mobile ============ */
 @media (max-width: 640px) {
   .search { display: none; }
-  .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 }
 
 /* ============ Páginas simples (placeholders, legais, 404) ============ */

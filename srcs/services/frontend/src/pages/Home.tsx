@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Button from '../components/Button'
-import ListingCard from '../components/ListingCard'
+import ListingCard, { EMPTY_STATE_CLASSES, LISTING_GRID_CLASSES } from '../components/ListingCard'
 import { categoryLabel } from '../types/listing'
 import { apiListCategories, type ApiCategory, apiListListings, type ApiListingSummary } from '../lib/api'
 
@@ -182,9 +182,9 @@ export default function Home() {
         )}
       </div>
 
-      <section className="feed">
+      <section className="px-6 pt-2 pb-12">
         {!loading && !error && (
-          <p className="feed-count">
+          <p className="text-muted text-sm mt-2 mb-4">
             {total} {total === 1 ? 'anúncio' : 'anúncios'}
             {activeCategory ? ` em ${categoryLabel(activeCategory)}` : ''}
             {q ? ` para "${q}"` : ''}
@@ -195,17 +195,17 @@ export default function Home() {
         {/* Order matters: loading must come before the empty check, or the
             "nothing here" message would flash while the request is running. */}
         {error ? (
-          <p className="empty" role="alert">{error}</p>
+          <p className={EMPTY_STATE_CLASSES} role="alert">{error}</p>
         ) : loading ? (
-          <p className="empty" role="status">A carregar anúncios…</p>
+          <p className={EMPTY_STATE_CLASSES} role="status">A carregar anúncios…</p>
         ) : listings.length === 0 ? (
-          <p className="empty">
+          <p className={EMPTY_STATE_CLASSES}>
             {hasFilters
               ? 'Nenhum anúncio corresponde aos filtros.'
               : 'Ainda não há anúncios. Sê o primeiro a publicar!'}
           </p>
         ) : (
-          <div className="grid">
+          <div className={LISTING_GRID_CLASSES}>
             {listings.map((l) => (
               <ListingCard key={l.id} listing={l} />
             ))}
