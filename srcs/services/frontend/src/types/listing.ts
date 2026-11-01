@@ -5,7 +5,7 @@ import type { ApiCategory, ApiCondition } from '../lib/api'
 // UI translates them by that name, not by id: ids depend on the order the
 // rows were inserted, names are what the seeds define (mariadb/seeds.sql).
 // A name missing here (e.g. a category added later in the backend) shows the
-// API's English name, and a card without a photo falls back to --brand-soft.
+// API's English name, and a card without a photo falls back to bg-brand-soft.
 export const CATEGORY_LABELS: Record<string, string> = {
   Books: 'Livros',
   Clothing: 'Roupas & Acessórios',
@@ -49,7 +49,7 @@ export function categoryLabel(category: ApiCategory): string {
 }
 
 // Background of a card without a photo. Undefined for a category missing from
-// CATEGORY_TINTS, so the CSS falls back to --brand-soft (see .card-media).
+// CATEGORY_TINTS, so the element falls back to bg-brand-soft (--color-brand-soft).
 export function categoryTint(category: ApiCategory): string | undefined {
   return CATEGORY_TINTS[category.category_name]
 }

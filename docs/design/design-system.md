@@ -52,6 +52,7 @@ This document defines the visual identity of the project.
 | ![](https://dummyimage.com/40x24/BCD7D1/FFFFFF&text=+) | `TBA` | `#BCD7D1` | Borders / outlines |
 | ![](https://dummyimage.com/40x24/15231F/FFFFFF&text=+) | `TBA` | `#15231F` | Footer |
 | ![](https://dummyimage.com/40x24/246C5E/FFFFFF&text=+) | `TBA` | `#246C5E` | Button background |
+| ![](https://dummyimage.com/40x24/DCEBE8/FFFFFF&text=+) | `--color-brand-soft` | `#DCEBE8` | Active chip fill / photo fallback tint |
 
 ---
 

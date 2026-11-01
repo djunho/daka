@@ -30,6 +30,7 @@
 @theme {
   /* --- Brand --- */
   --color-brand:       #246C5E;   /* buttons, logo background, "has" text */
+  --color-brand-soft:  #DCEBE8;   /* active chip fill, photo fallback tint */
   --color-accent:      #DF3D31;   /* the "wants" side of every trade */
 
   /* --- Surfaces --- */
@@ -167,56 +168,10 @@
   border: 1px dashed var(--line); border-radius: var(--radius);
 }
 
-/* ============ Cartão de anúncio ============ */
-.card {
-  background: var(--surface);
-  border: 1px solid var(--line); border-radius: var(--radius);
-  overflow: hidden; box-shadow: var(--shadow);
-  transition: transform .15s ease, box-shadow .15s ease;
-}
-.card:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(21,35,31,.10); }
-
-.card-media {
-  position: relative; aspect-ratio: 4 / 3;
-  background: var(--tint, var(--brand-soft));
-  display: flex; align-items: flex-end; padding: 10px;
-}
-/* Same pill as .badge, so the label stays readable on top of any photo. */
-.card-cat {
-  padding: 4px 10px; border-radius: 999px;
-  background: var(--surface); color: var(--color-label);
-  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
-}
-.badge {
-  position: absolute; top: 10px; right: 10px;
-  padding: 4px 10px; border-radius: 999px;
-  background: var(--surface); color: var(--ink);
-  font-size: 12px; font-weight: 600;
-}
-
-.card-body { padding: 14px 16px 16px; }
-.card-title { font-weight: 700; font-size: 16px; margin: 0 0 8px; }
-
-.swap { display: flex; align-items: baseline; gap: 6px; font-size: 14px; }
-.swap-arrow { color: var(--accent); font-weight: 700; }
-.swap-label { color: var(--muted); }
-.swap-wants { color: var(--accent); font-weight: 600; }
-
-.card-meta {
-  display: flex; gap: 8px; margin-top: 12px; padding-top: 12px;
-  border-top: 1px solid var(--line);
-  color: var(--muted); font-size: 13px;
-}
-.card-meta .dot { color: var(--line); }
-
 /* ============ Responsivo / mobile ============ */
 @media (max-width: 640px) {
   .search { display: none; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .card { transition: none; }
 }
 
 /* ============ Páginas simples (placeholders, legais, 404) ============ */
