@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
 import { buttonClasses } from '../components/Button'
-import ListingCard from '../components/ListingCard'
+import ListingCard, { EMPTY_STATE_CLASSES, LISTING_GRID_CLASSES } from '../components/ListingCard'
 import { ApiError, apiGetPublicProfile, type ApiPublicProfile } from '../lib/api'
 
 export default function UserProfile() {
@@ -190,11 +190,11 @@ export default function UserProfile() {
         </div>
 
         {profile.listings.length === 0 ? (
-          <div className="empty">
+          <div className={EMPTY_STATE_CLASSES}>
             <p>Este utilizador ainda não tem anúncios ativos para troca.</p>
           </div>
         ) : (
-          <div className="grid">
+          <div className={LISTING_GRID_CLASSES}>
             {profile.listings.map((listing) => (
               <ListingCard key={listing.id} listing={listing} />
             ))}

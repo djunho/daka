@@ -2,6 +2,12 @@ import { Link } from 'react-router-dom'
 import { categoryLabel, categoryTint, conditionLabel } from '../types/listing'
 import { type ApiListingSummary } from '../lib/api'
 
+export const LISTING_GRID_CLASSES =
+  'grid gap-5 grid-cols-[repeat(auto-fill,minmax(150px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+
+export const EMPTY_STATE_CLASSES =
+  'p-12 text-center text-muted border border-dashed border-line rounded-[14px]'
+
 export default function ListingCard({ listing }: { listing: ApiListingSummary }) {
   const { id, title, wish, category, condition, listing_location, owner, cover_image } = listing
 
