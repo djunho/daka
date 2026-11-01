@@ -126,13 +126,13 @@ export default function Home() {
 
   return (
     <main>
-      <section className="hero">
-        <h1 className="hero-title">
-          Não compres. <span className="swap-word">Troca.</span>
+      <section className="px-6 pt-11 pb-2">
+        <h1 className="font-display font-bold tracking-tight text-[clamp(32px,6vw,52px)]">
+          Não compres. <span className="text-accent">Troca.</span>
         </h1>
-        <p className="hero-sub">
+        <p className="text-muted text-lg mt-2 max-w-[46ch]">
           Dá aquilo que já não usas e recebe algo que precisas.<br/>
-          <span className="hero-tagline">Sem dinheiro: só toma-lá-dá-cá.</span>
+          <span className="text-brand font-semibold">Sem dinheiro: só toma-lá-dá-cá.</span>
         </p>
       </section>
 
