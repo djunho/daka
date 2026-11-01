@@ -6,32 +6,42 @@ export default function ListingCard({ listing }: { listing: ApiListingSummary })
   const { id, title, wish, category, condition, listing_location, owner, cover_image } = listing
 
   return (
-    <Link to={`/listing/${id}`} className="card block text-inherit no-underline">
-      <div className="card-media" style={{ ['--tint' as string]: categoryTint(category) }}>
+    <Link
+      to={`/listing/${id}`}
+      className="block bg-surface border border-line rounded-[14px] overflow-hidden shadow-sm transition duration-150 ease-out hover:-translate-y-0.5 hover:shadow-lg motion-reduce:transition-none text-inherit no-underline"
+    >
+      <div
+        className="relative aspect-[4/3] bg-brand-soft flex items-end p-2.5"
+        style={{ backgroundColor: categoryTint(category) }}
+      >
         {cover_image && (
-          <img src={cover_image} alt={title} className='absolute inset-0 w-full h-full object-cover' loading='lazy' />
+          <img src={cover_image} alt={title} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
         )}
-        <span className="badge">{conditionLabel(condition)}</span>
+        <span className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-full bg-surface text-ink text-xs font-semibold">
+          {conditionLabel(condition)}
+        </span>
         {/* show the human-facing label, not the code id */}
-        <span className="card-cat relative">{categoryLabel(category)}</span>
+        <span className="relative px-2.5 py-1 rounded-full bg-surface text-label text-xs font-bold uppercase tracking-wider">
+          {categoryLabel(category)}
+        </span>
       </div>
 
-      <div className="card-body">
-        <h3 className="card-title">{title}</h3>
+      <div className="px-4 pt-3.5 pb-4">
+        <h3 className="font-bold text-base mb-2">{title}</h3>
 
         {wish && (
-          <p className="swap">
-            <span className="swap-arrow" aria-hidden="true">⇄</span>
-            <span className="swap-label">quer:</span>
-            <span className="swap-wants">{wish}</span>
+          <p className="flex items-baseline gap-1.5 text-sm">
+            <span className="text-accent font-bold" aria-hidden="true">⇄</span>
+            <span className="text-muted">quer:</span>
+            <span className="text-accent font-semibold">{wish}</span>
           </p>
         )}
 
-        <div className="card-meta">
+        <div className="flex gap-2 mt-3 pt-3 border-t border-line text-muted text-[13px]">
           {listing_location && (
             <>
               <span>{listing_location}</span>
-              <span className="dot" aria-hidden="true">•</span>
+              <span className="text-line" aria-hidden="true">•</span>
             </>
           )}
           <span>@{owner.user_name}</span>
