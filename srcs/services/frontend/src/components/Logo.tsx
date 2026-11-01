@@ -20,16 +20,16 @@ export default function Logo({ height = 34 }: { height?: number }) {
         fontWeight="700"
         fontSize="40"
         letterSpacing="-0.03em"
-        fill="var(--ink)"
+        fill="var(--color-ink)"
       >
         da
       </text>
 
       {/* the swap: top arrow points right (teal), bottom arrow points left (coral) */}
-      <path d="M58 17 L78 17" stroke="var(--brand)" strokeWidth="4" strokeLinecap="round" fill="none" />
-      <path d="M72 11 L78 17 L72 23" stroke="var(--brand)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <path d="M78 30 L58 30" stroke="var(--accent)" strokeWidth="4" strokeLinecap="round" fill="none" />
-      <path d="M64 24 L58 30 L64 36" stroke="var(--accent)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M58 17 L78 17" stroke="var(--color-brand)" strokeWidth="4" strokeLinecap="round" fill="none" />
+      <path d="M72 11 L78 17 L72 23" stroke="var(--color-brand)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M78 30 L58 30" stroke="var(--color-accent)" strokeWidth="4" strokeLinecap="round" fill="none" />
+      <path d="M64 24 L58 30 L64 36" stroke="var(--color-accent)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
 
       {/* "ka" — the side the person receives */}
       <text
@@ -39,7 +39,7 @@ export default function Logo({ height = 34 }: { height?: number }) {
         fontWeight="700"
         fontSize="40"
         letterSpacing="-0.03em"
-        fill="var(--brand)"
+        fill="var(--color-brand)"
       >
         ka
       </text>
