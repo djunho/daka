@@ -1,31 +1,7 @@
 @import 'tailwindcss';
 
 /* ============================================================================
-   MIGRATION NOTE
-   ----------------------------------------------------------------------------
-   This file is in a deliberate in-between state. We are moving the frontend
-   from hand-written prototype CSS (the ".card", ".btn", ".chip" classes) to
-   Tailwind utilities driven by design tokens. Rebuilding every page at once
-   would leave the site broken for days, so the two styles live side by side
-   here and pages migrate one at a time.
-
-   1. @theme  -- the NEW system. Tokens from docs/design/design-system.md.
-      Pages built the Tailwind way read these as utility classes:
-      bg-brand, text-ink, border-line, ...
-
-   2. Legacy component CSS -- the OLD system. The prototype's .card / .btn /
-      .chip classes, kept alive so Home, ListingCard and the old Header still
-      render while we port them. Delete each block the day its page is rebuilt
-      in Tailwind. When the last one is gone, so is this note.
-
-   The legacy :root variables are re-pointed at the new design-system colours,
-   so old pages already show the NEW palette -- no two different teals during
-   the migration.
-   ========================================================================= */
-
-
-/* ============================================================================
-   1. NEW SYSTEM -- Tailwind v4 design tokens
+   Tailwind v4 design tokens (docs/design/design-system.md)
    ========================================================================= */
 @theme {
   /* --- Brand --- */
@@ -79,68 +55,3 @@
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
-
-
-/* ============================================================================
-   2. LEGACY SYSTEM -- prototype component CSS (being phased out)
-   ----------------------------------------------------------------------------
-   Kept only so not-yet-migrated pages keep rendering. Delete each section as
-   its page is rebuilt in Tailwind. Old variable names are aliased to the new
-   tokens right below, so these classes already use the new palette.
-   ========================================================================= */
-
-:root {
-  --paper:      var(--color-paper);
-  --surface:    var(--color-surface);
-  --ink:        var(--color-ink);
-  --muted:      var(--color-muted);
-  --brand:      var(--color-brand);
-  --brand-soft: #dcebe8;               /* prototype-only, no new equivalent */
-  --accent:     var(--color-accent);
-  --line:       var(--color-line);
-
-  --radius:   14px;
-  --gap:      20px;
-  --shadow:   0 1px 2px rgba(21,35,31,.05), 0 6px 20px rgba(21,35,31,.06);
-  --font-body: 'Outfit', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* ============ Header ============ */
-.app-header {
-  position: sticky; top: 0; z-index: 10;
-  display: flex; align-items: center; gap: var(--gap);
-  padding: 14px 24px;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--line);
-}
-.wordmark {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 26px;
-  letter-spacing: -.02em;
-  color: var(--ink);
-}
-.wordmark b { color: var(--brand); }
-.search {
-  flex: 1; max-width: 420px;
-  padding: 10px 14px;
-  border: 1px solid var(--line); border-radius: 999px;
-  background: var(--paper); color: var(--ink);
-}
-.header-actions { display: flex; gap: 10px; margin-left: auto; }
-
-/* ============ Responsivo / mobile ============ */
-@media (max-width: 640px) {
-  .search { display: none; }
-}
-
-/* ============ Footer ============ */
-.app-footer {
-  display: flex; justify-content: center; gap: 12px;
-  padding: 32px 24px; margin-top: 24px;
-  border-top: 1px solid var(--line);
-  color: var(--muted); font-size: 14px;
-}
-.app-footer a { color: var(--muted); text-decoration: none; }
-.app-footer a:hover { color: var(--brand); }

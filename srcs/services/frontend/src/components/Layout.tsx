@@ -55,10 +55,10 @@ export default function Layout() {
         )}
       </div>
       <Outlet />
-      <footer className="app-footer">
-        <Link to="/privacy">Privacidade</Link>
+      <footer className="flex justify-center gap-3 px-6 py-8 mt-6 border-t border-line text-muted text-sm">
+        <Link to="/privacy" className="hover:text-brand transition-colors no-underline">Privacidade</Link>
         <span aria-hidden="true">·</span>
-        <Link to="/terms">Termos</Link>
+        <Link to="/terms" className="hover:text-brand transition-colors no-underline">Termos</Link>
       </footer>
     </>
   )
