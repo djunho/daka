@@ -136,11 +136,12 @@ export default function Home() {
         </p>
       </section>
 
-      <nav className="chips" aria-label="Filtrar por categoria">
+      <nav className="flex flex-wrap gap-2 px-6 pt-5 pb-2" aria-label="Filtrar por categoria">
         {categories.map((cat) => (
           <button
             key={cat.id}
-            className="chip"
+            type="button"
+            className="px-3.5 py-2 rounded-full border border-line bg-surface text-muted capitalize font-semibold text-sm transition-colors hover:border-brand aria-pressed:bg-brand-soft aria-pressed:border-brand-soft aria-pressed:text-brand"
             aria-pressed={active === cat.id}
             onClick={() => setFilter('category_id', active === cat.id ? null : String(cat.id))}
           >
