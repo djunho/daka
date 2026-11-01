@@ -130,17 +130,6 @@
 }
 .header-actions { display: flex; gap: 10px; margin-left: auto; }
 
-/* ============ Chips de categoria ============ */
-.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 20px 24px 8px; }
-.chip {
-  padding: 8px 14px; border-radius: 999px;
-  border: 1px solid var(--line); background: var(--surface); color: var(--muted);
-  text-transform: capitalize; font-weight: 600; font-size: 14px;
-}
-.chip[aria-pressed='true'] {
-  background: var(--brand-soft); border-color: var(--brand-soft); color: var(--brand);
-}
-
 /* ============ Feed ============ */
 .feed { padding: 8px 24px 48px; }
 .feed-count { color: var(--muted); font-size: 14px; margin: 8px 0 16px; }
