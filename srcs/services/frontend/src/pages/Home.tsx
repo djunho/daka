@@ -4,12 +4,19 @@ import Button from '../components/Button'
 import ListingCard, { EMPTY_STATE_CLASSES, LISTING_GRID_CLASSES } from '../components/ListingCard'
 import LocationAutocomplete from '../components/LocationAutocomplete'
 import { categoryLabel } from '../types/listing'
-import { apiListCategories, type ApiCategory, apiListListings, type ApiListingSummary } from '../lib/api'
+import { apiListCategories, type ApiCategory, apiListListings, type ApiListingSummary, type ListingSort } from '../lib/api'
 
 const PAGE_SIZE = 12
+const DEFAULT_SORT: ListingSort = 'newest'
+const SORT_OPTIONS: { value: ListingSort; label: string }[] = [
+  { value: 'newest', label: 'Mais recentes' },
+  { value: 'oldest', label: 'Mais antigos' },
+  { value: 'title_asc', label: 'Título (A–Z)' },
+  { value: 'title_desc', label: 'Título (Z–A)' },
+]
 
 export default function Home() {
-  // Filters live in the URL (/?q=...&category_id=...&location=...), so they survive a reload and can be shared.
+  // Filters live in the URL (/?q=...&category_id=...&location=...&sort=...), so they survive a reload and can be shared.
   const [searchParams, setSearchParams] = useSearchParams()
   // A URL typed or edited by hand can bring spaces or more text than the
   // backend accepts (q: 150, location: 200 characters, else 422). Cut in code
@@ -19,6 +26,8 @@ export default function Home() {
   const active = Number.isInteger(categoryId) && categoryId > 0 ? categoryId : null
   const locationFilter = [...(searchParams.get('location') ?? '').trim()].slice(0, 200).join('')
   const hasFilters = q !== '' || active !== null || locationFilter !== ''
+  // An unknown value in a hand-edited URL would get a 422 from the backend.
+  const sort = SORT_OPTIONS.find((o) => o.value === searchParams.get('sort'))?.value ?? DEFAULT_SORT
 
   const [categories, setCategories] = useState<ApiCategory[]>([])
   const [listings, setListings] = useState<ApiListingSummary[]>([])
@@ -57,7 +66,7 @@ export default function Home() {
     setError(null)
     setLoadingMore(false)
     setMoreError(null)
-    apiListListings({ q, category_id: active ?? undefined, location: locationFilter, limit: PAGE_SIZE })
+    apiListListings({ q, category_id: active ?? undefined, location: locationFilter, sort, limit: PAGE_SIZE })
       .then((page) => {
         if (ignore) return
         setListings(page.items)
@@ -75,7 +84,7 @@ export default function Home() {
     return () => {
       ignore = true
     }
-  }, [active, q, locationFilter])
+  }, [active, q, locationFilter, sort])
 
   // Changes one filter in the URL and keeps the others. null removes it.
   function setFilter(name: string, value: string | null) {
@@ -88,8 +97,9 @@ export default function Home() {
     setSearchParams(next)
   }
 
+  // The sort order is not a filter, so it stays.
   function clearFilters() {
-    setSearchParams({})
+    setSearchParams(sort === DEFAULT_SORT ? {} : { sort })
   }
 
   function handleLocationSubmit(e: React.FormEvent) {
@@ -107,7 +117,7 @@ export default function Home() {
 
     setLoadingMore(true)
     setMoreError(null)
-    apiListListings({ q, category_id: active ?? undefined, location: locationFilter, limit: PAGE_SIZE, offset: listings.length })
+    apiListListings({ q, category_id: active ?? undefined, location: locationFilter, sort, limit: PAGE_SIZE, offset: listings.length })
       .then((page) => {
         if (feedRequest.current !== request) return
         setListings((prev) => [...prev, ...page.items])
@@ -185,6 +195,19 @@ export default function Home() {
             Limpar filtros
           </button>
         )}
+
+        <label className="flex items-center gap-2 ml-auto text-sm text-muted">
+          Ordenar por
+          <select
+            value={sort}
+            onChange={(e) => setFilter('sort', e.target.value === DEFAULT_SORT ? null : e.target.value)}
+            className="px-3 py-2.5 bg-paper border border-line rounded-full text-base text-ink focus:border-brand transition-colors"
+          >
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <section className="px-6 pt-2 pb-12">

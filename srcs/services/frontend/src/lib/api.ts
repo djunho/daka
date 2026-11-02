@@ -195,12 +195,15 @@ export function apiDeleteAvatar() {
   return request<ApiUser>('/auth/me/avatar', { method: 'DELETE' })
 }
 
+export type ListingSort = 'newest' | 'oldest' | 'title_asc' | 'title_desc'
+
 // Every filter is optional. Only the ones given end up in the URL.
 export type ListListingsParams = {
   q?: string
   category_id?: number
   user_id?: number
   location?: string
+  sort?: ListingSort
   limit?: number
   offset?: number
 }
@@ -213,6 +216,7 @@ export function apiListListings(params: ListListingsParams = {}) {
   const location = params.location?.trim()
   if (q) query.set('q', q)
   if (location) query.set('location', location)
+  if (params.sort) query.set('sort', params.sort)
 
   // Numbers: compare with undefined, because 0 is a valid offset.
   if (params.category_id !== undefined) query.set('category_id', String(params.category_id))
