@@ -234,7 +234,30 @@ def create_negotiation(
     user_id = current_user.id
     db.rollback()
 
-    # Lock negotiations before listings, matching every lifecycle operation.
+    # Discover the owner without retaining a snapshot, then lock the owner
+    # before negotiations and listings. Account deletion locks this same user
+    # row first, so it cannot miss a negotiation created concurrently.
+    requested_candidate = db.get(Listing, payload.listing_id)
+    if requested_candidate is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
+    owner_id = requested_candidate.user_id
+    db.rollback()
+    listing_owner = db.get(User, owner_id, with_for_update=True)
+    if listing_owner is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing owner not found.",
+        )
+    if listing_owner.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Listing is not available.",
+        )
+
+    # Continue in the shared lock order: negotiations before listings.
     existing = (
         db.query(Negotiation)
         .filter(

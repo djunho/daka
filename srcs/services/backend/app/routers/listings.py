@@ -16,7 +16,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -452,28 +452,42 @@ def delete_listing(
     # Match the negotiation lifecycle lock order: negotiations, proposals,
     # then listings.  A listing can participate either as the requested item
     # or as an offered item, so both relationships must be locked.
-    offering_negotiation_ids = db.query(Proposal.negotiation_id).filter(
+    offering_negotiation_ids_query = db.query(Proposal.negotiation_id).filter(
         Proposal.offered_listing_id == id,
         Proposal.proposal_state_id == proposal_states["Pending"],
     )
-    affected_negotiation_ids = [
+    requested_negotiation_ids = [
         negotiation_id
         for (negotiation_id,) in db.query(Negotiation.id)
         .filter(
             Negotiation.negotiation_state_id == negotiation_states["Open"],
-            or_(
-                Negotiation.listing_id == id,
-                Negotiation.id.in_(offering_negotiation_ids),
-            ),
+            Negotiation.listing_id == id,
         )
-        .order_by(Negotiation.id)
-        .with_for_update()
         .all()
     ]
-    if affected_negotiation_ids:
+    offering_negotiation_ids = [
+        negotiation_id
+        for (negotiation_id,) in db.query(Negotiation.id)
+        .filter(
+            Negotiation.negotiation_state_id == negotiation_states["Open"],
+            Negotiation.id.in_(offering_negotiation_ids_query),
+        )
+        .all()
+    ]
+    locked_negotiation_ids = sorted(
+        set(requested_negotiation_ids) | set(offering_negotiation_ids)
+    )
+    if locked_negotiation_ids:
+        (
+            db.query(Negotiation)
+            .filter(Negotiation.id.in_(locked_negotiation_ids))
+            .order_by(Negotiation.id)
+            .with_for_update()
+            .all()
+        )
         (
             db.query(Proposal)
-            .filter(Proposal.negotiation_id.in_(affected_negotiation_ids))
+            .filter(Proposal.negotiation_id.in_(locked_negotiation_ids))
             .order_by(Proposal.id)
             .with_for_update()
             .all()
@@ -507,9 +521,9 @@ def delete_listing(
             detail="Reserved or traded listings cannot be removed.",
         )
 
-    if affected_negotiation_ids:
+    if requested_negotiation_ids:
         db.query(Proposal).filter(
-            Proposal.negotiation_id.in_(affected_negotiation_ids),
+            Proposal.negotiation_id.in_(requested_negotiation_ids),
             Proposal.proposal_state_id == proposal_states["Pending"],
         ).update(
             {
@@ -519,7 +533,7 @@ def delete_listing(
             synchronize_session=False,
         )
         db.query(Negotiation).filter(
-            Negotiation.id.in_(affected_negotiation_ids)
+            Negotiation.id.in_(requested_negotiation_ids)
         ).update(
             {
                 Negotiation.negotiation_state_id: negotiation_states[
