@@ -15,9 +15,15 @@ export interface LocationAutocompleteProps {
   placeholder?: string
   readOnly?: boolean
   disabled?: boolean
+  hideLabel?: boolean
+  className?: string
+  inputClassName?: string
   ariaInvalid?: boolean
   ariaDescribedBy?: string
+  // Fired on every keystroke and when a suggestion is selected.
   onChange: (value: string) => void
+  // Fired only when the user explicitly picks a suggestion from the dropdown.
+  onSelect?: (value: string) => void
 }
 
 // --- Configuration Constants ---
@@ -62,9 +68,13 @@ export default function LocationAutocomplete({
   placeholder,
   readOnly = false,
   disabled = false,
+  hideLabel = false,
+  className = '',
+  inputClassName = '',
   ariaInvalid = false,
   ariaDescribedBy,
   onChange,
+  onSelect,
 }: LocationAutocompleteProps) {
   const [inputValue, setInputValue] = useState(value)
   const [suggestions, setSuggestions] = useState<LocationItem[]>([])
@@ -227,6 +237,7 @@ export default function LocationAutocomplete({
   const handleSelectLocation = (location: LocationItem) => {
     setInputValue(location.label)
     onChange(location.label)
+    onSelect?.(location.label)
     setIsOpen(false)
     setHighlightedIndex(-1)
     inputRef.current?.focus()
@@ -284,17 +295,21 @@ export default function LocationAutocomplete({
     (readOnly
       ? 'bg-paper/60 cursor-default caret-transparent selection:bg-transparent '
       : 'cursor-text bg-surface ') +
-    (disabled ? 'opacity-60 cursor-not-allowed ' : '')
+    (disabled ? 'opacity-60 cursor-not-allowed ' : '') +
+    inputClassName
 
   return (
     <div
       ref={containerRef}
-      className="relative"
+      className={`relative${className ? ` ${className}` : ''}`}
       onMouseDown={() => {
         isMouseDownInsideRef.current = true
       }}
     >
-      <label htmlFor={id} className="block text-xs font-medium text-muted mb-1.5">
+      <label
+        htmlFor={id}
+        className={hideLabel ? 'sr-only' : 'block text-xs font-medium text-muted mb-1.5'}
+      >
         {label}
       </label>
 
@@ -304,6 +319,7 @@ export default function LocationAutocomplete({
           id={id}
           name="daka_location_query"
           type="text"
+          maxLength={100}
           value={inputValue}
           readOnly={readOnly}
           disabled={disabled}

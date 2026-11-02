@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Button from '../components/Button'
 import ListingCard, { EMPTY_STATE_CLASSES, LISTING_GRID_CLASSES } from '../components/ListingCard'
+import LocationAutocomplete from '../components/LocationAutocomplete'
 import { categoryLabel } from '../types/listing'
 import { apiListCategories, type ApiCategory, apiListListings, type ApiListingSummary } from '../lib/api'
 
@@ -157,14 +158,18 @@ export default function Home() {
           aria-label="Filtrar por localização"
           className="flex flex-1 gap-2 max-w-md"
         >
-          <input
-            type="search"
+          <LocationAutocomplete
+            id="home-location"
+            label="Localização"
+            hideLabel
             value={locationInput}
-            onChange={(e) => setLocationInput(e.target.value)}
             placeholder="Localização (ex.: Porto)"
-            aria-label="Localização"
-            maxLength={100}
-            className="flex-1 px-4 py-2.5 bg-paper border border-line rounded-full text-ink placeholder:text-muted focus:border-brand focus:outline-none transition-colors"
+            className="flex-1"
+            inputClassName="rounded-full bg-paper"
+            // Updates only the draft input while typing (no API call per keystroke).
+            onChange={setLocationInput}
+            // Applies the URL filter immediately when a dropdown suggestion is chosen.
+            onSelect={(val) => setFilter('location', val.trim() || null)}
           />
           <Button type="submit">Filtrar</Button>
         </form>
