@@ -83,7 +83,7 @@ def list_listings(
     ),
     location: str | None = Query(
         default=None,
-        max_length=100,
+        max_length=200,
         description="Filter listings by location.",
     ),
     limit: int = Query(

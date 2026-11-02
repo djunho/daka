@@ -12,12 +12,12 @@ export default function Home() {
   // Filters live in the URL (/?q=...&category_id=...&location=...), so they survive a reload and can be shared.
   const [searchParams, setSearchParams] = useSearchParams()
   // A URL typed or edited by hand can bring spaces or more text than the
-  // backend accepts (q: 150, location: 100 characters, else 422). Cut in code
+  // backend accepts (q: 150, location: 200 characters, else 422). Cut in code
   // points, as the backend counts them.
   const q = [...(searchParams.get('q') ?? '').trim()].slice(0, 150).join('')
   const categoryId = Number(searchParams.get('category_id'))
   const active = Number.isInteger(categoryId) && categoryId > 0 ? categoryId : null
-  const locationFilter = [...(searchParams.get('location') ?? '').trim()].slice(0, 100).join('')
+  const locationFilter = [...(searchParams.get('location') ?? '').trim()].slice(0, 200).join('')
   const hasFilters = q !== '' || active !== null || locationFilter !== ''
 
   const [categories, setCategories] = useState<ApiCategory[]>([])
