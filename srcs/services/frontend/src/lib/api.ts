@@ -326,6 +326,45 @@ export type ApiNegotiationDetail = {
   updated_at: string
 }
 
+export type ApiNegotiationSummary = {
+  id: number
+  requested_listing: ApiListingSummary
+  other_participant: ApiPublicUser
+  state: ApiNegotiationState
+  // The accepted proposal, else the most recent pending one.
+  active_proposal: ApiProposal | null
+  created_at: string
+  updated_at: string
+}
+
+export type ApiNegotiationPage = {
+  items: ApiNegotiationSummary[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type NegotiationRole = 'owner' | 'interested'
+
+export type ListNegotiationsParams = {
+  role?: NegotiationRole
+  state?: ApiNegotiationState['state_name']
+  limit?: number
+  offset?: number
+}
+
+export function apiListNegotiations(params: ListNegotiationsParams = {}) {
+  const query = new URLSearchParams()
+  if (params.role) query.set('role', params.role)
+  if (params.state) query.set('state', params.state)
+  // Compare with undefined, because 0 is a valid offset.
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+
+  const qs = query.toString()
+  return request<ApiNegotiationPage>(qs ? `/negotiations?${qs}` : '/negotiations')
+}
+
 // Creates the negotiation, or returns the one this user already has for this
 // listing. The backend answers 201 or 200 with the same body, so callers only
 // need the id.

@@ -1,5 +1,33 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apiCreateNegotiation } from './api'
+import { apiCreateNegotiation, apiListNegotiations } from './api'
+
+describe('apiListNegotiations', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function stubFetch() {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"items":[]}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('sends only the parameters given, including an offset of 0', async () => {
+    const fetchMock = stubFetch()
+
+    await apiListNegotiations({ role: 'owner', state: 'Open', limit: 20, offset: 0 })
+
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/negotiations\?role=owner&state=Open&limit=20&offset=0$/)
+  })
+
+  it('has no query string without parameters', async () => {
+    const fetchMock = stubFetch()
+
+    await apiListNegotiations()
+
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/negotiations$/)
+  })
+})
 
 describe('apiCreateNegotiation', () => {
   afterEach(() => {
