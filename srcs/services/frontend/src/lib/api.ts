@@ -294,3 +294,44 @@ export function apiDeleteListingImage(id: number, imageId: number) {
 export function apiGetPublicProfile(id: number) {
   return request<ApiPublicProfile>(`/users/${id}`)
 }
+
+export type ApiNegotiationState = {
+  id: number
+  state_name: 'Open' | 'Agreed' | 'Completed' | 'Cancelled' | 'Unavailable'
+}
+
+export type ApiProposalState = {
+  id: number
+  state_name: 'Pending' | 'Accepted' | 'Rejected' | 'Withdrawn' | 'NotSelected' | 'ItemUnavailable'
+}
+
+export type ApiProposal = {
+  id: number
+  offered_listing: ApiListingSummary | null
+  state: ApiProposalState
+  created_at: string
+  responded_at: string | null
+}
+
+export type ApiNegotiationDetail = {
+  id: number
+  requested_listing: ApiListingDetail
+  owner: ApiPublicUser
+  interested_user: ApiPublicUser
+  state: ApiNegotiationState
+  proposals: ApiProposal[]
+  cancelled_by: ApiPublicUser | null
+  cancelled_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Creates the negotiation, or returns the one this user already has for this
+// listing. The backend answers 201 or 200 with the same body, so callers only
+// need the id.
+export function apiCreateNegotiation(listingId: number) {
+  return request<ApiNegotiationDetail>('/negotiations', {
+    method: 'POST',
+    body: { listing_id: listingId },
+  })
+}
