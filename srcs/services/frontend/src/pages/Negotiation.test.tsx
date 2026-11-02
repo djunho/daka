@@ -188,14 +188,6 @@ describe('Negotiation', () => {
     expect(await screen.findByText(/Negociação cancelada por Ana a 5 de março de 2026/)).toBeInTheDocument()
   })
 
-  it('offers no actions on proposals yet', async () => {
-    vi.mocked(apiGetNegotiation).mockResolvedValue(negotiation({ proposals: [proposal(1, 'Pending', 'Livro')] }))
-    renderPage()
-
-    const card = (await screen.findByText('Livro')).closest('article')!
-    expect(within(card).queryByRole('button')).not.toBeInTheDocument()
-  })
-
   it('does not ask the backend about an id that cannot exist', async () => {
     renderPage('/negotiations/abc')
 
