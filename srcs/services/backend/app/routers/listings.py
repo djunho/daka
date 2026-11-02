@@ -532,8 +532,9 @@ def delete_listing(
             },
             synchronize_session=False,
         )
-        db.query(Negotiation).filter(
-            Negotiation.id.in_(requested_negotiation_ids)
+db.query(Negotiation).filter(
+            Negotiation.id.in_(requested_negotiation_ids),
+            Negotiation.negotiation_state_id == negotiation_states["Open"],
         ).update(
             {
                 Negotiation.negotiation_state_id: negotiation_states[
