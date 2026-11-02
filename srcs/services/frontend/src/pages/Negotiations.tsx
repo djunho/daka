@@ -16,6 +16,7 @@ import { getPortugueseErrorMessage } from '../lib/errors'
 import { categoryTint } from '../types/listing'
 import {
   activeProposalSummary,
+  formatDate,
   NEGOTIATION_ROLE_LABELS,
   NEGOTIATION_STATE_LABELS,
 } from '../types/negotiation'
@@ -245,12 +246,6 @@ function NegotiationCard({
   const { id, requested_listing: listing, other_participant: other, state, active_proposal, updated_at } = negotiation
   const role: NegotiationRole = listing.owner.id === currentUserId ? 'owner' : 'interested'
 
-  const updatedAt = new Date(updated_at).toLocaleDateString('pt-PT', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-
   return (
     <article className="flex gap-4 bg-surface border border-line rounded-2xl p-4 shadow-sm">
       <div
@@ -283,7 +278,7 @@ function NegotiationCard({
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-          <p className="text-xs text-muted">Atualizada a {updatedAt}</p>
+          <p className="text-xs text-muted">Atualizada a {formatDate(updated_at)}</p>
           <Link
             to={`/negotiations/${id}`}
             aria-label={`Abrir negociação sobre ${listing.title}`}
