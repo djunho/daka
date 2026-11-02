@@ -375,6 +375,37 @@ export function apiGetNegotiation(id: number, signal?: AbortSignal) {
   return request<ApiNegotiationDetail>(`/negotiations/${id}`, { signal })
 }
 
+// offeredListingId is required on purpose: null means "offering no listing",
+// which the backend accepts, while leaving the field out is a 422.
+export function apiCreateProposal(negotiationId: number, offeredListingId: number | null) {
+  return request<ApiProposal>(`/negotiations/${negotiationId}/proposals`, {
+    method: 'POST',
+    body: { offered_listing_id: offeredListingId },
+  })
+}
+
+// These three answer with the proposal alone. Other parts of the negotiation
+// change with them, so callers load the negotiation again afterwards.
+export function apiAcceptProposal(id: number) {
+  return request<ApiProposal>(`/proposals/${id}/accept`, { method: 'PATCH' })
+}
+
+export function apiRejectProposal(id: number) {
+  return request<ApiProposal>(`/proposals/${id}/reject`, { method: 'PATCH' })
+}
+
+export function apiWithdrawProposal(id: number) {
+  return request<ApiProposal>(`/proposals/${id}/withdraw`, { method: 'PATCH' })
+}
+
+export function apiCancelNegotiation(id: number) {
+  return request<ApiNegotiationDetail>(`/negotiations/${id}/cancel`, { method: 'PATCH' })
+}
+
+export function apiCompleteNegotiation(id: number) {
+  return request<ApiNegotiationDetail>(`/negotiations/${id}/complete`, { method: 'PATCH' })
+}
+
 // Creates the negotiation, or returns the one this user already has for this
 // listing. The backend answers 201 or 200 with the same body, so callers only
 // need the id.

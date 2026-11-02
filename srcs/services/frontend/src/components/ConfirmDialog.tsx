@@ -9,6 +9,8 @@ type ConfirmDialogProps = {
   busyLabel: string
   busy: boolean
   error?: string | null
+  // Red by default; 'primary' suits a confirmation that is not destructive.
+  confirmVariant?: 'danger' | 'primary'
   onConfirm: () => void
   onCancel: () => void
 }
@@ -24,6 +26,7 @@ export default function ConfirmDialog({
   busyLabel,
   busy,
   error,
+  confirmVariant = 'danger',
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -80,7 +83,7 @@ export default function ConfirmDialog({
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
           Cancelar
         </Button>
-        <Button variant="danger" size="sm" onClick={onConfirm} loading={busy}>
+        <Button variant={confirmVariant} size="sm" onClick={onConfirm} loading={busy}>
           {busy ? busyLabel : confirmLabel}
         </Button>
       </div>

@@ -1,5 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apiCreateNegotiation, apiListNegotiations } from './api'
+import { apiCreateNegotiation, apiCreateProposal, apiListNegotiations } from './api'
+
+describe('apiCreateProposal', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it.each([[7], [null]])('always sends offered_listing_id, here %s', async (offered) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"id":1}', { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await apiCreateProposal(20, offered)
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toMatch(/\/negotiations\/20\/proposals$/)
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ offered_listing_id: offered })
+  })
+})
 
 describe('apiListNegotiations', () => {
   afterEach(() => {
