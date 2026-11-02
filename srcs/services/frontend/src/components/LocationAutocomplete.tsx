@@ -20,9 +20,9 @@ export interface LocationAutocompleteProps {
   inputClassName?: string
   ariaInvalid?: boolean
   ariaDescribedBy?: string
-  // Fired on every keystroke and when a suggestion is selected.
+  // Fired when the committed location value changes (selected from the list or cleared).
   onChange: (value: string) => void
-  // Fired only when the user explicitly picks a suggestion from the dropdown.
+  // Fired when the user explicitly picks or auto-completes a suggestion.
   onSelect?: (value: string) => void
 }
 
@@ -164,14 +164,40 @@ export default function LocationAutocomplete({
     setHighlightedIndex(-1)
   }, [ensureLocationsLoaded])
 
+  // Resolve uncommitted free text into a canonical suggestion label or clear it
+  const commitOrResetInput = useCallback(() => {
+    if (inputValue.trim() === '') {
+      setInputValue('')
+      if (value !== '') {
+        onChange('')
+      }
+    } else if (inputValue !== value) {
+      if (suggestions.length > 0) {
+        const index = highlightedIndex >= 0 ? highlightedIndex : 0
+        const chosen = suggestions[index]
+        setInputValue(chosen.label)
+        onChange(chosen.label)
+      } else {
+        setInputValue('')
+        if (value !== '') {
+          onChange('')
+        }
+      }
+    }
+    setIsOpen(false)
+    setHighlightedIndex(-1)
+  }, [highlightedIndex, inputValue, onChange, suggestions, value])
+
   // Close dropdown on click outside or Escape key
   useEffect(() => {
     if (!isOpen) return
 
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-        setHighlightedIndex(-1)
+        // When the input still has focus, its own onBlur will run immediately after mousedown
+        if (document.activeElement !== inputRef.current) {
+          commitOrResetInput()
+        }
       }
     }
 
@@ -196,13 +222,15 @@ export default function LocationAutocomplete({
       document.removeEventListener('mouseup', handleMouseUp)
       document.removeEventListener('keydown', handleGlobalKeyDown, true)
     }
-  }, [isOpen])
+  }, [commitOrResetInput, isOpen])
 
   // Handle typing in the input
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextVal = e.target.value
     setInputValue(nextVal)
-    onChange(nextVal)
+    if (nextVal.trim() === '') {
+      onChange('')
+    }
     void filterSuggestions(nextVal)
   }
 
@@ -221,8 +249,7 @@ export default function LocationAutocomplete({
     if (isMouseDownInsideRef.current) {
       return
     }
-    setIsOpen(false)
-    setHighlightedIndex(-1)
+    commitOrResetInput()
   }
 
   // Handle clicking inside input (reopens suggestions if closed and valid)
@@ -257,8 +284,25 @@ export default function LocationAutocomplete({
       return
     }
 
-    // Tab key: close dropdown when focus leaves
+    // Tab key: close dropdown when focus leaves (onBlur will commit or reset the input)
     if (e.key === 'Tab') {
+      return
+    }
+
+    if (e.key === 'Enter') {
+      if (isOpen && suggestions.length > 0) {
+        e.preventDefault()
+        const index = highlightedIndex >= 0 ? highlightedIndex : 0
+        handleSelectLocation(suggestions[index])
+        return
+      }
+      if (inputValue !== value) {
+        e.preventDefault()
+        setInputValue('')
+        if (value !== '') {
+          onChange('')
+        }
+      }
       setIsOpen(false)
       setHighlightedIndex(-1)
       return
@@ -278,11 +322,6 @@ export default function LocationAutocomplete({
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : suggestions.length - 1))
-    } else if (e.key === 'Enter') {
-      if (highlightedIndex >= 0 && highlightedIndex < suggestions.length) {
-        e.preventDefault()
-        handleSelectLocation(suggestions[highlightedIndex])
-      }
     }
   }
 
@@ -319,7 +358,7 @@ export default function LocationAutocomplete({
           id={id}
           name="daka_location_query"
           type="text"
-          maxLength={100}
+          maxLength={200}
           value={inputValue}
           readOnly={readOnly}
           disabled={disabled}
@@ -395,7 +434,7 @@ export default function LocationAutocomplete({
             })
           ) : (
             <li className="px-4 py-3 text-xs text-muted italic">
-              Nenhuma localidade oficial encontrada. Pode manter a entrada manual.
+              Nenhuma localidade encontrada.
             </li>
           )}
         </ul>

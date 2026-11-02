@@ -84,8 +84,8 @@ export function validateListingForm(values: ListingFormValues): ListingFormError
     errors.condition_id = 'Seleciona o estado do artigo.'
   }
 
-  if ([...values.listing_location.trim()].length > 100) {
-    errors.listing_location = 'A localização não pode ter mais de 100 caracteres.'
+  if ([...values.listing_location.trim()].length > 200) {
+    errors.listing_location = 'A localização não pode ter mais de 200 caracteres.'
   }
 
   if ([...values.wish.trim()].length > 1000) {

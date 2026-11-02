@@ -97,8 +97,8 @@ export default function Profile() {
       return
     }
 
-    if (locationLength > 100) {
-      setError('A localização não pode ter mais de 100 caracteres.')
+    if (locationLength > 200) {
+      setError('A localização não pode ter mais de 200 caracteres.')
       return
     }
 
