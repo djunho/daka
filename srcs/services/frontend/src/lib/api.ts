@@ -370,6 +370,10 @@ export function apiListNegotiations(params: ListNegotiationsParams = {}, signal?
   return request<ApiNegotiationPage>(qs ? `/negotiations?${qs}` : '/negotiations', { signal })
 }
 
+export function apiGetNegotiation(id: number) {
+  return request<ApiNegotiationDetail>(`/negotiations/${id}`)
+}
+
 // Creates the negotiation, or returns the one this user already has for this
 // listing. The backend answers 201 or 200 with the same body, so callers only
 // need the id.
