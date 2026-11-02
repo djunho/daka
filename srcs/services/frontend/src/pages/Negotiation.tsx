@@ -1,11 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import Button, { buttonClasses } from '../components/Button'
+import ConfirmDialog from '../components/ConfirmDialog'
+import ProposalForm from '../components/ProposalForm'
 import { useAuth } from '../context/AuthContext'
 import {
   ApiError,
+  apiAcceptProposal,
+  apiCancelNegotiation,
+  apiCompleteNegotiation,
+  apiCreateProposal,
   apiGetNegotiation,
+  apiRejectProposal,
+  apiWithdrawProposal,
   type ApiNegotiationDetail,
   type ApiProposal,
   type ApiPublicUser,
@@ -19,7 +27,71 @@ import {
   PROPOSAL_STATE_LABELS,
 } from '../types/negotiation'
 
-// The header and the proposals panel (#97). The chat (#123) goes below them.
+const CONFLICT_MESSAGE = 'Os dados desta negociação foram alterados ou deixaram de estar disponíveis. A página foi atualizada.'
+
+// The action waiting for confirmation in the dialog.
+type PendingAction =
+  | { kind: 'accept' | 'reject' | 'withdraw'; proposal: ApiProposal }
+  | { kind: 'cancel' | 'complete' }
+
+function proposalName(proposal: ApiProposal): string {
+  return proposal.offered_listing?.title ?? 'sem anúncio oferecido'
+}
+
+function actionCopy(action: PendingAction, negotiation: ApiNegotiationDetail) {
+  switch (action.kind) {
+    case 'accept':
+      return {
+        title: 'Aceitar proposta',
+        message: `${action.proposal.offered_listing
+          ? `Os dois anúncios ficam reservados, incluindo «${action.proposal.offered_listing.title}».`
+          : 'O teu anúncio fica reservado. Esta proposta não oferece nenhum anúncio.'} As outras propostas ficam em espera e serão encerradas quando a troca for concluída ou cancelada.`,
+        confirmLabel: 'Sim, aceitar',
+        busyLabel: 'A aceitar…',
+        confirmVariant: 'primary' as const,
+        success: 'Proposta aceite. Os anúncios estão reservados.',
+      }
+    case 'reject':
+      return {
+        title: 'Rejeitar proposta',
+        message: `Vais rejeitar a proposta: ${proposalName(action.proposal)}. A negociação continua aberta.`,
+        confirmLabel: 'Sim, rejeitar',
+        busyLabel: 'A rejeitar…',
+        confirmVariant: 'danger' as const,
+        success: 'Proposta rejeitada.',
+      }
+    case 'withdraw':
+      return {
+        title: 'Retirar proposta',
+        message: `Vais retirar a proposta: ${proposalName(action.proposal)}. A negociação continua aberta.`,
+        confirmLabel: 'Sim, retirar',
+        busyLabel: 'A retirar…',
+        confirmVariant: 'danger' as const,
+        success: 'Proposta retirada.',
+      }
+    case 'complete':
+      return {
+        title: 'Confirmar conclusão',
+        message: 'Confirma apenas depois de a troca ter sido feita. Os anúncios passam a trocados, as propostas em espera são encerradas e a negociação fica concluída. Esta ação não pode ser desfeita.',
+        confirmLabel: 'Sim, confirmar',
+        busyLabel: 'A confirmar…',
+        confirmVariant: 'primary' as const,
+        success: 'Troca concluída.',
+      }
+    case 'cancel':
+      return {
+        title: 'Cancelar negociação',
+        message: `O cancelamento encerra a negociação e as propostas pendentes.${negotiation.state.state_name === 'Agreed' ? ' Os anúncios reservados voltam a ficar disponíveis.' : ''} As propostas e as mensagens continuam visíveis.`,
+        confirmLabel: 'Sim, cancelar',
+        busyLabel: 'A cancelar…',
+        confirmVariant: 'danger' as const,
+        success: 'Negociação cancelada.',
+      }
+  }
+}
+
+// The header, the actions and the proposals panel (#97). The chat (#123) goes
+// below them. Which actions appear is only a convenience: the backend decides.
 export default function Negotiation() {
   const { id } = useParams()
   const { user, logout } = useAuth()
@@ -35,6 +107,18 @@ export default function Negotiation() {
   const [refreshing, setRefreshing] = useState<boolean>(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
 
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
+  const [proposalFormOpen, setProposalFormOpen] = useState<boolean>(false)
+  const [busy, setBusy] = useState<boolean>(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+  const noticeRef = useRef<HTMLParagraphElement>(null)
+  const newProposalRef = useRef<HTMLButtonElement>(null)
+  const busyRef = useRef(false)
+  // Bumped when the id changes, so an action that finishes late says nothing
+  // about the negotiation now on screen.
+  const visit = useRef(0)
+
   // Bumped when the id changes or the page closes, so a late response for the
   // previous negotiation is dropped instead of being shown under this URL.
   const generation = useRef(0)
@@ -49,8 +133,8 @@ export default function Negotiation() {
 
   // A refresh keeps what is on screen, so a failure while the tab regains focus
   // does not hide the negotiation, and the chat below is left alone.
-  const refresh = useCallback(() => {
-    if (inFlight.current) return
+  const refresh = useCallback((): Promise<void> => {
+    if (inFlight.current) return Promise.resolve()
 
     const current = generation.current
     const request = new AbortController()
@@ -58,7 +142,7 @@ export default function Negotiation() {
     inFlight.current = true
     setRefreshing(true)
     setRefreshError(null)
-    apiGetNegotiation(negotiationId, request.signal)
+    return apiGetNegotiation(negotiationId, request.signal)
       .then((data) => {
         if (generation.current !== current) return
         setNegotiation(data)
@@ -107,6 +191,118 @@ export default function Negotiation() {
     refresh()
   }
 
+  // After an action, a refresh already on its way may carry the state from
+  // before it, so that request is cancelled in favour of a new one.
+  function reload() {
+    generation.current += 1
+    controller.current?.abort()
+    inFlight.current = false
+    return refresh()
+  }
+
+  function applyDetail(data: ApiNegotiationDetail) {
+    generation.current += 1
+    controller.current?.abort()
+    inFlight.current = false
+    setRefreshing(false)
+    setNegotiation(data)
+  }
+
+  // Runs an action and shows only what the backend confirms. Nothing changes
+  // on screen beforehand, so a rejected action leaves nothing to undo.
+  async function perform(
+    run: () => Promise<ApiNegotiationDetail | ApiProposal>,
+    success: string,
+    conflict: string = CONFLICT_MESSAGE,
+  ): Promise<boolean> {
+    if (busyRef.current) return false
+
+    const current = visit.current
+    busyRef.current = true
+    setBusy(true)
+    setActionError(null)
+    setNotice(null)
+    try {
+      const result = await run()
+      if (visit.current !== current) return false
+      if ('proposals' in result) {
+        applyDetail(result)
+      } else {
+        await reload()
+      }
+      setPendingAction(null)
+      setNotice({ tone: 'success', text: success })
+      return true
+    } catch (err) {
+      if (visit.current !== current) return false
+      if (err instanceof ApiError && err.status === 401) {
+        setPendingAction(null)
+        void logout()
+      } else if (err instanceof ApiError && (err.status === 409 || err.status === 404)) {
+        setPendingAction(null)
+        setNotice({ tone: 'error', text: err.status === 409 ? conflict : CONFLICT_MESSAGE })
+        await reload()
+      } else {
+        setActionError(getPortugueseErrorMessage(err, 'Não foi possível concluir a ação. Tenta outra vez.'))
+      }
+      return false
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
+  }
+
+  function confirmAction() {
+    if (!pendingAction) return
+
+    const success = actionCopy(pendingAction, negotiation!).success
+    switch (pendingAction.kind) {
+      case 'accept':
+        void perform(() => apiAcceptProposal(pendingAction.proposal.id), success)
+        break
+      case 'reject':
+        void perform(() => apiRejectProposal(pendingAction.proposal.id), success)
+        break
+      case 'withdraw':
+        void perform(() => apiWithdrawProposal(pendingAction.proposal.id), success)
+        break
+      case 'cancel':
+        void perform(() => apiCancelNegotiation(negotiationId), success)
+        break
+      case 'complete':
+        void perform(() => apiCompleteNegotiation(negotiationId), success)
+        break
+    }
+  }
+
+  function askToConfirm(action: PendingAction) {
+    setActionError(null)
+    setNotice(null)
+    setPendingAction(action)
+  }
+
+  async function submitProposal(offeredListingId: number | null) {
+    const created = await perform(
+      () => apiCreateProposal(negotiationId, offeredListingId),
+      'Proposta enviada.',
+      'Já existe uma proposta igual nesta negociação, ou os dados foram alterados. A página foi atualizada.',
+    )
+    if (created) setProposalFormOpen(false)
+  }
+
+  function closeProposalForm() {
+    setProposalFormOpen(false)
+    setActionError(null)
+    // The form held the focus; give it back to the button that opened it.
+    setTimeout(() => newProposalRef.current?.focus())
+  }
+
+  // The dialog gives the focus back to the button that opened it, which may be
+  // gone by now. The result is what the user needs to hear next.
+  useEffect(() => {
+    if (notice) noticeRef.current?.focus()
+  }, [notice])
+
   useEffect(() => {
     if (!validId) return
 
@@ -117,6 +313,10 @@ export default function Negotiation() {
     setProblem(null)
     setError(null)
     setRefreshError(null)
+    setPendingAction(null)
+    setProposalFormOpen(false)
+    setActionError(null)
+    setNotice(null)
     refresh()
 
     return () => {
@@ -124,6 +324,7 @@ export default function Negotiation() {
       controller.current?.abort()
       controller.current = null
       inFlight.current = false
+      visit.current += 1
     }
   }, [refresh, validId])
 
@@ -156,9 +357,42 @@ export default function Negotiation() {
   }
 
   if (negotiation && negotiation.id === negotiationId) {
+    const copy = pendingAction ? actionCopy(pendingAction, negotiation) : null
+    const isOwner = user?.id === negotiation.owner.id
+    const isInterested = user?.id === negotiation.interested_user.id
+    const stateName = negotiation.state.state_name
+    const hasAccepted = negotiation.proposals.some((p) => p.state.state_name === 'Accepted')
+
     return (
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
         <NegotiationHeader negotiation={negotiation} currentUserId={user?.id} />
+
+        {notice && (
+          <p
+            ref={noticeRef}
+            tabIndex={-1}
+            role={notice.tone === 'error' ? 'alert' : 'status'}
+            className={`text-sm border rounded-xl px-4 py-3 ${notice.tone === 'error' ? 'text-accent border-accent' : 'text-ink bg-paper border-line'}`}
+          >
+            {notice.text}
+          </p>
+        )}
+
+        {(stateName === 'Open' || stateName === 'Agreed') && (
+          <div className="flex flex-wrap items-center gap-3">
+            {stateName === 'Agreed' && isInterested && hasAccepted && (
+              <Button variant="primary" size="sm" disabled={busy} onClick={() => askToConfirm({ kind: 'complete' })}>
+                Confirmar conclusão
+              </Button>
+            )}
+            {stateName === 'Agreed' && isOwner && (
+              <p className="text-sm text-muted">À espera de que a pessoa interessada confirme a conclusão da troca.</p>
+            )}
+            <Button variant="dangerOutline" size="sm" disabled={busy} onClick={() => askToConfirm({ kind: 'cancel' })}>
+              Cancelar negociação
+            </Button>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" onClick={refreshByHand} loading={refreshing}>
@@ -167,7 +401,56 @@ export default function Negotiation() {
           {refreshError && <p role="alert" className="text-sm text-accent">{refreshError}</p>}
         </div>
 
-        <ProposalsPanel negotiation={negotiation} />
+        <ProposalsPanel
+          negotiation={negotiation}
+          isOwner={isOwner}
+          isInterested={isInterested}
+          busy={busy}
+          onAction={askToConfirm}
+          newProposal={
+            isInterested && stateName === 'Open' && user && (
+              proposalFormOpen ? (
+                <ProposalForm
+                  userId={user.id}
+                  busy={busy}
+                  error={actionError}
+                  onSubmit={submitProposal}
+                  onCancel={closeProposalForm}
+                />
+              ) : (
+                <button
+                  ref={newProposalRef}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setActionError(null)
+                    setNotice(null)
+                    setProposalFormOpen(true)
+                  }}
+                  className={buttonClasses({ variant: 'primary', size: 'sm' })}
+                >
+                  Criar proposta
+                </button>
+              )
+            )
+          }
+        />
+
+        <ConfirmDialog
+          open={pendingAction !== null}
+          title={copy?.title ?? ''}
+          message={copy?.message ?? ''}
+          confirmLabel={copy?.confirmLabel ?? ''}
+          busyLabel={copy?.busyLabel ?? ''}
+          confirmVariant={copy?.confirmVariant}
+          busy={busy}
+          error={actionError}
+          onConfirm={confirmAction}
+          onCancel={() => {
+            setPendingAction(null)
+            setActionError(null)
+          }}
+        />
       </main>
     )
   }
@@ -310,9 +593,67 @@ function StateNotice({
   }
 }
 
-function ProposalsPanel({ negotiation }: { negotiation: ApiNegotiationDetail }) {
+function ProposalsPanel({
+  negotiation,
+  isOwner,
+  isInterested,
+  busy,
+  onAction,
+  newProposal,
+}: {
+  negotiation: ApiNegotiationDetail
+  isOwner: boolean
+  isInterested: boolean
+  busy: boolean
+  onAction: (action: PendingAction) => void
+  newProposal: ReactNode
+}) {
   const { accepted, pending, closed } = groupProposals(negotiation.proposals)
   const onHold = negotiation.state.state_name === 'Agreed'
+  // Only a pending proposal in an open negotiation can still change.
+  const canAct = negotiation.state.state_name === 'Open'
+
+  function pendingActions(proposal: ApiProposal) {
+    if (!canAct) return null
+    const name = proposalName(proposal)
+    return (
+      <div className="flex flex-wrap gap-2 pt-1">
+        {isOwner && (
+          <>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy}
+              aria-label={`Aceitar proposta: ${name}`}
+              onClick={() => onAction({ kind: 'accept', proposal })}
+            >
+              Aceitar
+            </Button>
+            <Button
+              variant="dangerOutline"
+              size="sm"
+              disabled={busy}
+              aria-label={`Rejeitar proposta: ${name}`}
+              onClick={() => onAction({ kind: 'reject', proposal })}
+            >
+              Rejeitar
+            </Button>
+          </>
+        )}
+        {isInterested && (
+          <Button
+            variant="dangerOutline"
+            size="sm"
+            disabled={busy}
+            aria-label={`Retirar proposta: ${name}`}
+            onClick={() => onAction({ kind: 'withdraw', proposal })}
+          >
+            Retirar
+          </Button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <section aria-labelledby="proposals-heading" className="space-y-5">
@@ -324,11 +665,14 @@ function ProposalsPanel({ negotiation }: { negotiation: ApiNegotiationDetail }) 
         </p>
       )}
 
+      {newProposal}
+
       <ProposalGroup title="Proposta aceite" proposals={accepted} />
       <ProposalGroup
         title={onHold ? 'Propostas em espera' : 'Propostas pendentes'}
         description={onHold ? 'Serão encerradas quando a troca for concluída ou cancelada.' : undefined}
         proposals={pending}
+        renderActions={pendingActions}
       />
       <ProposalGroup title="Histórico" proposals={closed} />
     </section>
@@ -339,10 +683,12 @@ function ProposalGroup({
   title,
   description,
   proposals,
+  renderActions,
 }: {
   title: string
   description?: string
   proposals: ApiProposal[]
+  renderActions?: (proposal: ApiProposal) => ReactNode
 }) {
   if (proposals.length === 0) return null
 
@@ -353,7 +699,7 @@ function ProposalGroup({
       <ul className="space-y-3 mt-3">
         {proposals.map((proposal) => (
           <li key={proposal.id}>
-            <ProposalCard proposal={proposal} />
+            <ProposalCard proposal={proposal} actions={renderActions?.(proposal)} />
           </li>
         ))}
       </ul>
@@ -361,7 +707,7 @@ function ProposalGroup({
   )
 }
 
-function ProposalCard({ proposal }: { proposal: ApiProposal }) {
+function ProposalCard({ proposal, actions }: { proposal: ApiProposal; actions?: ReactNode }) {
   const { offered_listing: offered, state, created_at, responded_at } = proposal
 
   return (
@@ -383,6 +729,7 @@ function ProposalCard({ proposal }: { proposal: ApiProposal }) {
         Criada a {formatDate(created_at)}
         {responded_at && ` · Respondida a ${formatDate(responded_at)}`}
       </p>
+      {actions}
     </article>
   )
 }
