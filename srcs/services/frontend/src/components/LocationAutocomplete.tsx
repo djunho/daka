@@ -325,15 +325,19 @@ export default function LocationAutocomplete({
     }
   }
 
+  const hasCustomRounded = inputClassName.includes('rounded-')
+  const hasCustomBg = inputClassName.includes('bg-')
+
   const inputClass =
-    'w-full px-4 py-2.5 border rounded-xl text-ink text-sm placeholder:text-muted ' +
+    'w-full px-4 py-2.5 border text-ink text-sm placeholder:text-muted ' +
+    (hasCustomRounded ? '' : 'rounded-xl ') +
     'hover:bg-paper focus:outline-none transition-colors ' +
     (ariaInvalid
       ? 'border-accent focus:border-accent '
       : 'border-line hover:border-brand/50 focus:border-brand ') +
     (readOnly
       ? 'bg-paper/60 cursor-default caret-transparent selection:bg-transparent '
-      : 'cursor-text bg-surface ') +
+      : `cursor-text ${hasCustomBg ? '' : 'bg-surface '}`) +
     (disabled ? 'opacity-60 cursor-not-allowed ' : '') +
     inputClassName
 

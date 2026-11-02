@@ -191,7 +191,11 @@ export default function UserProfile() {
 
         {profile.listings.length === 0 ? (
           <div className={EMPTY_STATE_CLASSES}>
-            <p>Este utilizador ainda não tem anúncios ativos para troca.</p>
+            <p>
+              {isOwnProfile
+                ? 'Ainda não tens anúncios ativos para troca.'
+                : 'Este utilizador ainda não tem anúncios ativos para troca.'}
+            </p>
           </div>
         ) : (
           <div className={LISTING_GRID_CLASSES}>

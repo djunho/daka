@@ -173,15 +173,15 @@ export default function Profile() {
       }
       <div className="bg-surface border border-line rounded-2xl p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-line">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 min-w-0">
             <Avatar
               avatar={avatarPreview ?? (avatarRemoved ? null : user.avatar)}
               user_name={user.user_name}
             />
 
             {/* User Name & Subtitle */}
-            <div>
-              <h1 className="font-display text-2xl font-bold text-ink">
+            <div className="min-w-0">
+              <h1 className="font-display text-2xl font-bold text-ink break-words">
                 {user.user_name}
               </h1>
               <p className="text-sm text-muted">
@@ -221,12 +221,14 @@ export default function Profile() {
             </div>
           </div>
 
-          <Link
-            to={`/users/${user.id}`}
-            className="text-xs font-semibold bg-brand text-surface px-3 py-2 rounded-lg hover:opacity-95 transition-opacity inline-flex items-center gap-1.5 self-start sm:self-auto"
-          >
-            Meus anúncios
-          </Link>
+          {!isEditing && !saving && (
+            <Link
+              to={`/users/${user.id}`}
+              className={buttonClasses({ variant: 'primary', size: 'sm', className: 'shrink-0 self-start sm:self-auto' })}
+            >
+              Meus anúncios
+            </Link>
+          )}
         </div>
 
 
