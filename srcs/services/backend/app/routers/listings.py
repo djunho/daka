@@ -449,9 +449,9 @@ def delete_listing(
         )
 
     db.rollback()
-    # Match the negotiation lifecycle lock order: negotiations, proposals,
-    # then listings.  A listing can participate either as the requested item
-    # or as an offered item, so both relationships must be locked.
+    # Serialize with negotiation creation, which locks the listing owner first.
+    # Then match the lifecycle lock order: negotiations, proposals, listings.
+    db.refresh(current_user, with_for_update=True)
     offering_negotiation_ids_query = db.query(Proposal.negotiation_id).filter(
         Proposal.offered_listing_id == id,
         Proposal.proposal_state_id == proposal_states["Pending"],
