@@ -172,52 +172,61 @@ export default function Profile() {
         </div>
       }
       <div className="bg-surface border border-line rounded-2xl p-6 shadow-sm">
-        <div className="flex items-center gap-4 pb-6 border-b border-line">
-          <Avatar
-            avatar={avatarPreview ?? (avatarRemoved ? null : user.avatar)}
-            user_name={user.user_name}
-          />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-line">
+          <div className="flex items-center gap-4">
+            <Avatar
+              avatar={avatarPreview ?? (avatarRemoved ? null : user.avatar)}
+              user_name={user.user_name}
+            />
 
-          {/* User Name & Subtitle */}
-          <div>
-            <h1 className="font-display text-2xl font-bold text-ink">
-              {user.user_name}
-            </h1>
-            <p className="text-sm text-muted">
-              Membro desde {memberSince}
-            </p>
+            {/* User Name & Subtitle */}
+            <div>
+              <h1 className="font-display text-2xl font-bold text-ink">
+                {user.user_name}
+              </h1>
+              <p className="text-sm text-muted">
+                Membro desde {memberSince}
+              </p>
 
-            {/* Avatar actions, only while editing. They change the preview;
-                "Guardar alterações" is what sends them. */}
-            {isEditing && (
-              <div className="flex items-center gap-2 mt-2">
-                <ImagePicker
-                  label={showsAvatar ? 'Alterar foto' : 'Adicionar foto'}
-                  onPick={(file) => {
-                    setError(null)
-                    setAvatarFile(file)
-                    setAvatarRemoved(false)
-                  }}
-                  onError={setError}
-                  disabled={saving}
-                />
-                {showsAvatar && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAvatarFile(null)
-                      setAvatarRemoved(true)
+              {/* Avatar actions, only while editing. They change the preview;
+                  "Guardar alterações" is what sends them. */}
+              {isEditing && (
+                <div className="flex items-center gap-2 mt-2">
+                  <ImagePicker
+                    label={showsAvatar ? 'Alterar foto' : 'Adicionar foto'}
+                    onPick={(file) => {
+                      setError(null)
+                      setAvatarFile(file)
+                      setAvatarRemoved(false)
                     }}
+                    onError={setError}
                     disabled={saving}
-                    className={"text-xs font-medium text-muted hover:text-ink px-2.5 py-1 rounded-lg transition-colors" +
-                              " disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted"}
-                  >
-                    Remover foto
-                  </button>
-                )}
-              </div>
-            )}
+                  />
+                  {showsAvatar && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAvatarFile(null)
+                        setAvatarRemoved(true)
+                      }}
+                      disabled={saving}
+                      className={"text-xs font-medium text-muted hover:text-ink px-2.5 py-1 rounded-lg transition-colors" +
+                                " disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted"}
+                    >
+                      Remover foto
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
+
+          <Link
+            to={`/users/${user.id}`}
+            className="text-xs font-semibold bg-brand text-surface px-3 py-2 rounded-lg hover:opacity-95 transition-opacity inline-flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            Meus anúncios
+          </Link>
         </div>
 
 
