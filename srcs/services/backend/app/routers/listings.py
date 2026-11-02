@@ -16,7 +16,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -449,18 +449,35 @@ def delete_listing(
         )
 
     db.rollback()
-    # Match the negotiation lifecycle lock order: negotiations, then listings.
+    # Match the negotiation lifecycle lock order: negotiations, proposals,
+    # then listings.  A listing can participate either as the requested item
+    # or as an offered item, so both relationships must be locked.
+    offering_negotiation_ids = db.query(Proposal.negotiation_id).filter(
+        Proposal.offered_listing_id == id,
+        Proposal.proposal_state_id == proposal_states["Pending"],
+    )
     affected_negotiation_ids = [
         negotiation_id
         for (negotiation_id,) in db.query(Negotiation.id)
         .filter(
-            Negotiation.listing_id == id,
             Negotiation.negotiation_state_id == negotiation_states["Open"],
+            or_(
+                Negotiation.listing_id == id,
+                Negotiation.id.in_(offering_negotiation_ids),
+            ),
         )
         .order_by(Negotiation.id)
         .with_for_update()
         .all()
     ]
+    if affected_negotiation_ids:
+        (
+            db.query(Proposal)
+            .filter(Proposal.negotiation_id.in_(affected_negotiation_ids))
+            .order_by(Proposal.id)
+            .with_for_update()
+            .all()
+        )
 
     listing = db.get(Listing, id, with_for_update=True)
     if listing is None:

@@ -234,6 +234,22 @@ def create_negotiation(
     user_id = current_user.id
     db.rollback()
 
+    # Lock negotiations before listings, matching every lifecycle operation.
+    existing = (
+        db.query(Negotiation)
+        .filter(
+            Negotiation.listing_id == payload.listing_id,
+            Negotiation.interested_user_id == user_id,
+        )
+        .with_for_update()
+        .first()
+    )
+    if existing is not None:
+        negotiation_id = existing.id
+        db.commit()
+        response.status_code = status.HTTP_200_OK
+        return _negotiation_detail(_load_negotiation(db, negotiation_id))
+
     requested = db.get(Listing, payload.listing_id, with_for_update=True)
     if requested is None:
         raise HTTPException(
@@ -245,21 +261,6 @@ def create_negotiation(
             status_code=status.HTTP_409_CONFLICT,
             detail="You cannot negotiate your own listing.",
         )
-
-    existing = (
-        db.query(Negotiation)
-        .filter(
-            Negotiation.listing_id == requested.id,
-            Negotiation.interested_user_id == user_id,
-        )
-        .with_for_update()
-        .first()
-    )
-    if existing is not None:
-        negotiation_id = existing.id
-        db.commit()
-        response.status_code = status.HTTP_200_OK
-        return _negotiation_detail(_load_negotiation(db, negotiation_id))
 
     available = _listing_state(db, "Available")
     if requested.state_id != available.id:
@@ -747,42 +748,113 @@ def complete_negotiation(
 ) -> NegotiationDetailOut:
     user_id = current_user.id
     db.rollback()
-    negotiation = db.get(Negotiation, negotiation_id, with_for_update=True)
+
+    # Discover the complete lock set without retaining any locks, then acquire
+    # every affected negotiation and proposal in global ID order.  In
+    # particular, this includes pending proposals in *other* negotiations that
+    # offer either listing in this agreement.
+    candidate = db.get(Negotiation, negotiation_id)
+    if candidate is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Negotiation not found.",
+        )
+    if candidate.interested_user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the interested user may complete this negotiation.",
+        )
+    agreed_id = _negotiation_state(db, "Agreed").id
+    if candidate.negotiation_state_id != agreed_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only an agreed negotiation may be completed.",
+        )
+    accepted_id = _proposal_state(db, "Accepted").id
+    accepted_candidate = (
+        db.query(Proposal)
+        .filter(
+            Proposal.negotiation_id == negotiation_id,
+            Proposal.proposal_state_id == accepted_id,
+        )
+        .one_or_none()
+    )
+    if accepted_candidate is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agreed negotiation does not have exactly one accepted proposal.",
+        )
+    involved_listing_ids = [candidate.listing_id]
+    if accepted_candidate.offered_listing_id is not None:
+        involved_listing_ids.append(accepted_candidate.offered_listing_id)
+
+    pending_id = _proposal_state(db, "Pending").id
+    offering_negotiation_ids = db.query(Proposal.negotiation_id).filter(
+        Proposal.offered_listing_id.in_(involved_listing_ids),
+        Proposal.proposal_state_id == pending_id,
+    )
+    affected_negotiation_ids = [
+        affected_id
+        for (affected_id,) in db.query(Negotiation.id)
+        .filter(
+            or_(
+                Negotiation.id == negotiation_id,
+                Negotiation.listing_id.in_(involved_listing_ids),
+                Negotiation.id.in_(offering_negotiation_ids),
+            )
+        )
+        .order_by(Negotiation.id)
+        .all()
+    ]
+    db.rollback()
+
+    locked_negotiations = (
+        db.query(Negotiation)
+        .filter(Negotiation.id.in_(affected_negotiation_ids))
+        .order_by(Negotiation.id)
+        .with_for_update()
+        .all()
+    )
+    negotiations_by_id = {
+        locked_negotiation.id: locked_negotiation
+        for locked_negotiation in locked_negotiations
+    }
+    negotiation = negotiations_by_id.get(negotiation_id)
     if negotiation is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Negotiation not found.",
         )
-    if negotiation.interested_user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the interested user may complete this negotiation.",
-        )
-    if negotiation.negotiation_state_id != _negotiation_state(db, "Agreed").id:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only an agreed negotiation may be completed.",
-        )
-
     proposals = (
         db.query(Proposal)
-        .filter(Proposal.negotiation_id == negotiation.id)
+        .filter(Proposal.negotiation_id.in_(affected_negotiation_ids))
+        .order_by(Proposal.id)
         .with_for_update()
         .all()
     )
-    accepted_id = _proposal_state(db, "Accepted").id
     accepted = [
-        proposal for proposal in proposals if proposal.proposal_state_id == accepted_id
+        proposal
+        for proposal in proposals
+        if proposal.negotiation_id == negotiation_id
+        and proposal.proposal_state_id == accepted_id
     ]
-    if len(accepted) != 1:
+    if (
+        negotiation.interested_user_id != user_id
+        or negotiation.negotiation_state_id != agreed_id
+        or len(accepted) != 1
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Agreed negotiation does not have exactly one accepted proposal.",
+            detail="Agreement changed while completion was being prepared.",
         )
-
-    involved_listing_ids = [negotiation.listing_id]
+    locked_listing_ids = [negotiation.listing_id]
     if accepted[0].offered_listing_id is not None:
-        involved_listing_ids.append(accepted[0].offered_listing_id)
+        locked_listing_ids.append(accepted[0].offered_listing_id)
+    if set(locked_listing_ids) != set(involved_listing_ids):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agreement changed while completion was being prepared.",
+        )
     locked_listings = (
         db.query(Listing)
         .filter(Listing.id.in_(involved_listing_ids))
@@ -800,7 +872,6 @@ def complete_negotiation(
         )
 
     now = utcnow()
-    pending_id = _proposal_state(db, "Pending").id
     db.query(Proposal).filter(
         Proposal.negotiation_id == negotiation.id,
         Proposal.proposal_state_id == pending_id,
@@ -814,15 +885,11 @@ def complete_negotiation(
 
     open_id = _negotiation_state(db, "Open").id
     competing_ids = [
-        competing_id
-        for (competing_id,) in db.query(Negotiation.id)
-        .filter(
-            Negotiation.id != negotiation.id,
-            Negotiation.listing_id.in_(involved_listing_ids),
-            Negotiation.negotiation_state_id == open_id,
-        )
-        .with_for_update()
-        .all()
+        locked_negotiation.id
+        for locked_negotiation in locked_negotiations
+        if locked_negotiation.id != negotiation.id
+        and locked_negotiation.listing_id in involved_listing_ids
+        and locked_negotiation.negotiation_state_id == open_id
     ]
     if competing_ids:
         db.query(Proposal).filter(

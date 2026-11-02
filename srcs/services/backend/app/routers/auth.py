@@ -541,7 +541,7 @@ def delete_me(
         listing_id
         for (listing_id,) in db.query(Listing.id)
         .filter(Listing.user_id == user_id)
-        .with_for_update()
+        .order_by(Listing.id)
         .all()
     ]
 
@@ -591,6 +591,64 @@ def delete_me(
             detail="Account deletion states are not configured.",
         )
 
+    # Account deletion touches negotiations both through ownership and through
+    # offered listings.  Lock the complete relationship graph in the same
+    # order as negotiation lifecycle operations: negotiations, proposals,
+    # listings.  The initial listing query above only discovers IDs.
+    offering_negotiation_ids = db.query(Proposal.negotiation_id).filter(
+        Proposal.offered_listing_id.in_(listing_ids),
+        Proposal.proposal_state_id == proposal_states["Pending"].id,
+    )
+    affected_negotiation_ids = [
+        negotiation_id
+        for (negotiation_id,) in db.query(Negotiation.id)
+        .filter(
+            or_(
+                Negotiation.interested_user_id == user_id,
+                Negotiation.listing_id.in_(listing_ids),
+                Negotiation.id.in_(offering_negotiation_ids),
+            ),
+            Negotiation.negotiation_state_id.in_(
+                (
+                    negotiation_states["Open"].id,
+                    negotiation_states["Agreed"].id,
+                )
+            ),
+        )
+        .order_by(Negotiation.id)
+        .with_for_update()
+        .all()
+    ]
+    locked_proposals = []
+    if affected_negotiation_ids:
+        locked_proposals = (
+            db.query(Proposal)
+            .filter(Proposal.negotiation_id.in_(affected_negotiation_ids))
+            .order_by(Proposal.id)
+            .with_for_update()
+            .all()
+        )
+    affected_listing_ids = set(listing_ids)
+    affected_listing_ids.update(
+        listing_id
+        for (listing_id,) in db.query(Negotiation.listing_id)
+        .filter(Negotiation.id.in_(affected_negotiation_ids))
+        .all()
+    )
+    affected_listing_ids.update(
+        proposal.offered_listing_id
+        for proposal in locked_proposals
+        if proposal.offered_listing_id is not None
+    )
+    if affected_listing_ids:
+        (
+            db.query(Listing)
+            .filter(Listing.id.in_(affected_listing_ids))
+            .order_by(Listing.id)
+            .with_for_update()
+            .all()
+        )
+
     try:
         # Participant cancellation takes precedence over item unavailability.
         # The interested user's open and agreed negotiations are cancelled.
@@ -600,6 +658,7 @@ def delete_me(
         negotiations_to_cancel = (
             db.query(Negotiation)
             .filter(
+                Negotiation.id.in_(affected_negotiation_ids),
                 or_(
                     Negotiation.interested_user_id == user_id,
                     (
@@ -617,7 +676,7 @@ def delete_me(
                     )
                 ),
             )
-            .with_for_update()
+            .order_by(Negotiation.id)
             .all()
         )
 
@@ -691,11 +750,12 @@ def delete_me(
             negotiation_id
             for (negotiation_id,) in db.query(Negotiation.id)
             .filter(
+                Negotiation.id.in_(affected_negotiation_ids),
                 Negotiation.listing_id.in_(listing_ids),
                 Negotiation.negotiation_state_id
                 == negotiation_states["Open"].id,
             )
-            .with_for_update()
+            .order_by(Negotiation.id)
             .all()
         ]
         if unavailable_negotiation_ids:
