@@ -1,12 +1,13 @@
 interface AvatarProps {
     avatar?: string | null
     user_name?: string
-    size?: 'sm' | 'lg'
+    size?: 'xs' | 'sm' | 'lg'
 }
 
 // Tailwind only generates the classes it finds written out in full in the
 // code, so the sizes are spelled out here instead of built as `w-${n}`.
 const SIZES = {
+    xs: 'w-7 h-7 text-xs',
     sm: 'w-12 h-12 text-lg',
     lg: 'w-20 h-20 text-2xl',
 }
