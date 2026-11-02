@@ -75,6 +75,31 @@ groups:
           description: "{{ $labels.name }} above 90% of its memory limit for >5m."
 
   # -----------------------------------------------------------------------
+  - name: application
+    rules:
+      - alert: BackendHighErrorRate
+        expr: sum by (instance) (rate(http_requests_total{job="backend",status="5xx"}[5m])) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP 5xx error rate on {{ $labels.instance }}"
+          description: "Backend is returning > 0.1 errors/s for >2m (current: {{ printf \"%.2f\" $value }} req/s)."
+
+      - alert: BackendHighLatencyP95
+        expr: >
+          histogram_quantile(
+            0.95,
+            sum by (instance, le) (rate(http_request_duration_seconds_bucket{job="backend"}[5m]))
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 request latency on {{ $labels.instance }}"
+          description: "95th percentile API response time is above 1s for >5m (current: {{ printf \"%.2f\" $value }}s)."
+
+  # -----------------------------------------------------------------------
   - name: tls
     rules:
       - alert: TLSCertExpiringSoon
