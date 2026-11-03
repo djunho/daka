@@ -9,6 +9,11 @@ import Avatar from '../components/Avatar'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
 
+// POST /negotiations answers 409 both when the listing can no longer be
+// negotiated and when this pair already has a cancelled negotiation for it.
+// The backend sends no error code, so only this detail tells them apart.
+const CANCELLED_NEGOTIATION_DETAIL = 'A cancelled negotiation cannot be reopened.'
+
 // useParams reads the :id piece from the URL (/listing/3 -> id === "3").
 // This is the router feature that lets one component serve many listings.
 export default function ListingDetail() {
@@ -146,6 +151,10 @@ export default function ListingDetail() {
         }
         if (err instanceof ApiError && err.status === 404) {
           setNotFound(true)
+          return
+        }
+        if (err instanceof ApiError && err.status === 409 && err.message === CANCELLED_NEGOTIATION_DETAIL) {
+          setStartError('A tua negociação deste anúncio foi cancelada e não pode ser reaberta.')
           return
         }
         setStartError(getPortugueseErrorMessage(
