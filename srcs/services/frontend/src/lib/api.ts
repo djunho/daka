@@ -370,8 +370,9 @@ export function apiListNegotiations(params: ListNegotiationsParams = {}, signal?
   return request<ApiNegotiationPage>(qs ? `/negotiations?${qs}` : '/negotiations', { signal })
 }
 
-export function apiGetNegotiation(id: number) {
-  return request<ApiNegotiationDetail>(`/negotiations/${id}`)
+// `signal` lets the page cancel a request it no longer needs.
+export function apiGetNegotiation(id: number, signal?: AbortSignal) {
+  return request<ApiNegotiationDetail>(`/negotiations/${id}`, { signal })
 }
 
 // Creates the negotiation, or returns the one this user already has for this

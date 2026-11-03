@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -66,16 +67,20 @@ function negotiation(overrides: Partial<ApiNegotiationDetail> = {}): ApiNegotiat
 
 const logout = vi.fn().mockResolvedValue(undefined)
 
-function renderPage(entry = '/negotiations/20') {
-  return render(
+function renderPage(entry = '/negotiations/20', { strict = false } = {}) {
+  const page = (
     <MemoryRouter initialEntries={[entry]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Link to="/negotiations/21">Outra negociação</Link>
       <Routes>
         <Route path="/negotiations/:id" element={<Negotiation />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   )
+  return render(strict ? <StrictMode>{page}</StrictMode> : page)
 }
+
+// The signal given to each request, in call order.
+const signals = () => vi.mocked(apiGetNegotiation).mock.calls.map((call) => call[1])
 
 const flush = () => act(() => new Promise((r) => setTimeout(r)))
 
@@ -96,7 +101,7 @@ describe('Negotiation', () => {
     expect(screen.getByText('Iniciada a 15 de janeiro de 2026')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Ana' })).toHaveAttribute('href', '/users/1')
     expect(screen.getByText('Bruno (tu)')).toBeInTheDocument()
-    expect(apiGetNegotiation).toHaveBeenCalledWith(20)
+    expect(apiGetNegotiation).toHaveBeenCalledWith(20, expect.any(AbortSignal))
   })
 
   it('does not link to a listing the backend would answer 404 for', async () => {
@@ -302,5 +307,14 @@ describe('Negotiation', () => {
     await flush()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Mesa' })).toBeInTheDocument()
+    expect(signals().map((signal) => signal?.aborted)).toEqual([true, false])
+  })
+
+  it('keeps one request in flight when React runs the effect twice (StrictMode)', async () => {
+    renderPage('/negotiations/20', { strict: true })
+    await screen.findByRole('heading', { level: 1, name: 'Bicicleta' })
+
+    expect(signals().length).toBeGreaterThan(0)
+    expect(signals().filter((signal) => signal && !signal.aborted)).toHaveLength(1)
   })
 })
