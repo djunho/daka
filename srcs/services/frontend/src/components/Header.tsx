@@ -66,7 +66,7 @@ export default function Header() {
             Iniciar sessão
           </Link>
         ) : (
-          <UserMenu name={user.user_name} avatar={user.avatar} onLogout={logout} />
+          <UserMenu id={user.id} name={user.user_name} avatar={user.avatar} onLogout={logout} />
         )}
 
         <Link
@@ -83,10 +83,12 @@ export default function Header() {
 
 // The avatar button plus its dropdown menu.
 function UserMenu({
+  id,
   name,
   avatar,
   onLogout,
 }: {
+  id: number
   name: string
   avatar: string | null
   onLogout: () => Promise<void>
@@ -153,6 +155,16 @@ function UserMenu({
           >
             Perfil
           </Link>
+          
+          <Link
+            to={`/users/${id}`}
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2.5 text-sm text-ink hover:bg-paper transition-colors"
+          >
+            Meus anúncios
+          </Link>
+          
           <button
             type="button"
             role="menuitem"

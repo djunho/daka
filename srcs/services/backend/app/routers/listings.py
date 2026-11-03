@@ -6,6 +6,8 @@ The module exposes public listing browsing and lookup endpoints, as well as
 authenticated endpoints for owners to create, update and remove listings.
 """
 
+from typing import Literal
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -57,6 +59,16 @@ MAX_IMAGES_PER_LISTING = 6
 # AVATAR_MAX_SIDE, while full-size phone photos are still scaled down.
 LISTING_IMAGE_MAX_SIDE = 1600
 
+ListingSort = Literal["newest", "oldest", "title_asc", "title_desc"]
+# Every order ends on the id: listings with the same date or title would
+# otherwise have no fixed order, and could repeat or go missing between pages.
+LISTING_SORT_ORDER = {
+    "newest": (Listing.created_at.desc(), Listing.id.desc()),
+    "oldest": (Listing.created_at.asc(), Listing.id.asc()),
+    "title_asc": (Listing.title.asc(), Listing.id.asc()),
+    "title_desc": (Listing.title.desc(), Listing.id.desc()),
+}
+
 
 # ---------------------------------------------------------------------------
 # Browsing and lookup data
@@ -85,8 +97,12 @@ def list_listings(
     ),
     location: str | None = Query(
         default=None,
-        max_length=100,
+        max_length=200,
         description="Filter listings by location.",
+    ),
+    sort: ListingSort = Query(
+        default="newest",
+        description="Order of the results: by date or by title.",
     ),
     limit: int = Query(
         default=LISTINGS_PAGE_SIZE,
@@ -101,7 +117,7 @@ def list_listings(
     ),
     db: Session = Depends(get_db),
 ) -> ListingPageOut:
-    """Return one page of public listings, ordered from newest to oldest.
+    """Return one page of public listings, newest first unless `sort` says otherwise.
 
     Every optional filter is combined with AND. Removed and Expired listings
     are never visible here.
@@ -131,7 +147,7 @@ def list_listings(
             Listing.listing_location.icontains(place, autoescape=True))
     total = listings.count()
     items = (
-        listings.order_by(Listing.created_at.desc(), Listing.id.desc())
+        listings.order_by(*LISTING_SORT_ORDER[sort])
         .offset(offset)
         .limit(limit)
         .all()

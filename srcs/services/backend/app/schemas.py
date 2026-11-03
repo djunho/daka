@@ -147,7 +147,7 @@ class ProfileUpdate(BaseModel):
     """
 
     user_name: str | None = Field(default=None, min_length=2, max_length=100)
-    user_location: str | None = Field(default=None, max_length=100)
+    user_location: str | None = Field(default=None, max_length=200)
 
     @field_validator("user_name", "user_location")
     @classmethod
@@ -224,7 +224,7 @@ class ListingCreateIn(BaseModel):
     category_id: int = Field(gt=0)
     condition_id: int = Field(gt=0)
     listing_dsc: str | None = Field(default=None, max_length=2000)
-    listing_location: str | None = Field(default=None, max_length=100)
+    listing_location: str | None = Field(default=None, max_length=200)
     wish: str | None = Field(default=None, max_length=1000)
 
     @field_validator("title")
@@ -247,7 +247,7 @@ class ListingUpdateIn(BaseModel):
     category_id: int | None = Field(default=None, gt=0)
     condition_id: int | None = Field(default=None, gt=0)
     listing_dsc: str | None = Field(default=None, max_length=2000)
-    listing_location: str | None = Field(default=None, max_length=100)
+    listing_location: str | None = Field(default=None, max_length=200)
     wish: str | None = Field(default=None, max_length=1000)
 
     @field_validator("title")

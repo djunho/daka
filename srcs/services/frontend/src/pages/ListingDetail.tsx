@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { ApiError, apiGetListing, type ApiListingDetail } from '../lib/api'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { ApiError, apiDeleteListing, apiGetListing, type ApiListingDetail } from '../lib/api'
 import { categoryLabel, conditionLabel } from '../types/listing'
 import ListingGallery from '../components/ListingGallery'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
+import Button, { buttonClasses } from '../components/Button'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 // useParams reads the :id piece from the URL (/listing/3 -> id === "3").
 // This is the router feature that lets one component serve many listings.
 export default function ListingDetail() {
   const { id } = useParams()
   const { user: currentUser } = useAuth()
+  const navigate = useNavigate()
   // Anything that is not a positive whole number ("/listing/abc") can never
   // exist, so it goes straight to "not found" without asking the backend.
   const listingId = Number(id)
@@ -20,6 +23,11 @@ export default function ListingDetail() {
   const [loading, setLoading] = useState<boolean>(true)
   const [notFound, setNotFound] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Remove flow: the confirmation dialog, the request in flight and its error.
+  const [confirmRemove, setConfirmRemove] = useState<boolean>(false)
+  const [removing, setRemoving] = useState<boolean>(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!validId) return
@@ -59,6 +67,27 @@ export default function ListingDetail() {
     }
   }, [listingId, validId])
 
+  function openRemoveDialog() {
+    // A previous failed attempt should not greet the next one.
+    setRemoveError(null)
+    setConfirmRemove(true)
+  }
+
+  function handleRemove() {
+    setRemoving(true)
+    setRemoveError(null)
+    apiDeleteListing(listingId)
+      .then(() => {
+        // replace: Back must not return to a listing that no longer exists.
+        // The Layout shows the notice on the next page (88h).
+        navigate('/', { replace: true, state: { notice: 'O teu anúncio foi removido.' } })
+      })
+      .catch(() => {
+        setRemoveError('Não foi possível remover o anúncio. Tenta outra vez.')
+        setRemoving(false)
+      })
+  }
+
   if (!validId || notFound) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-8">
@@ -69,7 +98,7 @@ export default function ListingDetail() {
           <p className="text-sm text-muted mb-6">
             O anúncio que procuras não existe ou já foi removido.
           </p>
-          <Link className="btn" to="/">Voltar ao início</Link>
+          <Link className={buttonClasses()} to="/">Voltar ao início</Link>
         </div>
       </main>
     )
@@ -82,7 +111,7 @@ export default function ListingDetail() {
           <p role="alert" className="text-sm text-muted mb-6">
             {error}
           </p>
-          <Link className="btn" to="/">Voltar ao início</Link>
+          <Link className={buttonClasses()} to="/">Voltar ao início</Link>
         </div>
       </main>
     )
@@ -122,7 +151,7 @@ export default function ListingDetail() {
     year: 'numeric',
   })
 
-  // The owner gets their own actions here later (edit / remove, #88 part 2).
+  // Only the owner can edit or remove the listing.
   const isOwner = currentUser?.id === owner.id
 
   return (
@@ -195,17 +224,41 @@ export default function ListingDetail() {
               </div>
             </div>
             {isOwner && (
-              <p className="text-sm font-medium text-brand mt-4 pt-4 border-t border-line">
-                Este é o teu anúncio.
-              </p>
+              <div className="mt-4 pt-4 border-t border-line space-y-3">
+                <p className="text-sm font-medium text-brand">Este é o teu anúncio.</p>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    to={`/listing/${listing.id}/edit`}
+                    className={buttonClasses({ variant: 'primary', size: 'sm' })}
+                  >
+                    Editar anúncio
+                  </Link>
+                  <Button variant="dangerOutline" size="sm" onClick={openRemoveDialog}>
+                    Remover anúncio
+                  </Button>
+                </div>
+              </div>
             )}
           </div>
         </div>
       </div>
 
       <div className="mt-8">
-        <Link className="btn" to="/">Voltar ao início</Link>
+        <Link className={buttonClasses()} to="/">Voltar ao início</Link>
       </div>
+      {isOwner && (
+        <ConfirmDialog
+          open={confirmRemove}
+          title="Remover anúncio"
+          message={`Tens a certeza de que queres remover «${title}»? Deixa de aparecer na plataforma e as propostas de troca abertas são canceladas.`}
+          confirmLabel="Sim, remover"
+          busyLabel="A remover…"
+          busy={removing}
+          error={removeError}
+          onConfirm={handleRemove}
+          onCancel={() => setConfirmRemove(false)}
+        />
+      )}
     </main>
   )
 }

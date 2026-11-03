@@ -1,22 +1,33 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import ListingCard from '../components/ListingCard'
+import Button from '../components/Button'
+import ListingCard, { EMPTY_STATE_CLASSES, LISTING_GRID_CLASSES } from '../components/ListingCard'
+import LocationAutocomplete from '../components/LocationAutocomplete'
 import { categoryLabel } from '../types/listing'
-import { apiListCategories, type ApiCategory, apiListListings, type ApiListingSummary } from '../lib/api'
+import { apiListCategories, type ApiCategory, apiListListings, type ApiListingSummary, type ListingSort } from '../lib/api'
 
 const PAGE_SIZE = 12
+const DEFAULT_SORT: ListingSort = 'newest'
+const SORT_OPTIONS: { value: ListingSort; label: string }[] = [
+  { value: 'newest', label: 'Mais recentes' },
+  { value: 'oldest', label: 'Mais antigos' },
+  { value: 'title_asc', label: 'Título (A–Z)' },
+  { value: 'title_desc', label: 'Título (Z–A)' },
+]
 
 export default function Home() {
-  // Filters live in the URL (/?q=...&category_id=...&location=...), so they survive a reload and can be shared.
+  // Filters live in the URL (/?q=...&category_id=...&location=...&sort=...), so they survive a reload and can be shared.
   const [searchParams, setSearchParams] = useSearchParams()
   // A URL typed or edited by hand can bring spaces or more text than the
-  // backend accepts (q: 150, location: 100 characters, else 422). Cut in code
+  // backend accepts (q: 150, location: 200 characters, else 422). Cut in code
   // points, as the backend counts them.
   const q = [...(searchParams.get('q') ?? '').trim()].slice(0, 150).join('')
   const categoryId = Number(searchParams.get('category_id'))
   const active = Number.isInteger(categoryId) && categoryId > 0 ? categoryId : null
-  const locationFilter = [...(searchParams.get('location') ?? '').trim()].slice(0, 100).join('')
+  const locationFilter = [...(searchParams.get('location') ?? '').trim()].slice(0, 200).join('')
   const hasFilters = q !== '' || active !== null || locationFilter !== ''
+  // An unknown value in a hand-edited URL would get a 422 from the backend.
+  const sort = SORT_OPTIONS.find((o) => o.value === searchParams.get('sort'))?.value ?? DEFAULT_SORT
 
   const [categories, setCategories] = useState<ApiCategory[]>([])
   const [listings, setListings] = useState<ApiListingSummary[]>([])
@@ -55,7 +66,7 @@ export default function Home() {
     setError(null)
     setLoadingMore(false)
     setMoreError(null)
-    apiListListings({ q, category_id: active ?? undefined, location: locationFilter, limit: PAGE_SIZE })
+    apiListListings({ q, category_id: active ?? undefined, location: locationFilter, sort, limit: PAGE_SIZE })
       .then((page) => {
         if (ignore) return
         setListings(page.items)
@@ -73,7 +84,7 @@ export default function Home() {
     return () => {
       ignore = true
     }
-  }, [active, q, locationFilter])
+  }, [active, q, locationFilter, sort])
 
   // Changes one filter in the URL and keeps the others. null removes it.
   function setFilter(name: string, value: string | null) {
@@ -86,8 +97,9 @@ export default function Home() {
     setSearchParams(next)
   }
 
+  // The sort order is not a filter, so it stays.
   function clearFilters() {
-    setSearchParams({})
+    setSearchParams(sort === DEFAULT_SORT ? {} : { sort })
   }
 
   function handleLocationSubmit(e: React.FormEvent) {
@@ -105,7 +117,7 @@ export default function Home() {
 
     setLoadingMore(true)
     setMoreError(null)
-    apiListListings({ q, category_id: active ?? undefined, location: locationFilter, limit: PAGE_SIZE, offset: listings.length })
+    apiListListings({ q, category_id: active ?? undefined, location: locationFilter, sort, limit: PAGE_SIZE, offset: listings.length })
       .then((page) => {
         if (feedRequest.current !== request) return
         setListings((prev) => [...prev, ...page.items])
@@ -125,21 +137,22 @@ export default function Home() {
 
   return (
     <main>
-      <section className="hero">
-        <h1 className="hero-title">
-          Não compres. <span className="swap-word">Troca.</span>
+      <section className="px-6 pt-11 pb-2">
+        <h1 className="font-display font-bold tracking-tight text-[clamp(32px,6vw,52px)]">
+          Não compres. <span className="text-accent">Troca.</span>
         </h1>
-        <p className="hero-sub">
+        <p className="text-muted text-lg mt-2 max-w-[46ch]">
           Dá aquilo que já não usas e recebe algo que precisas.<br/>
-          <span className="hero-tagline">Sem dinheiro: só toma-lá-dá-cá.</span>
+          <span className="text-brand font-semibold">Sem dinheiro: só toma-lá-dá-cá.</span>
         </p>
       </section>
 
-      <nav className="chips" aria-label="Filtrar por categoria">
+      <nav className="flex flex-wrap gap-2 px-6 pt-5 pb-2" aria-label="Filtrar por categoria">
         {categories.map((cat) => (
           <button
             key={cat.id}
-            className="chip"
+            type="button"
+            className="px-3.5 py-2 rounded-full border border-line bg-surface text-muted capitalize font-semibold text-sm transition-colors hover:border-brand aria-pressed:bg-brand-soft aria-pressed:border-brand-soft aria-pressed:text-brand"
             aria-pressed={active === cat.id}
             onClick={() => setFilter('category_id', active === cat.id ? null : String(cat.id))}
           >
@@ -155,16 +168,20 @@ export default function Home() {
           aria-label="Filtrar por localização"
           className="flex flex-1 gap-2 max-w-md"
         >
-          <input
-            type="search"
+          <LocationAutocomplete
+            id="home-location"
+            label="Localização"
+            hideLabel
             value={locationInput}
-            onChange={(e) => setLocationInput(e.target.value)}
             placeholder="Localização (ex.: Porto)"
-            aria-label="Localização"
-            maxLength={100}
-            className="flex-1 px-4 py-2.5 bg-paper border border-line rounded-full text-ink placeholder:text-muted focus:border-brand focus:outline-none transition-colors"
+            className="flex-1"
+            inputClassName="rounded-full bg-paper"
+            // Updates only the draft input while typing (no API call per keystroke).
+            onChange={setLocationInput}
+            // Applies the URL filter immediately when a dropdown suggestion is chosen.
+            onSelect={(val) => setFilter('location', val.trim() || null)}
           />
-          <button type="submit" className="btn">Filtrar</button>
+          <Button type="submit">Filtrar</Button>
         </form>
 
         {/* Outside the form on purpose: it clears every filter, not just the
@@ -178,11 +195,24 @@ export default function Home() {
             Limpar filtros
           </button>
         )}
+
+        <label className="flex items-center gap-2 ml-auto text-sm text-muted">
+          Ordenar por
+          <select
+            value={sort}
+            onChange={(e) => setFilter('sort', e.target.value === DEFAULT_SORT ? null : e.target.value)}
+            className="px-3 py-2.5 bg-paper border border-line rounded-full text-base text-ink focus:border-brand transition-colors"
+          >
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      <section className="feed">
+      <section className="px-6 pt-2 pb-12">
         {!loading && !error && (
-          <p className="feed-count">
+          <p className="text-muted text-sm mt-2 mb-4">
             {total} {total === 1 ? 'anúncio' : 'anúncios'}
             {activeCategory ? ` em ${categoryLabel(activeCategory)}` : ''}
             {q ? ` para "${q}"` : ''}
@@ -193,17 +223,17 @@ export default function Home() {
         {/* Order matters: loading must come before the empty check, or the
             "nothing here" message would flash while the request is running. */}
         {error ? (
-          <p className="empty" role="alert">{error}</p>
+          <p className={EMPTY_STATE_CLASSES} role="alert">{error}</p>
         ) : loading ? (
-          <p className="empty" role="status">A carregar anúncios…</p>
+          <p className={EMPTY_STATE_CLASSES} role="status">A carregar anúncios…</p>
         ) : listings.length === 0 ? (
-          <p className="empty">
+          <p className={EMPTY_STATE_CLASSES}>
             {hasFilters
               ? 'Nenhum anúncio corresponde aos filtros.'
               : 'Ainda não há anúncios. Sê o primeiro a publicar!'}
           </p>
         ) : (
-          <div className="grid">
+          <div className={LISTING_GRID_CLASSES}>
             {listings.map((l) => (
               <ListingCard key={l.id} listing={l} />
             ))}
@@ -212,13 +242,9 @@ export default function Home() {
 
         {!loading && !error && listings.length < total && (
           <div className="flex flex-col items-center gap-2 mt-8">
-            <button
-              className="btn disabled:opacity-60"
-              onClick={loadMore}
-              disabled={loadingMore}
-            >
+            <Button onClick={loadMore} loading={loadingMore}>
               {loadingMore ? 'A carregar…' : 'Carregar mais'}
-            </button>
+            </Button>
             {moreError && <p role="alert" className="text-sm text-accent">{moreError}</p>}
           </div>
         )}

@@ -50,7 +50,7 @@ class User(Base):
     user_role: Mapped[str] = mapped_column(String(20), default="user")
     # Nullable columns are written as ``Mapped[str | None]``.
     avatar: Mapped[str | None] = mapped_column(String(255))
-    user_location: Mapped[str | None] = mapped_column(String(100))
+    user_location: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     # The DB refreshes updated_at via "ON UPDATE CURRENT_TIMESTAMP" (see
     # schema.sql). ``onupdate`` makes the ORM do the same when it writes rows.
@@ -152,7 +152,7 @@ class Listing(Base):
     state_id: Mapped[int] = mapped_column(ForeignKey("listings_states.id"))
     title: Mapped[str] = mapped_column(String(150))            # what the person HAS
     listing_dsc: Mapped[str | None] = mapped_column(Text)
-    listing_location: Mapped[str | None] = mapped_column(String(100))
+    listing_location: Mapped[str | None] = mapped_column(String(200))
     wish: Mapped[str | None] = mapped_column(Text)             # what the person WANTS
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

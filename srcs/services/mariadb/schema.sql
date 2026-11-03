@@ -6,7 +6,7 @@ CREATE TABLE users (
 	google_sub		VARCHAR(255) UNIQUE,
 	user_role		VARCHAR(20) NOT NULL DEFAULT 'user',
 	avatar 			VARCHAR(255),
-	user_location 	VARCHAR(100),
+	user_location 	VARCHAR(200),
 	created_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		ON UPDATE CURRENT_TIMESTAMP,
@@ -78,7 +78,7 @@ CREATE TABLE listings (
 	state_id 			INT NOT NULL,
 	title 				VARCHAR(150) NOT NULL,
 	listing_dsc	 		TEXT,
-	listing_location	VARCHAR(100),
+	listing_location	VARCHAR(200),
 	wish				TEXT,
 	created_at 			TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at 			TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

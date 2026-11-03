@@ -17,10 +17,12 @@ export default function ListingGallery({ images, title, category }: ListingGalle
   if (images.length === 0) {
     return (
       <div
-        className="aspect-[4/3] rounded-2xl border border-line flex items-end p-4"
-        style={{ background: categoryTint(category) ?? 'var(--brand-soft)' }}
+        className="aspect-[4/3] rounded-2xl border border-line bg-brand-soft flex items-end p-4"
+        style={{ backgroundColor: categoryTint(category) }}
       >
-        <span className="card-cat">{categoryLabel(category)}</span>
+        <span className="px-2.5 py-1 rounded-full bg-surface text-label text-xs font-bold uppercase tracking-wider">
+          {categoryLabel(category)}
+        </span>
       </div>
     )
   }

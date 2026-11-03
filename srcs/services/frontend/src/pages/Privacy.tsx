@@ -1,9 +1,9 @@
 // Base unmodified text from: https://www.arte.gov.pt/web/arte/politica-de-privacidade
 export default function Privacy() {
   return (
-    <main className="page max-w-3xl mx-auto px-4 py-12 text-ink">
+    <main className="max-w-3xl mx-auto px-4 py-12 text-ink">
       <header className="mb-8 pb-4 border-b border-line">
-        <h1 className="page-title text-3xl md:text-4xl font-bold font-display mb-3">
+        <h1 className="text-3xl md:text-4xl font-bold font-display mb-3">
           Política de Privacidade
         </h1>
         <p className="text-sm text-muted">

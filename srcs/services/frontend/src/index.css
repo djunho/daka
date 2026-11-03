@@ -1,35 +1,12 @@
 @import 'tailwindcss';
 
 /* ============================================================================
-   MIGRATION NOTE
-   ----------------------------------------------------------------------------
-   This file is in a deliberate in-between state. We are moving the frontend
-   from hand-written prototype CSS (the ".card", ".btn", ".chip" classes) to
-   Tailwind utilities driven by design tokens. Rebuilding every page at once
-   would leave the site broken for days, so the two styles live side by side
-   here and pages migrate one at a time.
-
-   1. @theme  -- the NEW system. Tokens from docs/design/design-system.md.
-      Pages built the Tailwind way read these as utility classes:
-      bg-brand, text-ink, border-line, ...
-
-   2. Legacy component CSS -- the OLD system. The prototype's .card / .btn /
-      .chip classes, kept alive so Home, ListingCard and the old Header still
-      render while we port them. Delete each block the day its page is rebuilt
-      in Tailwind. When the last one is gone, so is this note.
-
-   The legacy :root variables are re-pointed at the new design-system colours,
-   so old pages already show the NEW palette -- no two different teals during
-   the migration.
-   ========================================================================= */
-
-
-/* ============================================================================
-   1. NEW SYSTEM -- Tailwind v4 design tokens
+   Tailwind v4 design tokens (docs/design/design-system.md)
    ========================================================================= */
 @theme {
   /* --- Brand --- */
   --color-brand:       #246C5E;   /* buttons, logo background, "has" text */
+  --color-brand-soft:  #DCEBE8;   /* active chip fill, photo fallback tint */
   --color-accent:      #DF3D31;   /* the "wants" side of every trade */
 
   /* --- Surfaces --- */
@@ -52,191 +29,29 @@
 
 
 /* ============ Base ============ */
-* { box-sizing: border-box; }
-html, body, #root { height: 100%; }
-/* Always reserve the scrollbar's space. Otherwise a short page (e.g. a filter
-   with few results) loses the scrollbar, gains ~15px, and the listings grid
-   can jump to one more, narrower column. */
-html { scrollbar-gutter: stable; }
-body {
-  margin: 0;
-  background: var(--color-paper);
-  color: var(--color-ink);
-  font-family: var(--font-sans);
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
+@layer base {
+  * { box-sizing: border-box; }
+  html, body, #root { height: 100%; }
+  /* Always reserve the scrollbar's space. Otherwise a short page (e.g. a filter
+     with few results) loses the scrollbar, gains ~15px, and the listings grid
+     can jump to one more, narrower column. */
+  html { scrollbar-gutter: stable; }
+  html:has(dialog[open]) { overflow: hidden; }
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { display: block; max-width: 100%; }
+  button { font: inherit; cursor: pointer; }
 }
-img { display: block; max-width: 100%; }
-button { font: inherit; cursor: pointer; }
 
+/* Kept outside @layer base so it wins over focus:outline-none (@layer utilities)
+   when navigating via keyboard (Tab). */
 :focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
-
-
-/* ============================================================================
-   2. LEGACY SYSTEM -- prototype component CSS (being phased out)
-   ----------------------------------------------------------------------------
-   Kept only so not-yet-migrated pages keep rendering. Delete each section as
-   its page is rebuilt in Tailwind. Old variable names are aliased to the new
-   tokens right below, so these classes already use the new palette.
-   ========================================================================= */
-
-:root {
-  --paper:      var(--color-paper);
-  --surface:    var(--color-surface);
-  --ink:        var(--color-ink);
-  --muted:      var(--color-muted);
-  --brand:      var(--color-brand);
-  --brand-soft: #dcebe8;               /* prototype-only, no new equivalent */
-  --accent:     var(--color-accent);
-  --line:       var(--color-line);
-
-  --radius:   14px;
-  --gap:      20px;
-  --shadow:   0 1px 2px rgba(21,35,31,.05), 0 6px 20px rgba(21,35,31,.06);
-  --font-body: 'Outfit', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* ============ Header ============ */
-.app-header {
-  position: sticky; top: 0; z-index: 10;
-  display: flex; align-items: center; gap: var(--gap);
-  padding: 14px 24px;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--line);
-}
-.wordmark {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 26px;
-  letter-spacing: -.02em;
-  color: var(--ink);
-}
-.hero-tagline {
-  color: var(--brand);
-  font-weight: 600;
-}
-.wordmark b { color: var(--brand); }
-.search {
-  flex: 1; max-width: 420px;
-  padding: 10px 14px;
-  border: 1px solid var(--line); border-radius: 999px;
-  background: var(--paper); color: var(--ink);
-}
-.header-actions { display: flex; gap: 10px; margin-left: auto; }
-
-.btn {
-  padding: 10px 16px; border-radius: 999px;
-  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
-  font-weight: 600;
-}
-.btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
-
-/* ============ Hero ============ */
-.hero { padding: 44px 24px 8px; }
-.hero-title {
-  font-family: var(--font-display);
-  font-weight: 700; letter-spacing: -.03em;
-  font-size: clamp(32px, 6vw, 52px);
-  margin: 0;
-}
-.hero-title .swap-word { color: var(--accent); }
-.hero-sub { color: var(--muted); font-size: 18px; margin: 8px 0 0; max-width: 46ch; }
-
-/* ============ Chips de categoria ============ */
-.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 20px 24px 8px; }
-.chip {
-  padding: 8px 14px; border-radius: 999px;
-  border: 1px solid var(--line); background: var(--surface); color: var(--muted);
-  text-transform: capitalize; font-weight: 600; font-size: 14px;
-}
-.chip[aria-pressed='true'] {
-  background: var(--brand-soft); border-color: var(--brand-soft); color: var(--brand);
-}
-
-/* ============ Feed ============ */
-.feed { padding: 8px 24px 48px; }
-.feed-count { color: var(--muted); font-size: 14px; margin: 8px 0 16px; }
-.grid {
-  display: grid; gap: var(--gap);
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-}
-.empty {
-  padding: 48px; text-align: center; color: var(--muted);
-  border: 1px dashed var(--line); border-radius: var(--radius);
-}
-
-/* ============ Cartão de anúncio ============ */
-.card {
-  background: var(--surface);
-  border: 1px solid var(--line); border-radius: var(--radius);
-  overflow: hidden; box-shadow: var(--shadow);
-  transition: transform .15s ease, box-shadow .15s ease;
-}
-.card:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(21,35,31,.10); }
-
-.card-media {
-  position: relative; aspect-ratio: 4 / 3;
-  background: var(--tint, var(--brand-soft));
-  display: flex; align-items: flex-end; padding: 10px;
-}
-/* Same pill as .badge, so the label stays readable on top of any photo. */
-.card-cat {
-  padding: 4px 10px; border-radius: 999px;
-  background: var(--surface); color: var(--color-label);
-  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
-}
-.badge {
-  position: absolute; top: 10px; right: 10px;
-  padding: 4px 10px; border-radius: 999px;
-  background: var(--surface); color: var(--ink);
-  font-size: 12px; font-weight: 600;
-}
-
-.card-body { padding: 14px 16px 16px; }
-.card-title { font-weight: 700; font-size: 16px; margin: 0 0 8px; }
-
-.swap { display: flex; align-items: baseline; gap: 6px; font-size: 14px; }
-.swap-arrow { color: var(--accent); font-weight: 700; }
-.swap-label { color: var(--muted); }
-.swap-wants { color: var(--accent); font-weight: 600; }
-
-.card-meta {
-  display: flex; gap: 8px; margin-top: 12px; padding-top: 12px;
-  border-top: 1px solid var(--line);
-  color: var(--muted); font-size: 13px;
-}
-.card-meta .dot { color: var(--line); }
-
-/* ============ Responsivo / mobile ============ */
-@media (max-width: 640px) {
-  .search { display: none; }
-  .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .card { transition: none; }
-}
-
-/* ============ Páginas simples (placeholders, legais, 404) ============ */
-.page { max-width: 720px; margin: 0 auto; padding: 48px 24px; }
-.page-title {
-  font-family: var(--font-display);
-  font-weight: 700; letter-spacing: -.02em;
-  font-size: 32px; margin: 0 0 16px;
-}
-.page-text { color: var(--muted); font-size: 17px; margin: 0 0 16px; }
-.page .btn { display: inline-block; text-decoration: none; }
-
-/* ============ Footer ============ */
-.app-footer {
-  display: flex; justify-content: center; gap: 12px;
-  padding: 32px 24px; margin-top: 24px;
-  border-top: 1px solid var(--line);
-  color: var(--muted); font-size: 14px;
-}
-.app-footer a { color: var(--muted); text-decoration: none; }
-.app-footer a:hover { color: var(--brand); }
