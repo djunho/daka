@@ -41,8 +41,9 @@ export default function ListingDetail() {
   const [startError, setStartError] = useState<string | null>(null)
   const startErrorId = useId()
   const startErrorRef = useRef<HTMLParagraphElement>(null)
-  // Bumped when the user leaves this listing, so a late response does not pull
-  // them to a negotiation after they have already moved on.
+  // Bumped by each new request and when the user leaves this listing, so only
+  // the latest request can act, and a late response does not pull them to a
+  // negotiation after they have already moved on.
   const startRequest = useRef(0)
 
   // The button is disabled during the request, which drops the keyboard focus.
@@ -130,7 +131,7 @@ export default function ListingDetail() {
       return
     }
 
-    const request = startRequest.current
+    const request = ++startRequest.current
     setStarting(true)
     setStartError(null)
     apiCreateNegotiation(listingId)
