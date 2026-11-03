@@ -39,6 +39,9 @@ LISTINGS_PAGE_SIZE = 12
 DEFAULT_NEGOTIATIONS_PAGE_SIZE = 20
 MAX_NEGOTIATIONS_PAGE_SIZE = 100
 MAX_LISTINGS_PAGE_SIZE = 100
+# Without a ceiling, a huge offset passes validation and makes the database
+# fail (500). One billion is far beyond any real list.
+MAX_PAGE_OFFSET = 1_000_000_000
 
 # ---------------------------------------------------------------------------
 # Shared pieces

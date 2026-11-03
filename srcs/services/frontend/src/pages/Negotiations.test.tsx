@@ -193,11 +193,19 @@ describe('Negotiations', () => {
     expect(lastCall()).toEqual({ role: undefined, state: undefined, limit: 20, offset: 0 })
   })
 
-  it('ignores a page so large that the offset would not be an exact number', async () => {
-    renderPage('/negotiations?page=1000000000000000000')
+  // 50 000 001 is the last page whose offset (1 000 000 000) is accepted.
+  it.each(['50000002', '1000000000000000000'])('ignores page %s, past the backend offset ceiling', async (page) => {
+    renderPage(`/negotiations?page=${page}`)
     await screen.findByRole('article')
 
     expect(lastCall()).toEqual({ role: undefined, state: undefined, limit: 20, offset: 0 })
+  })
+
+  it('accepts the last page under the backend offset ceiling', async () => {
+    renderPage('/negotiations?page=50000001')
+    await screen.findByRole('article')
+
+    expect(lastCall()).toEqual({ role: undefined, state: undefined, limit: 20, offset: 1_000_000_000 })
   })
 
   it('goes through the pages keeping the filters, and a filter goes back to page one', async () => {

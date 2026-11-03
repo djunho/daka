@@ -21,6 +21,8 @@ import {
 } from '../types/negotiation'
 
 const PAGE_SIZE = 20
+// Same value as MAX_PAGE_OFFSET in the backend's schemas.py.
+const MAX_OFFSET = 1_000_000_000
 const ROLES = Object.keys(NEGOTIATION_ROLE_LABELS) as NegotiationRole[]
 const STATES = Object.keys(NEGOTIATION_STATE_LABELS) as ApiNegotiationState['state_name'][]
 
@@ -35,10 +37,9 @@ export default function Negotiations() {
   const role = ROLES.find((r) => r === searchParams.get('role'))
   const state = STATES.find((s) => s === searchParams.get('state'))
   const pageParam = Number(searchParams.get('page'))
-  // The offset has to stay an exact whole number: a huge page would be sent as
-  // "2e+21" (422) or overflow the database (500).
+  // A page past the backend's offset ceiling would only get a 422.
   const page =
-    Number.isInteger(pageParam) && pageParam > 0 && (pageParam - 1) * PAGE_SIZE <= Number.MAX_SAFE_INTEGER
+    Number.isInteger(pageParam) && pageParam > 0 && (pageParam - 1) * PAGE_SIZE <= MAX_OFFSET
       ? pageParam
       : 1
   const hasFilters = role !== undefined || state !== undefined
