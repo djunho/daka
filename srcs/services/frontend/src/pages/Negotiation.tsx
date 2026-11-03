@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
+import MessageCard from '../components/MessageCard'
 import ProposalForm from '../components/ProposalForm'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -370,13 +371,21 @@ export default function Negotiation() {
 
   if (!validId || problem === 'notFound') {
     return (
-      <Message title="Negociação não encontrada" text="A negociação que procuras não existe." />
+      <MessageCard
+        title="Negociação não encontrada"
+        text="A negociação que procuras não existe."
+        action={<Link className={buttonClasses()} to="/negotiations">Ver negociações</Link>}
+      />
     )
   }
 
   if (problem === 'forbidden') {
     return (
-      <Message title="Sem acesso a esta negociação" text="Só os participantes podem ver esta negociação." />
+      <MessageCard
+        title="Sem acesso a esta negociação"
+        text="Só os participantes podem ver esta negociação."
+        action={<Link className={buttonClasses()} to="/negotiations">Ver negociações</Link>}
+      />
     )
   }
 
@@ -481,12 +490,7 @@ export default function Negotiation() {
 
   if (error && !loading) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
-          <p role="alert" className="text-sm text-muted mb-6">{error}</p>
-          <Button onClick={retry}>Tentar outra vez</Button>
-        </div>
-      </main>
+      <MessageCard alert text={error} action={<Button onClick={retry}>Tentar outra vez</Button>} />
     )
   }
 
@@ -495,18 +499,6 @@ export default function Negotiation() {
       <p role="status" className="p-12 text-center text-muted border border-dashed border-line rounded-[14px]">
         A carregar negociação…
       </p>
-    </main>
-  )
-}
-
-function Message({ title, text }: { title: string; text: string }) {
-  return (
-    <main className="max-w-2xl mx-auto px-4 py-8">
-      <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
-        <h1 className="font-display text-2xl font-bold text-ink mb-2">{title}</h1>
-        <p className="text-sm text-muted mb-6">{text}</p>
-        <Link className={buttonClasses()} to="/negotiations">Ver negociações</Link>
-      </div>
     </main>
   )
 }
