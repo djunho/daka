@@ -1,5 +1,6 @@
 """Behaviour tests for negotiations and proposals using isolated SQLite."""
 
+from datetime import datetime
 import unittest
 
 from fastapi import HTTPException, Response
@@ -168,6 +169,20 @@ class NegotiationsTestCase(unittest.TestCase):
         self.assertEqual(created.proposals, [])
         self.assertEqual(self.db.query(Negotiation).count(), 1)
 
+    def test_cancelled_negotiation_cannot_be_reopened(self) -> None:
+        negotiation = self._create_negotiation()
+        cancel_negotiation(negotiation.id, self.interested, self.db)
+
+        with self.assertRaises(HTTPException) as raised:
+            self._create_negotiation()
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(
+            raised.exception.detail,
+            "A cancelled negotiation cannot be reopened.",
+        )
+        self.assertEqual(self.db.query(Negotiation).count(), 1)
+
     def test_create_rejects_own_or_unavailable_listing(self) -> None:
         with self.assertRaises(HTTPException) as own:
             self._create_negotiation(requested=self.offered)
@@ -231,6 +246,30 @@ class NegotiationsTestCase(unittest.TestCase):
         self.assertEqual(without_listing.state.state_name, "Pending")
         self.assertEqual(with_listing.offered_listing.id, self.offered.id)
         self.assertEqual(with_listing.state.state_name, "Pending")
+
+    def test_proposal_activity_updates_negotiation_timestamp(self) -> None:
+        negotiation = self._create_negotiation()
+        old_timestamp = datetime(2000, 1, 1)
+        negotiation_row = self.db.get(Negotiation, negotiation.id)
+        negotiation_row.updated_at = old_timestamp
+        self.db.commit()
+
+        proposal = self._create_proposal(negotiation.id, self.offered)
+        self.db.refresh(negotiation_row)
+        self.assertGreater(negotiation_row.updated_at, old_timestamp)
+
+        negotiation_row.updated_at = old_timestamp
+        self.db.commit()
+        reject_proposal(proposal.id, self.owner, self.db)
+        self.db.refresh(negotiation_row)
+        self.assertGreater(negotiation_row.updated_at, old_timestamp)
+
+        second = self._create_proposal(negotiation.id, self.second_offer)
+        negotiation_row.updated_at = old_timestamp
+        self.db.commit()
+        withdraw_proposal(second.id, self.interested, self.db)
+        self.db.refresh(negotiation_row)
+        self.assertGreater(negotiation_row.updated_at, old_timestamp)
 
     def test_proposal_uniqueness_with_and_without_listing(self) -> None:
         negotiation = self._create_negotiation()

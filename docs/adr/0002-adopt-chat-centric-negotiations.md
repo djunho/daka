@@ -60,6 +60,9 @@ DAKA will adopt a chat-centric negotiation model with the following rules:
 - When an open or agreed negotiation is cancelled, its pending proposals move
   to `Withdrawn` if the interested user cancelled it or to `Rejected` if the
   listing owner cancelled it.
+- A cancelled negotiation is terminal and cannot be reopened. Because one
+  negotiation is retained per requested listing and interested user, that user
+  cannot start another negotiation for the same listing after cancellation.
 - A pending proposal moves to `ItemUnavailable` when a required listing becomes
   `Removed`, `Expired`, or `Traded`; reservation alone does not close competing
   proposals.

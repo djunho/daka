@@ -27,10 +27,12 @@ from app.models import (
     Negotiation,
     NegotiationState,
     Proposal,
+    ProposalState,
     User,
 )
+from app.routers.auth import delete_me
 from app.routers.listings import delete_listing
-from app.routers.negotiations import create_negotiation
+from app.routers.negotiations import accept_proposal, create_negotiation
 from app.schemas import NegotiationCreateIn
 
 
@@ -58,7 +60,17 @@ class MariaDBConcurrencyTestCase(unittest.TestCase):
             avatar=None,
             user_location=None,
         )
-        self.fixture_session.add_all([self.owner, self.interested])
+        self.other_interested = User(
+            user_name=f"race-other-{suffix}",
+            email=f"race-other-{suffix}@example.com",
+            pass_hash=None,
+            google_sub=None,
+            avatar=None,
+            user_location=None,
+        )
+        self.fixture_session.add_all(
+            [self.owner, self.interested, self.other_interested]
+        )
         self.fixture_session.flush()
 
         category = self.fixture_session.query(Category).order_by(Category.id).first()
@@ -84,6 +96,7 @@ class MariaDBConcurrencyTestCase(unittest.TestCase):
         self.fixture_session.commit()
         self.owner_id = self.owner.id
         self.interested_id = self.interested.id
+        self.other_interested_id = self.other_interested.id
         self.listing_id = self.listing.id
 
     def tearDown(self) -> None:
@@ -102,7 +115,9 @@ class MariaDBConcurrencyTestCase(unittest.TestCase):
             Listing.id == self.listing_id
         ).delete(synchronize_session=False)
         self.fixture_session.query(User).filter(
-            User.id.in_((self.owner_id, self.interested_id))
+            User.id.in_(
+                (self.owner_id, self.interested_id, self.other_interested_id)
+            )
         ).delete(synchronize_session=False)
         self.fixture_session.commit()
         self.fixture_session.close()
@@ -226,6 +241,227 @@ class MariaDBConcurrencyTestCase(unittest.TestCase):
         )
         self.assertEqual(listing_state, "Removed")
         self.assertIsNone(negotiation_state)
+
+    def test_concurrent_acceptance_refreshes_listing_state_under_lock(self) -> None:
+        """Only one negotiation may reserve a shared requested listing."""
+        open_state = (
+            self.fixture_session.query(NegotiationState)
+            .filter(NegotiationState.state_name == "Open")
+            .one()
+        )
+        pending_state = (
+            self.fixture_session.query(ProposalState)
+            .filter(ProposalState.state_name == "Pending")
+            .one()
+        )
+        negotiations = [
+            Negotiation(
+                listing_id=self.listing_id,
+                interested_user_id=interested_id,
+                negotiation_state_id=open_state.id,
+            )
+            for interested_id in (self.interested_id, self.other_interested_id)
+        ]
+        self.fixture_session.add_all(negotiations)
+        self.fixture_session.flush()
+        proposals = [
+            Proposal(
+                negotiation_id=negotiation.id,
+                offered_listing_id=None,
+                proposal_state_id=pending_state.id,
+            )
+            for negotiation in negotiations
+        ]
+        self.fixture_session.add_all(proposals)
+        self.fixture_session.commit()
+        proposal_ids = [proposal.id for proposal in proposals]
+        negotiation_ids = [negotiation.id for negotiation in negotiations]
+
+        reads_completed = threading.Barrier(2)
+        results: list[int] = []
+        errors: list[BaseException] = []
+        connections = [engine.connect(), engine.connect()]
+        sessions = [
+            Session(bind=connection, autoflush=False) for connection in connections
+        ]
+
+        def pause_after_unlocked_listing_read(
+            _connection,
+            _cursor,
+            statement,
+            _parameters,
+            _context,
+            _executemany,
+        ) -> None:
+            normalized = " ".join(statement.lower().split())
+            if " from listings " in normalized and " for update" not in normalized:
+                reads_completed.wait(timeout=10)
+
+        for connection in connections:
+            connection.exec_driver_sql(
+                "SET SESSION innodb_snapshot_isolation = OFF"
+            )
+            event.listen(
+                connection,
+                "after_cursor_execute",
+                pause_after_unlocked_listing_read,
+            )
+
+        def run_acceptance(index: int) -> None:
+            try:
+                owner = sessions[index].get(User, self.owner_id)
+                if owner is None:
+                    raise AssertionError("listing owner disappeared")
+                result = accept_proposal(proposal_ids[index], owner, sessions[index])
+                results.append(result.id)
+            except BaseException as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=run_acceptance, args=(index,), daemon=True)
+            for index in range(2)
+        ]
+        try:
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+        finally:
+            for connection in connections:
+                event.remove(
+                    connection,
+                    "after_cursor_execute",
+                    pause_after_unlocked_listing_read,
+                )
+            for session in sessions:
+                session.close()
+            for connection in connections:
+                connection.close()
+
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], HTTPException)
+        self.assertEqual(errors[0].status_code, 409)
+
+        self.fixture_session.rollback()
+        negotiation_states = [
+            state_name
+            for (state_name,) in self.fixture_session.query(
+                NegotiationState.state_name
+            )
+            .join(
+                Negotiation,
+                Negotiation.negotiation_state_id == NegotiationState.id,
+            )
+            .filter(Negotiation.id.in_(negotiation_ids))
+            .all()
+        ]
+        self.assertCountEqual(negotiation_states, ["Agreed", "Open"])
+
+    def test_interested_deletion_serializes_with_negotiation_creation(self) -> None:
+        """A negotiation cannot be created after participant cleanup."""
+        deletion_reached_discovery = threading.Event()
+        allow_deletion_to_continue = threading.Event()
+        creation_finished = threading.Event()
+        deletion_errors: list[BaseException] = []
+        creation_errors: list[BaseException] = []
+
+        delete_connection = engine.connect()
+        delete_session = Session(bind=delete_connection, autoflush=False)
+        deleting_user = delete_session.get(User, self.interested_id)
+        self.assertIsNotNone(deleting_user)
+
+        def pause_after_listing_discovery(
+            _connection,
+            _cursor,
+            statement,
+            _parameters,
+            _context,
+            _executemany,
+        ) -> None:
+            normalized = " ".join(statement.lower().split())
+            if (
+                not deletion_reached_discovery.is_set()
+                and " from listings " in normalized
+                and "listings.user_id" in normalized
+            ):
+                deletion_reached_discovery.set()
+                if not allow_deletion_to_continue.wait(timeout=10):
+                    raise TimeoutError("negotiation creation did not reach user lock")
+
+        event.listen(
+            delete_connection,
+            "after_cursor_execute",
+            pause_after_listing_discovery,
+        )
+
+        def run_deletion() -> None:
+            try:
+                delete_me(Response(), deleting_user, delete_session)
+            except BaseException as exc:
+                deletion_errors.append(exc)
+
+        deletion_thread = threading.Thread(target=run_deletion, daemon=True)
+        creation_thread = None
+        create_session = SessionLocal()
+        try:
+            deletion_thread.start()
+            self.assertTrue(
+                deletion_reached_discovery.wait(timeout=10),
+                "account deletion never reached listing discovery",
+            )
+            interested = create_session.get(User, self.interested_id)
+            self.assertIsNotNone(interested)
+
+            def run_creation() -> None:
+                try:
+                    create_negotiation(
+                        NegotiationCreateIn(listing_id=self.listing_id),
+                        Response(),
+                        interested,
+                        create_session,
+                    )
+                except BaseException as exc:
+                    creation_errors.append(exc)
+                finally:
+                    creation_finished.set()
+
+            creation_thread = threading.Thread(target=run_creation, daemon=True)
+            creation_thread.start()
+            self.assertFalse(
+                creation_finished.wait(timeout=0.5),
+                "negotiation creation did not wait for account deletion",
+            )
+        finally:
+            allow_deletion_to_continue.set()
+            deletion_thread.join(timeout=10)
+            if creation_thread is not None:
+                creation_thread.join(timeout=10)
+            event.remove(
+                delete_connection,
+                "after_cursor_execute",
+                pause_after_listing_discovery,
+            )
+            create_session.close()
+            delete_session.close()
+            delete_connection.close()
+
+        self.assertFalse(deletion_thread.is_alive())
+        self.assertIsNotNone(creation_thread)
+        self.assertFalse(creation_thread.is_alive())
+        if deletion_errors:
+            raise deletion_errors[0]
+        self.assertEqual(len(creation_errors), 1)
+        self.assertIsInstance(creation_errors[0], HTTPException)
+        self.assertEqual(creation_errors[0].status_code, 409)
+
+        self.fixture_session.rollback()
+        self.assertIsNone(
+            self.fixture_session.query(Negotiation)
+            .filter(Negotiation.listing_id == self.listing_id)
+            .first()
+        )
 
 
 if __name__ == "__main__":

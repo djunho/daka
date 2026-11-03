@@ -1,10 +1,12 @@
 """Entry point of the Daka API."""
 import secrets
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request, status
+from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -15,6 +17,27 @@ from app.routers import auth, listings, negotiations, users
 # root_path="/api": nginx forwards /api/ here, so the auto-generated docs
 # (at /api/docs) build their links with the correct prefix.
 app = FastAPI(title="Daka API", version="0.1.0", root_path="/api")
+
+
+@app.exception_handler(OperationalError)
+async def handle_operational_error(
+    _request: Request, exc: OperationalError
+) -> JSONResponse:
+    """Turn retryable MariaDB concurrency conflicts into HTTP 409 responses."""
+    error_code = exc.orig.args[0] if exc.orig.args else None
+    if error_code in (1020, 1213):
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": (
+                    "The operation conflicted with another concurrent change. "
+                    "Please try again."
+                )
+            },
+        )
+    raise exc
+
+
 # Authlib stores the temporary OAuth state in this signed, short-lived cookie.
 # It is separate from daka_session, which is created only after Google login
 # succeeds and identifies the user on subsequent API requests.

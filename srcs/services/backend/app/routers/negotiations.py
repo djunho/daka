@@ -234,9 +234,10 @@ def create_negotiation(
     user_id = current_user.id
     db.rollback()
 
-    # Discover the owner without retaining a snapshot, then lock the owner
-    # before negotiations and listings. Account deletion locks this same user
-    # row first, so it cannot miss a negotiation created concurrently.
+    # Discover the owner without retaining a snapshot, then lock both
+    # participants in global ID order before negotiations and listings. Account
+    # deletion locks its user row first, so it cannot miss a negotiation created
+    # concurrently for either participant.
     requested_candidate = db.get(Listing, payload.listing_id)
     if requested_candidate is None:
         raise HTTPException(
@@ -245,16 +246,33 @@ def create_negotiation(
         )
     owner_id = requested_candidate.user_id
     db.rollback()
-    listing_owner = db.get(User, owner_id, with_for_update=True)
+    participant_ids = sorted({owner_id, user_id})
+    participants = (
+        db.query(User)
+        .filter(User.id.in_(participant_ids))
+        .order_by(User.id)
+        .populate_existing()
+        .with_for_update()
+        .all()
+    )
+    participants_by_id = {
+        participant.id: participant for participant in participants
+    }
+    listing_owner = participants_by_id.get(owner_id)
+    interested_user = participants_by_id.get(user_id)
     if listing_owner is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Listing owner not found.",
         )
-    if listing_owner.deleted_at is not None:
+    if (
+        listing_owner.deleted_at is not None
+        or interested_user is None
+        or interested_user.deleted_at is not None
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Listing is not available.",
+            detail="Negotiation participants must have active accounts.",
         )
 
     # Continue in the shared lock order: negotiations before listings.
@@ -268,6 +286,12 @@ def create_negotiation(
         .first()
     )
     if existing is not None:
+        cancelled = _negotiation_state(db, "Cancelled")
+        if existing.negotiation_state_id == cancelled.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A cancelled negotiation cannot be reopened.",
+            )
         negotiation_id = existing.id
         db.commit()
         response.status_code = status.HTTP_200_OK
@@ -459,6 +483,7 @@ def create_proposal(
         proposal_state_id=_proposal_state(db, "Pending").id,
     )
     db.add(proposal)
+    negotiation.updated_at = utcnow()
     try:
         db.commit()
     except IntegrityError as exc:
@@ -538,6 +563,7 @@ def accept_proposal(
         db.query(Listing)
         .filter(Listing.id.in_(listing_ids))
         .order_by(Listing.id)
+        .populate_existing()
         .with_for_update()
         .all()
     )
@@ -618,10 +644,12 @@ def _close_pending_proposal(
             detail="Only a pending proposal in an open negotiation may be changed.",
         )
 
+    now = utcnow()
     proposal.proposal_state_id = _proposal_state(
         db, "Rejected" if action == "reject" else "Withdrawn"
     ).id
-    proposal.responded_at = utcnow()
+    proposal.responded_at = now
+    negotiation.updated_at = now
     db.commit()
     return _proposal_out(_load_proposal(db, proposal.id))
 

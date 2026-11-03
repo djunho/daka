@@ -413,6 +413,19 @@ def delete_listing(
     """
     user_id = current_user.id
     db.rollback()
+    candidate = db.get(Listing, id)
+    if candidate is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
+    if candidate.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own listings.",
+        )
+    db.rollback()
+
     # Resolve lookup ids before starting the transaction that acquires row locks.
     listing_states = {
         state_name: state_id
