@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -66,8 +67,8 @@ function NegotiationProbe() {
   return <p>Negociação {id}</p>
 }
 
-function renderPage(entry = '/negotiations') {
-  return render(
+function renderPage(entry = '/negotiations', { strict = false } = {}) {
+  const page = (
     <MemoryRouter initialEntries={[entry]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <SearchProbe />
       <Routes>
@@ -76,9 +77,13 @@ function renderPage(entry = '/negotiations') {
         <Route path="/negotiations" element={<RequireAuth><Negotiations /></RequireAuth>} />
         <Route path="/negotiations/:id" element={<NegotiationProbe />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   )
+  return render(strict ? <StrictMode>{page}</StrictMode> : page)
 }
+
+// The signal given to each request, in call order.
+const signals = () => vi.mocked(apiListNegotiations).mock.calls.map((call) => call[1])
 
 const lastCall = () => vi.mocked(apiListNegotiations).mock.lastCall?.[0]
 const search = () => screen.getByTestId('search').textContent
@@ -188,6 +193,13 @@ describe('Negotiations', () => {
     expect(lastCall()).toEqual({ role: undefined, state: undefined, limit: 20, offset: 0 })
   })
 
+  it('ignores a page so large that the offset would not be an exact number', async () => {
+    renderPage('/negotiations?page=1000000000000000000')
+    await screen.findByRole('article')
+
+    expect(lastCall()).toEqual({ role: undefined, state: undefined, limit: 20, offset: 0 })
+  })
+
   it('goes through the pages keeping the filters, and a filter goes back to page one', async () => {
     vi.mocked(apiListNegotiations).mockImplementation(async (params) =>
       pageOf([negotiation((params?.offset ?? 0) + 1)], 45, params?.offset),
@@ -283,5 +295,15 @@ describe('Negotiations', () => {
 
     expect(screen.getByRole('heading', { name: 'Anúncio 2' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Anúncio 1' })).not.toBeInTheDocument()
+    expect(signals().map((signal) => signal?.aborted)).toEqual([true, false])
+  })
+
+  it('keeps one request in flight when React runs the effect twice (StrictMode)', async () => {
+    renderPage('/negotiations', { strict: true })
+    await screen.findByRole('article')
+
+    const live = signals().filter((signal) => signal && !signal.aborted)
+    expect(signals().length).toBeGreaterThan(0)
+    expect(live).toHaveLength(1)
   })
 })

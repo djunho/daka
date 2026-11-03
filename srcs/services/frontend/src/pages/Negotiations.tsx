@@ -35,7 +35,12 @@ export default function Negotiations() {
   const role = ROLES.find((r) => r === searchParams.get('role'))
   const state = STATES.find((s) => s === searchParams.get('state'))
   const pageParam = Number(searchParams.get('page'))
-  const page = Number.isInteger(pageParam) && pageParam > 0 ? pageParam : 1
+  // The offset has to stay an exact whole number: a huge page would be sent as
+  // "2e+21" (422) or overflow the database (500).
+  const page =
+    Number.isInteger(pageParam) && pageParam > 0 && (pageParam - 1) * PAGE_SIZE <= Number.MAX_SAFE_INTEGER
+      ? pageParam
+      : 1
   const hasFilters = role !== undefined || state !== undefined
 
   const [data, setData] = useState<ApiNegotiationPage | null>(null)
@@ -49,11 +54,15 @@ export default function Negotiations() {
     // Set by the cleanup when the filters change again: the slow response for
     // the old filters is dropped instead of replacing the current list.
     let ignore = false
+    // The cleanup also cancels that old request, so only one is ever in flight.
+    // This covers fast filter changes and React running the effect twice in
+    // development (StrictMode).
+    const controller = new AbortController()
 
     setData(null)
     setLoading(true)
     setError(null)
-    apiListNegotiations({ role, state, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE })
+    apiListNegotiations({ role, state, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }, controller.signal)
       .then((result) => {
         if (ignore) return
         setData(result)
@@ -74,6 +83,7 @@ export default function Negotiations() {
 
     return () => {
       ignore = true
+      controller.abort()
     }
     // logout is recreated on every render and does not change what is requested.
     // eslint-disable-next-line react-hooks/exhaustive-deps
