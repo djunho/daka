@@ -133,8 +133,9 @@ export default function Negotiation() {
 
   // A refresh keeps what is on screen, so a failure while the tab regains focus
   // does not hide the negotiation, and the chat below is left alone.
-  const refresh = useCallback((): Promise<void> => {
-    if (inFlight.current) return Promise.resolve()
+  // Resolves with the negotiation it loaded, or null if it loaded nothing new.
+  const refresh = useCallback((): Promise<ApiNegotiationDetail | null> => {
+    if (inFlight.current) return Promise.resolve(null)
 
     const current = generation.current
     const request = new AbortController()
@@ -144,11 +145,12 @@ export default function Negotiation() {
     setRefreshError(null)
     return apiGetNegotiation(negotiationId, request.signal)
       .then((data) => {
-        if (generation.current !== current) return
+        if (generation.current !== current) return null
         setNegotiation(data)
+        return data
       })
       .catch((err) => {
-        if (generation.current !== current) return
+        if (generation.current !== current) return null
         if (err instanceof ApiError && err.status === 401) {
           // The session expired. Clearing it lets RequireAuth send them to login.
           void logout()
@@ -163,6 +165,7 @@ export default function Negotiation() {
           setRefreshError(message)
           setError(message)
         }
+        return null
       })
       .finally(() => {
         if (generation.current !== current) return
@@ -176,6 +179,8 @@ export default function Negotiation() {
 
   function refreshByHand(e: MouseEvent<HTMLButtonElement>) {
     if (document.activeElement === e.currentTarget) refreshButton.current = e.currentTarget
+    // The result of an earlier action no longer describes what is about to load.
+    setNotice(null)
     refresh()
   }
 
@@ -217,6 +222,7 @@ export default function Negotiation() {
     run: () => Promise<ApiNegotiationDetail | ApiProposal>,
     success: string,
     conflict: string = CONFLICT_MESSAGE,
+    { inlineConflict = false }: { inlineConflict?: boolean } = {},
   ): Promise<boolean> {
     if (busyRef.current) return false
 
@@ -242,9 +248,17 @@ export default function Negotiation() {
         setPendingAction(null)
         void logout()
       } else if (err instanceof ApiError && (err.status === 409 || err.status === 404)) {
+        const text = err.status === 409 ? conflict : CONFLICT_MESSAGE
         setPendingAction(null)
-        setNotice({ tone: 'error', text: err.status === 409 ? conflict : CONFLICT_MESSAGE })
-        await reload()
+        const fresh = await reload()
+        if (visit.current !== current) return false
+        // While the form is still there, the message stays next to the choice
+        // to change. If the negotiation closed meanwhile, the form is gone too.
+        if (inlineConflict && fresh?.state.state_name === 'Open') {
+          setActionError(text)
+        } else {
+          setNotice({ tone: 'error', text })
+        }
       } else {
         setActionError(getPortugueseErrorMessage(err, 'Não foi possível concluir a ação. Tenta outra vez.'))
       }
@@ -292,6 +306,7 @@ export default function Negotiation() {
       () => apiCreateProposal(negotiationId, offeredListingId),
       'Proposta enviada.',
       'Já existe uma proposta igual nesta negociação, ou os dados foram alterados. A página foi atualizada.',
+      { inlineConflict: true },
     )
     if (created) setProposalFormOpen(false)
   }
@@ -404,7 +419,7 @@ export default function Negotiation() {
         )}
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button size="sm" onClick={refreshByHand} loading={refreshing}>
+          <Button size="sm" onClick={refreshByHand} disabled={busy} loading={refreshing}>
             {refreshing ? 'A atualizar…' : 'Atualizar'}
           </Button>
           {refreshError && <p role="alert" className="text-sm text-accent">{refreshError}</p>}
@@ -682,6 +697,7 @@ function ProposalsPanel({
         description={onHold ? 'Serão encerradas quando a troca for concluída ou cancelada.' : undefined}
         proposals={pending}
         renderActions={pendingActions}
+        linkListings={canAct}
       />
       <ProposalGroup title="Histórico" proposals={closed} />
     </section>
@@ -693,11 +709,13 @@ function ProposalGroup({
   description,
   proposals,
   renderActions,
+  linkListings = false,
 }: {
   title: string
   description?: string
   proposals: ApiProposal[]
   renderActions?: (proposal: ApiProposal) => ReactNode
+  linkListings?: boolean
 }) {
   if (proposals.length === 0) return null
 
@@ -708,7 +726,7 @@ function ProposalGroup({
       <ul className="space-y-3 mt-3">
         {proposals.map((proposal) => (
           <li key={proposal.id}>
-            <ProposalCard proposal={proposal} actions={renderActions?.(proposal)} />
+            <ProposalCard proposal={proposal} actions={renderActions?.(proposal)} linkListing={linkListings} />
           </li>
         ))}
       </ul>
@@ -716,14 +734,31 @@ function ProposalGroup({
   )
 }
 
-function ProposalCard({ proposal, actions }: { proposal: ApiProposal; actions?: ReactNode }) {
+// linkListing is only set for pending proposals in an open negotiation: their
+// offered listing is still Available, and the backend answers 404 for any other
+// state. It can still be reserved through another negotiation meanwhile.
+function ProposalCard({
+  proposal,
+  actions,
+  linkListing = false,
+}: {
+  proposal: ApiProposal
+  actions?: ReactNode
+  linkListing?: boolean
+}) {
   const { offered_listing: offered, state, created_at, responded_at } = proposal
 
   return (
     <article className="bg-surface border border-line rounded-xl p-4 shadow-sm space-y-2">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="font-semibold text-sm text-ink wrap-break-word min-w-0">
-          {offered ? offered.title : 'Sem anúncio oferecido'}
+          {!offered ? (
+            'Sem anúncio oferecido'
+          ) : linkListing ? (
+            <Link to={`/listing/${offered.id}`} className="hover:text-brand hover:underline">{offered.title}</Link>
+          ) : (
+            offered.title
+          )}
         </p>
         <span className="shrink-0 text-xs font-semibold bg-paper text-label border border-line px-2.5 py-1 rounded-full">
           {PROPOSAL_STATE_LABELS[state.state_name]}

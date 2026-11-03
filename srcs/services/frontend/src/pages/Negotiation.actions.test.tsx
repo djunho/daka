@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import Negotiation from './Negotiation'
@@ -132,6 +132,22 @@ describe('Negotiation actions', () => {
     logout.mockClear()
   })
 
+  describe('offered listing', () => {
+    it('links to it while the proposal is pending in an open negotiation', async () => {
+      await open(OWNER, negotiation('Open', [proposal(1, 'Pending', 'Livro'), proposal(2, 'Rejected', 'Mesa')]))
+
+      expect(screen.getByRole('link', { name: 'Livro' })).toHaveAttribute('href', '/listing/101')
+      expect(screen.queryByRole('link', { name: 'Mesa' })).not.toBeInTheDocument()
+    })
+
+    it('does not link once the listings are reserved', async () => {
+      await open(OWNER, negotiation('Agreed', [proposal(1, 'Accepted', 'Livro'), proposal(2, 'Pending', 'Mesa')]))
+
+      expect(screen.queryByRole('link', { name: 'Livro' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: 'Mesa' })).not.toBeInTheDocument()
+    })
+  })
+
   describe('permissions', () => {
     it('owner in Open: accepts and rejects, cannot propose, withdraw or complete', async () => {
       await open(OWNER, negotiation('Open', [proposal(1, 'Pending', 'Livro')]))
@@ -246,9 +262,28 @@ describe('Negotiation actions', () => {
       await userEvent.selectOptions(select, 'Livro')
       await userEvent.click(await button('Enviar proposta'))
 
-      expect(await screen.findByRole('alert')).toHaveTextContent('Já existe uma proposta igual nesta negociação')
-      expect(screen.getByLabelText('O que ofereces em troca?')).toBeInTheDocument()
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('Já existe uma proposta igual nesta negociação')
+      // The message stays in the form, next to the choice to change.
+      expect(alert.closest('form')).not.toBeNull()
+      expect(screen.getAllByRole('alert')).toHaveLength(1)
+      await waitFor(() => expect(screen.getByLabelText('O que ofereces em troca?')).toHaveFocus())
       await waitFor(() => expect(apiGetNegotiation).toHaveBeenCalledTimes(2))
+    })
+
+    it('on a conflict after the negotiation closed, explains it at the top', async () => {
+      const select = await openForm()
+      vi.mocked(apiCreateProposal).mockRejectedValue(new ApiError(409, 'Only an open negotiation accepts proposals.'))
+      vi.mocked(apiGetNegotiation).mockResolvedValue(negotiation('Cancelled'))
+
+      await userEvent.selectOptions(select, 'Livro')
+      await userEvent.click(await button('Enviar proposta'))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('Já existe uma proposta igual nesta negociação')
+      expect(alert.closest('form')).toBeNull()
+      expect(alert).toHaveFocus()
+      expect(screen.queryByLabelText('O que ofereces em troca?')).not.toBeInTheDocument()
     })
 
     it('can retry when the listings fail to load, and can be cancelled', async () => {
@@ -409,6 +444,23 @@ describe('Negotiation actions', () => {
       expect(await screen.findByText('Cancelada')).toBeInTheDocument()
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       expect(apiGetNegotiation).toHaveBeenCalledTimes(2)
+    })
+
+    it('"Atualizar" waits for an action to finish, and clears its old result', async () => {
+      await open(OWNER, negotiation('Open', [proposal(1, 'Pending', 'Livro')]))
+      let finish: (value: ApiProposal) => void = () => {}
+      vi.mocked(apiRejectProposal).mockReturnValueOnce(new Promise((r) => { finish = r }))
+      vi.mocked(apiGetNegotiation).mockResolvedValue(negotiation('Open', [proposal(1, 'Rejected', 'Livro')]))
+
+      await userEvent.click(await button('Rejeitar proposta: Livro'))
+      await userEvent.click(within(await dialog()).getByRole('button', { name: 'Sim, rejeitar' }))
+      expect(screen.getByRole('button', { hidden: true, name: 'Atualizar' })).toBeDisabled()
+
+      await act(async () => { finish(proposal(1, 'Rejected', 'Livro')) })
+      expect(await screen.findByText('Proposta rejeitada.')).toBeInTheDocument()
+
+      await userEvent.click(await button('Atualizar'))
+      expect(screen.queryByText('Proposta rejeitada.')).not.toBeInTheDocument()
     })
 
     it('a confirmed action clears an earlier refresh failure', async () => {

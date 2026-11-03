@@ -61,6 +61,12 @@ export default function ProposalForm({ userId, busy, error, onSubmit, onCancel }
     if (ready) selectRef.current?.focus()
   }, [ready])
 
+  // The submit button is disabled while sending, which drops the focus. After
+  // an error, the choice is what the user has to look at again.
+  useEffect(() => {
+    if (error) selectRef.current?.focus()
+  }, [error])
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!choice || busy) return
