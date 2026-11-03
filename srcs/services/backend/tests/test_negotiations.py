@@ -21,6 +21,7 @@ from app.models import (
     ProposalState,
     User,
 )
+from app.routers.listings import delete_listing
 from app.routers.negotiations import (
     accept_proposal,
     cancel_negotiation,
@@ -474,6 +475,10 @@ class NegotiationsTestCase(unittest.TestCase):
             self.offered,
         )
         accept_proposal(accepted.id, self.owner, self.db)
+        old_timestamp = datetime(2000, 1, 1)
+        other_negotiation_row = self.db.get(Negotiation, other_negotiation.id)
+        other_negotiation_row.updated_at = old_timestamp
+        self.db.commit()
 
         complete_negotiation(selected.id, self.interested, self.db)
 
@@ -485,6 +490,23 @@ class NegotiationsTestCase(unittest.TestCase):
             self._state(Negotiation, other_negotiation.id),
             "Open",
         )
+        self.db.refresh(other_negotiation_row)
+        self.assertGreater(other_negotiation_row.updated_at, old_timestamp)
+
+    def test_listing_removal_updates_offering_negotiation_timestamp(self) -> None:
+        negotiation = self._create_negotiation()
+        proposal = self._create_proposal(negotiation.id, self.offered)
+        old_timestamp = datetime(2000, 1, 1)
+        negotiation_row = self.db.get(Negotiation, negotiation.id)
+        negotiation_row.updated_at = old_timestamp
+        self.db.commit()
+
+        delete_listing(self.offered.id, self.interested, self.db)
+
+        self.assertEqual(self._state(Proposal, proposal.id), "ItemUnavailable")
+        self.db.refresh(negotiation_row)
+        self.assertEqual(self._state(Negotiation, negotiation.id), "Open")
+        self.assertGreater(negotiation_row.updated_at, old_timestamp)
 
     def test_only_interested_can_complete_agreed_negotiation(self) -> None:
         negotiation = self._create_negotiation()

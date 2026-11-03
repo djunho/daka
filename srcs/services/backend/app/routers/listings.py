@@ -18,7 +18,6 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -48,6 +47,7 @@ from app.schemas import (
     ListingPageOut,
     ListingUpdateIn,
 )
+from app.security import utcnow
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 
@@ -295,6 +295,8 @@ def create_listing(
     Authentication is required. The request body is validated by
     ListingCreateIn before this function is called.
     """
+    user_id = current_user.id
+
     # IDs are valid positive integers after Pydantic validation, but only the
     # database can tell whether they refer to a category/condition that exists.
     category = db.get(Category, payload.category_id)
@@ -326,11 +328,23 @@ def create_listing(
             detail="Listing states are not configured.",
         )
 
+    available_state_id = available_state.id
+    # Account deletion locks this same user row before taking its listing ID
+    # snapshot. If deletion wins, refresh exposes deleted_at and creation stops;
+    # if creation wins, deletion waits and includes the new listing in cleanup.
+    db.rollback()
+    db.refresh(current_user, with_for_update=True)
+    if current_user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Listings cannot be created for a deactivated account.",
+        )
+
     listing = Listing(
-        user_id=current_user.id,
-        category_id=category.id,
-        condition_id=condition.id,
-        state_id=available_state.id,
+        user_id=user_id,
+        category_id=payload.category_id,
+        condition_id=payload.condition_id,
+        state_id=available_state_id,
         title=payload.title,
         listing_dsc=payload.listing_dsc,
         listing_location=payload.listing_location,
@@ -550,6 +564,7 @@ def delete_listing(
             detail="Reserved or traded listings cannot be removed.",
         )
 
+    now = utcnow()
     if requested_negotiation_ids:
         db.query(Proposal).filter(
             Proposal.negotiation_id.in_(requested_negotiation_ids),
@@ -557,7 +572,7 @@ def delete_listing(
         ).update(
             {
                 Proposal.proposal_state_id: proposal_states["ItemUnavailable"],
-                Proposal.responded_at: func.now(),
+                Proposal.responded_at: now,
             },
             synchronize_session=False,
         )
@@ -568,7 +583,8 @@ def delete_listing(
             {
                 Negotiation.negotiation_state_id: negotiation_states[
                     "Unavailable"
-                ]
+                ],
+                Negotiation.updated_at: now,
             },
             synchronize_session=False,
         )
@@ -579,10 +595,17 @@ def delete_listing(
     ).update(
         {
             Proposal.proposal_state_id: proposal_states["ItemUnavailable"],
-            Proposal.responded_at: func.now(),
+            Proposal.responded_at: now,
         },
         synchronize_session=False,
     )
+    if offering_negotiation_ids:
+        db.query(Negotiation).filter(
+            Negotiation.id.in_(offering_negotiation_ids)
+        ).update(
+            {Negotiation.updated_at: now},
+            synchronize_session=False,
+        )
     listing.state_id = listing_states["Removed"]
     db.query(Favorite).filter(Favorite.listing_id == listing.id).delete(
         synchronize_session=False

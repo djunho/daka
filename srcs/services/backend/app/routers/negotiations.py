@@ -839,7 +839,42 @@ def complete_negotiation(
     if accepted_candidate.offered_listing_id is not None:
         involved_listing_ids.append(accepted_candidate.offered_listing_id)
 
+    listing_owner_rows = (
+        db.query(Listing.id, Listing.user_id)
+        .filter(Listing.id.in_(involved_listing_ids))
+        .all()
+    )
+    if len(listing_owner_rows) != len(set(involved_listing_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An agreement listing no longer exists.",
+        )
+    listing_owner_ids = sorted(
+        {owner_id for _listing_id, owner_id in listing_owner_rows}
+    )
+
     pending_id = _proposal_state(db, "Pending").id
+    db.rollback()
+
+    # Negotiation creation locks listing owners before negotiations. Completion
+    # follows the same order, then discovers the affected negotiation set again
+    # while those owners are locked so no new competing row can be missed.
+    locked_owners = (
+        db.query(User)
+        .filter(User.id.in_(listing_owner_ids))
+        .order_by(User.id)
+        .populate_existing()
+        .with_for_update()
+        .all()
+    )
+    if len(locked_owners) != len(listing_owner_ids) or any(
+        owner.deleted_at is not None for owner in locked_owners
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An agreement listing owner is no longer active.",
+        )
+
     offering_negotiation_ids = db.query(Proposal.negotiation_id).filter(
         Proposal.offered_listing_id.in_(involved_listing_ids),
         Proposal.proposal_state_id == pending_id,
@@ -857,7 +892,6 @@ def complete_negotiation(
         .order_by(Negotiation.id)
         .all()
     ]
-    db.rollback()
 
     locked_negotiations = (
         db.query(Negotiation)
@@ -923,6 +957,15 @@ def complete_negotiation(
         )
 
     now = utcnow()
+    automatically_changed_negotiation_ids = sorted(
+        {
+            proposal.negotiation_id
+            for proposal in proposals
+            if proposal.negotiation_id != negotiation.id
+            and proposal.offered_listing_id in involved_listing_ids
+            and proposal.proposal_state_id == pending_id
+        }
+    )
     db.query(Proposal).filter(
         Proposal.negotiation_id == negotiation.id,
         Proposal.proposal_state_id == pending_id,
@@ -959,7 +1002,8 @@ def complete_negotiation(
             {
                 Negotiation.negotiation_state_id: _negotiation_state(
                     db, "Unavailable"
-                ).id
+                ).id,
+                Negotiation.updated_at: now,
             },
             synchronize_session=False,
         )
@@ -977,6 +1021,13 @@ def complete_negotiation(
         },
         synchronize_session=False,
     )
+    if automatically_changed_negotiation_ids:
+        db.query(Negotiation).filter(
+            Negotiation.id.in_(automatically_changed_negotiation_ids)
+        ).update(
+            {Negotiation.updated_at: now},
+            synchronize_session=False,
+        )
 
     traded = _listing_state(db, "Traded")
     for listing in locked_listings:
