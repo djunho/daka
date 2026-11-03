@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import Negotiation from './Negotiation'
 import {
   ApiError,
@@ -91,6 +91,7 @@ function signIn(person: typeof OWNER | null) {
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={['/negotiations/20']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <Link to="/negotiations/21">Outra negociação</Link>
       <Routes>
         <Route path="/negotiations/:id" element={<Negotiation />} />
       </Routes>
@@ -263,6 +264,15 @@ describe('Negotiation actions', () => {
       const again = await button('Criar proposta')
       await waitFor(() => expect(again).toHaveFocus())
     })
+
+    it('on 401 while loading the listings clears the session', async () => {
+      vi.mocked(apiGetPublicProfile).mockRejectedValueOnce(new ApiError(401, 'Not authenticated.'))
+      await open(INTERESTED, negotiation('Open'))
+      await userEvent.click(await button('Criar proposta'))
+
+      await waitFor(() => expect(logout).toHaveBeenCalledTimes(1))
+      expect(screen.queryByText(/iniciar sessão/)).not.toBeInTheDocument()
+    })
   })
 
   describe('confirmed actions', () => {
@@ -399,6 +409,42 @@ describe('Negotiation actions', () => {
       expect(await screen.findByText('Cancelada')).toBeInTheDocument()
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       expect(apiGetNegotiation).toHaveBeenCalledTimes(2)
+    })
+
+    it('a confirmed action clears an earlier refresh failure', async () => {
+      await open(OWNER, negotiation('Open', [proposal(1, 'Pending', 'Livro')]))
+      vi.mocked(apiGetNegotiation).mockRejectedValueOnce(new ApiError(0, 'Could not reach the server.'))
+      await userEvent.click(await button('Atualizar'))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Verifica a tua ligação à internet.')
+
+      vi.mocked(apiCancelNegotiation).mockResolvedValue({
+        ...negotiation('Cancelled', [proposal(1, 'Rejected', 'Livro')]),
+        cancelled_by: OWNER,
+        cancelled_at: '2026-03-05T10:00:00',
+      })
+      await userEvent.click(await button('Cancelar negociação'))
+      await userEvent.click(within(await dialog()).getByRole('button', { name: 'Sim, cancelar' }))
+
+      expect(await screen.findByText('Negociação cancelada.')).toBeInTheDocument()
+      expect(screen.queryByText(/Verifica a tua ligação/)).not.toBeInTheDocument()
+    })
+
+    it('an action still running does not lock the next negotiation', async () => {
+      await open(OWNER, negotiation('Open', [proposal(1, 'Pending', 'Livro')]))
+      vi.mocked(apiRejectProposal).mockReturnValueOnce(new Promise(() => {}))
+      await userEvent.click(await button('Rejeitar proposta: Livro'))
+      await userEvent.click(within(await dialog()).getByRole('button', { name: 'Sim, rejeitar' }))
+      await waitFor(() => expect(apiRejectProposal).toHaveBeenCalledTimes(1))
+
+      vi.mocked(apiGetNegotiation).mockResolvedValue({ ...negotiation('Open', [proposal(2, 'Pending', 'Mesa')]), id: 21 })
+      await userEvent.click(screen.getByRole('link', { name: 'Outra negociação' }))
+
+      const reject = await button('Rejeitar proposta: Mesa')
+      expect(reject).toBeEnabled()
+      await userEvent.click(reject)
+      await userEvent.click(within(await dialog()).getByRole('button', { name: 'Sim, rejeitar' }))
+      await waitFor(() => expect(apiRejectProposal).toHaveBeenCalledTimes(2))
+      expect(apiRejectProposal).toHaveBeenLastCalledWith(2)
     })
 
     it('a network failure stays in the dialog, in Portuguese, and can be retried', async () => {
