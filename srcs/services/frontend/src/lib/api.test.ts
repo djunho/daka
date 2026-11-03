@@ -27,6 +27,20 @@ describe('apiListNegotiations', () => {
 
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/negotiations$/)
   })
+
+  it('passes the signal to fetch, and a cancelled request is not reported as a network failure', async () => {
+    const fetchMock = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+
+    const pending = apiListNegotiations({}, controller.signal)
+    controller.abort()
+
+    expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal)
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+  })
 })
 
 describe('apiCreateNegotiation', () => {
