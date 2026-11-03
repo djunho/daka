@@ -257,6 +257,7 @@ describe('Negotiation', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
     const busy = screen.getByRole('button', { name: 'A atualizar…' })
     expect(busy).toHaveAttribute('aria-busy', 'true')
+    expect(busy).toBeDisabled()
     await userEvent.click(busy)
     act(() => { window.dispatchEvent(new Event('focus')) })
 

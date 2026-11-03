@@ -22,7 +22,7 @@ export function formatDate(value: string): string {
 // There can be several pending ones, so nothing here assumes a single proposal.
 export function groupProposals(proposals: ApiProposal[]) {
   const newestFirst = [...proposals].sort(
-    (a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id,
+    (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id,
   )
   return {
     accepted: newestFirst.filter((p) => p.state.state_name === 'Accepted'),
