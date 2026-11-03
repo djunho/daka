@@ -54,13 +54,19 @@ CREATE TABLE conditions
 CREATE TABLE listings_states
 (
     id 				INT AUTO_INCREMENT PRIMARY KEY,
-    state_name 		VARCHAR(50) NOT NULL
+    state_name 		VARCHAR(50) NOT NULL UNIQUE
 );
 
-CREATE TABLE trade_states
+CREATE TABLE negotiation_states
 (
     id 				INT AUTO_INCREMENT PRIMARY KEY,
-    state_name 		VARCHAR(50) NOT NULL
+    state_name 		VARCHAR(50) NOT NULL UNIQUE
+);
+
+CREATE TABLE proposal_states
+(
+    id 				INT AUTO_INCREMENT PRIMARY KEY,
+    state_name 		VARCHAR(50) NOT NULL UNIQUE
 );
 
 -- Esses sao os anuncios cadastrados
@@ -98,41 +104,77 @@ CREATE TABLE images (
 		REFERENCES listings(id)
 );
 
--- Aqui guardamos as negociacoes
-CREATE TABLE trades (
+-- One conversation between an interested user and the owner of a requested
+-- listing. The unique key prevents the chat history from being fragmented
+-- across duplicate negotiations.
+CREATE TABLE negotiations (
 	id 						INT AUTO_INCREMENT PRIMARY KEY,
-	listing_requested_id	INT NOT NULL,
-	sender_id 				INT NOT NULL,
-	listing_offered_id		INT,
-	trade_state_id			INT NOT NULL,
-	initial_msg				VARCHAR(250) NOT NULL,
+	listing_id				INT NOT NULL,
+	interested_user_id 		INT NOT NULL,
+	negotiation_state_id	INT NOT NULL,
+	cancelled_by_user_id	INT NULL,
+	cancelled_at			DATETIME NULL,
 	created_at 				TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at	 			TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
 
-	FOREIGN KEY (listing_requested_id)
+	UNIQUE (listing_id, interested_user_id),
+
+	FOREIGN KEY (listing_id)
 		REFERENCES listings(id),
-	FOREIGN KEY (sender_id)
+	FOREIGN KEY (interested_user_id)
 		REFERENCES users(id),
-	FOREIGN KEY (listing_offered_id)
-		REFERENCES listings(id),
-	FOREIGN KEY (trade_state_id)
-    	REFERENCES trade_states(id)
+	FOREIGN KEY (negotiation_state_id)
+		REFERENCES negotiation_states(id),
+	FOREIGN KEY (cancelled_by_user_id)
+		REFERENCES users(id)
 );
+
+-- Proposals are alternatives within a negotiation. They remain stored after
+-- reaching a terminal state so the negotiation history is preserved.
+CREATE TABLE proposals (
+	id 						INT AUTO_INCREMENT PRIMARY KEY,
+	negotiation_id			INT NOT NULL,
+	offered_listing_id		INT NULL,
+	-- MariaDB allows multiple NULL values in a regular UNIQUE constraint.
+	-- Normalizing NULL to 0 makes no-offer proposals participate in the same
+	-- composite uniqueness rule as proposals that include an offered listing.
+	offered_listing_unique_key INT
+		AS (COALESCE(offered_listing_id, 0)) STORED,
+	proposal_state_id		INT NOT NULL,
+	created_at 				TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	responded_at 			DATETIME NULL,
+
+	CONSTRAINT uq_proposals_negotiation_offer
+		UNIQUE (negotiation_id, offered_listing_unique_key),
+
+	FOREIGN KEY (negotiation_id)
+		REFERENCES negotiations(id),
+	FOREIGN KEY (offered_listing_id)
+		REFERENCES listings(id),
+	FOREIGN KEY (proposal_state_id)
+		REFERENCES proposal_states(id)
+);
+
+CREATE INDEX idx_proposals_negotiation_state
+    ON proposals (negotiation_id, proposal_state_id);
 
 --  Aqui guardam-se os registros do chat
 CREATE TABLE messages (
 	id 				INT AUTO_INCREMENT PRIMARY KEY,
-	trade_id		INT NOT NULL,
+	negotiation_id	INT NOT NULL,
 	msg_sender		INT NOT NULL,
 	msg				VARCHAR(250) NOT NULL,
 	created_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (trade_id)
-        REFERENCES trades(id),
+    FOREIGN KEY (negotiation_id)
+        REFERENCES negotiations(id),
     FOREIGN KEY (msg_sender)
         REFERENCES users(id)
 );
+
+CREATE INDEX idx_messages_negotiation_created
+    ON messages (negotiation_id, created_at);
 
 --  Questionavel (reclamacao depende de admin)
 CREATE TABLE reports (

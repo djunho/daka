@@ -10,7 +10,7 @@ This approach preserves important information for:
 
 - moderation;
 - reports;
-- trade history;
+- negotiation and proposal history;
 - messages;
 - auditing;
 - listing history.
@@ -44,7 +44,7 @@ The route performs the following actions:
 3. Sets `deleted_at` on the account.
 4. Anonymizes the personal fields.
 5. Changes the listings to the `Removed` state.
-6. Cancels open trades related to the user or their listings.
+6. Closes active negotiations and proposals related to the user or their listings.
 7. Removes favorites related to the account or listings.
 8. Removes the user's active sessions.
 9. Commits all changes in a single transaction.
@@ -75,7 +75,7 @@ Soft delete does not physically remove:
 - listings;
 - listing images;
 - reports;
-- trades;
+- negotiations and proposals;
 - messages.
 
 Reports are preserved to maintain the moderation history. Listings remain in the database with the `Removed` state.
@@ -123,7 +123,7 @@ except IntegrityError:
 
 If an integrity error occurs, all changes are rolled back and the API returns `409 Conflict`.
 
-The user and listing queries use `with_for_update()` to reduce race conditions with updates, trades, or other simultaneous operations.
+The user and listing queries use `with_for_update()` to reduce race conditions with updates, negotiations, proposals, or other simultaneous operations.
 
 ## Migration for existing databases
 

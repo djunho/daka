@@ -8,6 +8,9 @@ Contents
 - `seeds.sql` — initial lookup/seed data (categories, conditions, states).
 - `dakaERD.md` — Entity-Relationship Diagram (Mermaid).
 
+For procedures to back up and restore the database volume, see
+[`docs/development/database-backup.md`](../../../docs/development/database-backup.md).
+
 Environment
 Use the repo's `.env` (see `srcs/.env` or `.env.example`) to provide the database credentials and connection settings. Important variables:
 

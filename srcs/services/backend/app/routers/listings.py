@@ -18,7 +18,6 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -32,8 +31,10 @@ from app.models import (
     Image,
     Listing,
     ListingState,
-    Trade,
-    TradeState,
+    Negotiation,
+    NegotiationState,
+    Proposal,
+    ProposalState,
     User,
 )
 from app.schemas import (
@@ -46,6 +47,7 @@ from app.schemas import (
     ListingPageOut,
     ListingUpdateIn,
 )
+from app.security import utcnow
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 
@@ -293,6 +295,8 @@ def create_listing(
     Authentication is required. The request body is validated by
     ListingCreateIn before this function is called.
     """
+    user_id = current_user.id
+
     # IDs are valid positive integers after Pydantic validation, but only the
     # database can tell whether they refer to a category/condition that exists.
     category = db.get(Category, payload.category_id)
@@ -324,11 +328,23 @@ def create_listing(
             detail="Listing states are not configured.",
         )
 
+    available_state_id = available_state.id
+    # Account deletion locks this same user row before taking its listing ID
+    # snapshot. If deletion wins, refresh exposes deleted_at and creation stops;
+    # if creation wins, deletion waits and includes the new listing in cleanup.
+    db.rollback()
+    db.refresh(current_user, with_for_update=True)
+    if current_user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Listings cannot be created for a deactivated account.",
+        )
+
     listing = Listing(
-        user_id=current_user.id,
-        category_id=category.id,
-        condition_id=condition.id,
-        state_id=available_state.id,
+        user_id=user_id,
+        category_id=payload.category_id,
+        condition_id=payload.condition_id,
+        state_id=available_state_id,
         title=payload.title,
         listing_dsc=payload.listing_dsc,
         listing_location=payload.listing_location,
@@ -408,6 +424,9 @@ def update_listing(
             "description": "Not allowed to delete this listing."
         },
         status.HTTP_404_NOT_FOUND: {"description": "Listing not found."},
+        status.HTTP_409_CONFLICT: {
+            "description": "Reserved or traded listings cannot be removed."
+        },
     },
 )
 def delete_listing(
@@ -417,11 +436,106 @@ def delete_listing(
 ) -> None:
     """Soft-delete one of the logged-in user's listings.
 
-    The listing and its history remain in the database for moderation and
-    completed trades. Open trades are cancelled because the offer is no longer
-    available, and favorites are removed because they only apply to public
-    listings.
+    The listing and its history remain in the database for moderation. Open
+    negotiations requesting it become unavailable, while pending proposals
+    offering it become unavailable individually. Favorites are removed because
+    they only apply to public listings.
     """
+    user_id = current_user.id
+    db.rollback()
+    candidate = db.get(Listing, id)
+    if candidate is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Listing not found.",
+        )
+    if candidate.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own listings.",
+        )
+    db.rollback()
+
+    # Resolve lookup ids before starting the transaction that acquires row locks.
+    listing_states = {
+        state_name: state_id
+        for state_name, state_id in db.query(
+            ListingState.state_name, ListingState.id
+        )
+        .filter(ListingState.state_name.in_(("Removed", "Reserved", "Traded")))
+        .all()
+    }
+    negotiation_states = {
+        state_name: state_id
+        for state_name, state_id in db.query(
+            NegotiationState.state_name, NegotiationState.id
+        )
+        .filter(NegotiationState.state_name.in_(("Open", "Unavailable")))
+        .all()
+    }
+    proposal_states = {
+        state_name: state_id
+        for state_name, state_id in db.query(
+            ProposalState.state_name, ProposalState.id
+        )
+        .filter(ProposalState.state_name.in_(("Pending", "ItemUnavailable")))
+        .all()
+    }
+    if (
+        len(listing_states) != 3
+        or len(negotiation_states) != 2
+        or len(proposal_states) != 2
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Listing, negotiation, or proposal states are not configured.",
+        )
+
+    db.rollback()
+    # Serialize with negotiation creation, which locks the listing owner first.
+    # Then match the lifecycle lock order: negotiations, proposals, listings.
+    db.refresh(current_user, with_for_update=True)
+    offering_negotiation_ids_query = db.query(Proposal.negotiation_id).filter(
+        Proposal.offered_listing_id == id,
+        Proposal.proposal_state_id == proposal_states["Pending"],
+    )
+    requested_negotiation_ids = [
+        negotiation_id
+        for (negotiation_id,) in db.query(Negotiation.id)
+        .filter(
+            Negotiation.negotiation_state_id == negotiation_states["Open"],
+            Negotiation.listing_id == id,
+        )
+        .all()
+    ]
+    offering_negotiation_ids = [
+        negotiation_id
+        for (negotiation_id,) in db.query(Negotiation.id)
+        .filter(
+            Negotiation.negotiation_state_id == negotiation_states["Open"],
+            Negotiation.id.in_(offering_negotiation_ids_query),
+        )
+        .all()
+    ]
+    locked_negotiation_ids = sorted(
+        set(requested_negotiation_ids) | set(offering_negotiation_ids)
+    )
+    if locked_negotiation_ids:
+        (
+            db.query(Negotiation)
+            .filter(Negotiation.id.in_(locked_negotiation_ids))
+            .order_by(Negotiation.id)
+            .with_for_update()
+            .all()
+        )
+        (
+            db.query(Proposal)
+            .filter(Proposal.negotiation_id.in_(locked_negotiation_ids))
+            .order_by(Proposal.id)
+            .with_for_update()
+            .all()
+        )
+
     listing = db.get(Listing, id, with_for_update=True)
     if listing is None:
         raise HTTPException(
@@ -429,45 +543,70 @@ def delete_listing(
             detail="Listing not found.",
         )
 
-    if listing.user_id != current_user.id:
+    if listing.user_id != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only delete your own listings.",
         )
 
-    removed = (
-        db.query(ListingState)
-        .filter(ListingState.state_name == "Removed")
-        .first()
-    )
-    open_trade = (
-        db.query(TradeState).filter(TradeState.state_name == "Open").first()
-    )
-    cancelled_trade = (
-        db.query(TradeState)
-        .filter(TradeState.state_name == "Cancelled")
-        .first()
-    )
-    if removed is None or open_trade is None or cancelled_trade is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Listing or trade states are not configured.",
-        )
-
-    if listing.state_id == removed.id:
+    if listing.state_id == listing_states["Removed"]:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Listing not found.",
         )
 
-    listing.state_id = removed.id
-    db.query(Trade).filter(
-        or_(
-            Trade.listing_requested_id == listing.id,
-            Trade.listing_offered_id == listing.id,
-        ),
-        Trade.trade_state_id == open_trade.id,
-    ).update({Trade.trade_state_id: cancelled_trade.id}, synchronize_session=False)
+    if listing.state_id in {
+        listing_states["Reserved"],
+        listing_states["Traded"],
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Reserved or traded listings cannot be removed.",
+        )
+
+    now = utcnow()
+    if requested_negotiation_ids:
+        db.query(Proposal).filter(
+            Proposal.negotiation_id.in_(requested_negotiation_ids),
+            Proposal.proposal_state_id == proposal_states["Pending"],
+        ).update(
+            {
+                Proposal.proposal_state_id: proposal_states["ItemUnavailable"],
+                Proposal.responded_at: now,
+            },
+            synchronize_session=False,
+        )
+        db.query(Negotiation).filter(
+            Negotiation.id.in_(requested_negotiation_ids),
+            Negotiation.negotiation_state_id == negotiation_states["Open"],
+        ).update(
+            {
+                Negotiation.negotiation_state_id: negotiation_states[
+                    "Unavailable"
+                ],
+                Negotiation.updated_at: now,
+            },
+            synchronize_session=False,
+        )
+
+    db.query(Proposal).filter(
+        Proposal.offered_listing_id == listing.id,
+        Proposal.proposal_state_id == proposal_states["Pending"],
+    ).update(
+        {
+            Proposal.proposal_state_id: proposal_states["ItemUnavailable"],
+            Proposal.responded_at: now,
+        },
+        synchronize_session=False,
+    )
+    if offering_negotiation_ids:
+        db.query(Negotiation).filter(
+            Negotiation.id.in_(offering_negotiation_ids)
+        ).update(
+            {Negotiation.updated_at: now},
+            synchronize_session=False,
+        )
+    listing.state_id = listing_states["Removed"]
     db.query(Favorite).filter(Favorite.listing_id == listing.id).delete(
         synchronize_session=False
     )

@@ -155,6 +155,7 @@ function UserMenu({
           >
             Perfil
           </Link>
+
           <Link
             to={`/users/${id}`}
             role="menuitem"
@@ -163,14 +164,7 @@ function UserMenu({
           >
             Meus anúncios
           </Link>
-          <Link
-            to="/trades"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="block px-4 py-2.5 text-sm text-ink hover:bg-paper transition-colors"
-          >
-            Minhas trocas
-          </Link>
+
           <button
             type="button"
             role="menuitem"

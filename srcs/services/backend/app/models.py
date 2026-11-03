@@ -13,7 +13,18 @@ other way around. They describe the same tables from two sides.
 """
 from datetime import datetime
 
-from sqlalchemy import Boolean, CHAR, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    CHAR,
+    Computed,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -107,16 +118,25 @@ class ListingState(Base):
     __tablename__ = "listings_states"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    state_name: Mapped[str] = mapped_column(String(50))
+    state_name: Mapped[str] = mapped_column(String(50), unique=True)
 
 
-class TradeState(Base):
-    """Lookup table for a trade's status: Open, Finished, Cancelled."""
+class NegotiationState(Base):
+    """Lookup table: Open, Agreed, Completed, Cancelled, Unavailable."""
 
-    __tablename__ = "trade_states"
+    __tablename__ = "negotiation_states"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    state_name: Mapped[str] = mapped_column(String(50))
+    state_name: Mapped[str] = mapped_column(String(50), unique=True)
+
+
+class ProposalState(Base):
+    """Lookup table for the lifecycle of an individual proposal."""
+
+    __tablename__ = "proposal_states"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    state_name: Mapped[str] = mapped_column(String(50), unique=True)
 
 
 class Listing(Base):
@@ -176,50 +196,96 @@ class Image(Base):
     listing: Mapped["Listing"] = relationship(back_populates="images")
 
 
-class Trade(Base):
-    """A negotiation: someone requests a listing, optionally offering one back."""
+class Negotiation(Base):
+    """One conversation about a listing between its owner and one user."""
 
-    __tablename__ = "trades"
+    __tablename__ = "negotiations"
+    __table_args__ = (
+        UniqueConstraint("listing_id", "interested_user_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    listing_requested_id: Mapped[int] = mapped_column(ForeignKey("listings.id"))
-    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    # Nullable: the sender may request a listing without offering one in return.
-    listing_offered_id: Mapped[int | None] = mapped_column(ForeignKey("listings.id"))
-    trade_state_id: Mapped[int] = mapped_column(ForeignKey("trade_states.id"))
-    initial_msg: Mapped[str] = mapped_column(String(250))
+    listing_id: Mapped[int] = mapped_column(ForeignKey("listings.id"))
+    interested_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    negotiation_state_id: Mapped[int] = mapped_column(
+        ForeignKey("negotiation_states.id")
+    )
+    cancelled_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
-    # This table references "listings" TWICE (requested + offered), so
-    # SQLAlchemy cannot guess which foreign key each relationship uses. We tell
-    # it explicitly with ``foreign_keys``.
     requested_listing: Mapped["Listing"] = relationship(
-        foreign_keys=[listing_requested_id]
+        foreign_keys=[listing_id]
     )
+    interested_user: Mapped["User"] = relationship(
+        foreign_keys=[interested_user_id]
+    )
+    state: Mapped["NegotiationState"] = relationship()
+    cancelled_by: Mapped["User | None"] = relationship(
+        foreign_keys=[cancelled_by_user_id]
+    )
+    proposals: Mapped[list["Proposal"]] = relationship(
+        back_populates="negotiation", order_by="Proposal.created_at"
+    )
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="negotiation", order_by="Message.created_at"
+    )
+
+
+class Proposal(Base):
+    """An optional listing offered within an existing negotiation."""
+
+    __tablename__ = "proposals"
+    __table_args__ = (
+        UniqueConstraint(
+            "negotiation_id",
+            "offered_listing_unique_key",
+            name="uq_proposals_negotiation_offer",
+        ),
+        Index(
+            "idx_proposals_negotiation_state",
+            "negotiation_id",
+            "proposal_state_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    negotiation_id: Mapped[int] = mapped_column(ForeignKey("negotiations.id"))
+    offered_listing_id: Mapped[int | None] = mapped_column(ForeignKey("listings.id"))
+    # Mirrors the generated column in schema.sql. Zero is safe as the null
+    # sentinel because listing ids are positive AUTO_INCREMENT values.
+    offered_listing_unique_key: Mapped[int] = mapped_column(
+        Computed("COALESCE(offered_listing_id, 0)", persisted=True)
+    )
+    proposal_state_id: Mapped[int] = mapped_column(ForeignKey("proposal_states.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    negotiation: Mapped["Negotiation"] = relationship(back_populates="proposals")
     offered_listing: Mapped["Listing | None"] = relationship(
-        foreign_keys=[listing_offered_id]
+        foreign_keys=[offered_listing_id]
     )
-    sender: Mapped["User"] = relationship(foreign_keys=[sender_id])
-    state: Mapped["TradeState"] = relationship()
-    # One trade holds the whole chat between the two users.
-    messages: Mapped[list["Message"]] = relationship(back_populates="trade")
+    state: Mapped["ProposalState"] = relationship()
 
 
 class Message(Base):
-    """A single chat message inside a trade."""
+    """A single chat message inside a negotiation."""
 
     __tablename__ = "messages"
+    __table_args__ = (
+        Index("idx_messages_negotiation_created", "negotiation_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    trade_id: Mapped[int] = mapped_column(ForeignKey("trades.id"))
+    negotiation_id: Mapped[int] = mapped_column(ForeignKey("negotiations.id"))
     msg_sender: Mapped[int] = mapped_column(ForeignKey("users.id"))
     msg: Mapped[str] = mapped_column(String(250))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    trade: Mapped["Trade"] = relationship(back_populates="messages")
+    negotiation: Mapped["Negotiation"] = relationship(back_populates="messages")
     sender: Mapped["User"] = relationship()
 
 
@@ -235,7 +301,7 @@ class Report(Base):
     reason: Mapped[str] = mapped_column(String(250))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    # Like Trade, this table references "users" TWICE (reporter + reported), so
+    # This table references "users" twice (reporter + reported), so
     # each relationship states its foreign key explicitly.
     reporter: Mapped["User"] = relationship(foreign_keys=[reporter_id])
     reported_user: Mapped["User | None"] = relationship(foreign_keys=[reported_user_id])

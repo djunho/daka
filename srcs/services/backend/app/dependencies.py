@@ -3,8 +3,9 @@
 A "dependency" is a function FastAPI runs before a route, injecting its result
 as an argument. ``get_current_user`` lives here rather than inside
 app/routers/auth.py because every protected route in the app -- listings,
-trades, chat, profile -- will need it, not just the auth routes. Keeping it in
-a neutral module avoids a circular import once those routers also import it.
+negotiations, chat, and profile -- will need it, not just the auth routes.
+Keeping it in a neutral module avoids a circular import once those routers also
+import it.
 """
 from fastapi import Cookie, Depends, HTTPException, status
 from sqlalchemy.orm import Session

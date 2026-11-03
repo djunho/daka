@@ -34,7 +34,12 @@ erDiagram
         VARCHAR state_name
     }
 
-    TRADE_STATES {
+    NEGOTIATION_STATES {
+        INT id PK
+        VARCHAR state_name
+    }
+
+    PROPOSAL_STATES {
         INT id PK
         VARCHAR state_name
     }
@@ -53,15 +58,25 @@ erDiagram
         TIMESTAMP updated_at
     }
 
-    TRADES {
+    NEGOTIATIONS {
         INT id PK
-        INT listing_requested_id FK
-        INT sender_id FK
-        INT listing_offered_id FK
-        INT trade_state_id FK
-        VARCHAR initial_msg
+        INT listing_id FK
+        INT interested_user_id FK
+        INT negotiation_state_id FK
+        INT cancelled_by_user_id FK
+        DATETIME cancelled_at
         TIMESTAMP created_at
         TIMESTAMP updated_at
+    }
+
+    PROPOSALS {
+        INT id PK
+        INT negotiation_id FK
+        INT offered_listing_id FK "nullable"
+        INT offered_listing_unique_key "GENERATED: COALESCE(offered_listing_id, 0)"
+        INT proposal_state_id FK
+        TIMESTAMP created_at
+        DATETIME responded_at
     }
 
     USERS ||--o{ LISTINGS : publishes
@@ -69,11 +84,22 @@ erDiagram
     CONDITIONS ||--o{ LISTINGS : condition
     LISTINGS_STATES ||--o{ LISTINGS : state
 
-    USERS ||--o{ TRADES : creates
-    LISTINGS ||--o{ TRADES : requested_listings
-    LISTINGS ||--o| TRADES : offered_listings
-    TRADE_STATES ||--o{ TRADES : status
+    USERS ||--o{ NEGOTIATIONS : starts
+    USERS o|--o{ NEGOTIATIONS : cancels
+    LISTINGS ||--o{ NEGOTIATIONS : requested
+    NEGOTIATION_STATES ||--o{ NEGOTIATIONS : status
+
+    NEGOTIATIONS ||--o{ PROPOSALS : contains
+    LISTINGS o|--o{ PROPOSALS : offered_listing
+    PROPOSAL_STATES ||--o{ PROPOSALS : status
 ```
+
+`PROPOSALS` has a composite unique constraint on
+`(negotiation_id, offered_listing_unique_key)`. The generated key normalizes a
+missing `offered_listing_id` to `0`, allowing at most one proposal without an
+offered listing per negotiation while also preventing the same listing from
+being offered twice in that negotiation.
+
 <br>
 <br>
 
@@ -91,7 +117,7 @@ erDiagram
 
     MESSAGES {
         INT id PK
-        INT trade_id FK
+        INT negotiation_id FK
         INT msg_sender FK
         VARCHAR msg
         TIMESTAMP created_at
@@ -100,7 +126,7 @@ erDiagram
     REPORTS {
         INT id PK
         INT reporter_id FK
-        INT reported_listing_id FK
+        INT reported_listings_id FK
         INT reported_user_id FK
         VARCHAR reason
         TIMESTAMP created_at
@@ -139,20 +165,20 @@ erDiagram
         TIMESTAMP updated_at
     }
 
-    TRADES {
+    NEGOTIATIONS {
         INT id PK
-        INT listing_requested_id FK
-        INT sender_id FK
-        INT listing_offered_id FK
-        INT trade_state_id FK
-        VARCHAR initial_msg
+        INT listing_id FK
+        INT interested_user_id FK
+        INT negotiation_state_id FK
+        INT cancelled_by_user_id FK
+        DATETIME cancelled_at
         TIMESTAMP created_at
         TIMESTAMP updated_at
     }
 
     LISTINGS ||--o{ IMAGES : contains
 
-    TRADES ||--o{ MESSAGES : contains
+    NEGOTIATIONS ||--o{ MESSAGES : contains
     USERS ||--o{ MESSAGES : sends
 
     USERS ||--o{ REPORTS : reports
