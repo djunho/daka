@@ -39,6 +39,10 @@ export default function Negotiation() {
   // previous negotiation is dropped instead of being shown under this URL.
   const generation = useRef(0)
   const inFlight = useRef(false)
+  // Cancels the request in flight when the id changes or the page closes, so
+  // React running the effect twice in development (StrictMode) does not leave
+  // two requests open.
+  const controller = useRef<AbortController | null>(null)
 
   // A refresh keeps what is on screen, so a failure while the tab regains focus
   // does not hide the negotiation, and the chat below is left alone.
@@ -46,10 +50,12 @@ export default function Negotiation() {
     if (inFlight.current) return
 
     const current = generation.current
+    const request = new AbortController()
+    controller.current = request
     inFlight.current = true
     setRefreshing(true)
     setRefreshError(null)
-    apiGetNegotiation(negotiationId)
+    apiGetNegotiation(negotiationId, request.signal)
       .then((data) => {
         if (generation.current !== current) return
         setNegotiation(data)
@@ -101,6 +107,8 @@ export default function Negotiation() {
 
     return () => {
       generation.current += 1
+      controller.current?.abort()
+      controller.current = null
       inFlight.current = false
     }
   }, [refresh, validId])
