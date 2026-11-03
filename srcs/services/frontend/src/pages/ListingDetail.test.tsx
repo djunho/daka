@@ -148,6 +148,25 @@ describe('Iniciar negociação em ListingDetail', () => {
     expect(logout).toHaveBeenCalledTimes(1)
   })
 
+  it('on 401 does not go to login if the user left the page during logout', async () => {
+    signIn(VISITOR)
+    let finishLogout = () => {}
+    logout.mockImplementationOnce(() => new Promise<void>((resolve) => { finishLogout = resolve }))
+    vi.mocked(apiCreateNegotiation).mockRejectedValue(new ApiError(401, 'Not authenticated.'))
+    renderPage()
+
+    await userEvent.click(await findAction())
+    await waitFor(() => expect(logout).toHaveBeenCalledTimes(1))
+    await userEvent.click(screen.getByRole('link', { name: 'Voltar ao início' }))
+    expect(await screen.findByText('Início')).toBeInTheDocument()
+
+    finishLogout()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(screen.getByText('Início')).toBeInTheDocument()
+    expect(screen.queryByText(/^Login, depois/)).not.toBeInTheDocument()
+  })
+
   it('on 404 shows the not found state', async () => {
     signIn(VISITOR)
     vi.mocked(apiCreateNegotiation).mockRejectedValue(new ApiError(404, 'Listing not found.'))
