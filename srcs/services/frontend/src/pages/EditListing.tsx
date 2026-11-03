@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import Button, { buttonClasses } from '../components/Button'
+import MessageCard from '../components/MessageCard'
 import {
   ApiError,
   apiGetListing,
@@ -146,30 +147,21 @@ export default function EditListing() {
 
   if (!validId || notFound) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
-          <h1 className="font-display text-2xl font-bold text-ink mb-2">
-            Anúncio não encontrado
-          </h1>
-          <p className="text-sm text-muted mb-6">
-            O anúncio que procuras não existe ou já foi removido.
-          </p>
-          <Link className={buttonClasses()} to="/">Voltar ao início</Link>
-        </div>
-      </main>
+      <MessageCard
+        title="Anúncio não encontrado"
+        text="O anúncio que procuras não existe ou já foi removido."
+        action={<Link className={buttonClasses()} to="/">Voltar ao início</Link>}
+      />
     )
   }
 
   if (error) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
-          <p role="alert" className="text-sm text-muted mb-6">
-            {error}
-          </p>
-          <Link className={buttonClasses()} to={`/listing/${listingId}`}>Voltar ao anúncio</Link>
-        </div>
-      </main>
+      <MessageCard
+        alert
+        text={error}
+        action={<Link className={buttonClasses()} to={`/listing/${listingId}`}>Voltar ao anúncio</Link>}
+      />
     )
   }
 
@@ -197,17 +189,11 @@ export default function EditListing() {
   // a form they could never save.
   if (currentUser?.id !== listing.owner.id) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
-          <h1 className="font-display text-2xl font-bold text-ink mb-2">
-            Não podes editar este anúncio
-          </h1>
-          <p className="text-sm text-muted mb-6">
-            Só quem publicou o anúncio o pode alterar.
-          </p>
-          <Link className={buttonClasses()} to={`/listing/${listing.id}`}>Ver anúncio</Link>
-        </div>
-      </main>
+      <MessageCard
+        title="Não podes editar este anúncio"
+        text="Só quem publicou o anúncio o pode alterar."
+        action={<Link className={buttonClasses()} to={`/listing/${listing.id}`}>Ver anúncio</Link>}
+      />
     )
   }
 

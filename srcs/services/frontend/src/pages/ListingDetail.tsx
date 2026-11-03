@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
+import MessageCard from '../components/MessageCard'
 
 // POST /negotiations answers 409 both when the listing can no longer be
 // negotiated and when this pair already has a cancelled negotiation for it.
@@ -170,30 +171,21 @@ export default function ListingDetail() {
 
   if (!validId || notFound) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
-          <h1 className="font-display text-2xl font-bold text-ink mb-2">
-            Anúncio não encontrado
-          </h1>
-          <p className="text-sm text-muted mb-6">
-            O anúncio que procuras não existe ou já foi removido.
-          </p>
-          <Link className={buttonClasses()} to="/">Voltar ao início</Link>
-        </div>
-      </main>
+      <MessageCard
+        title="Anúncio não encontrado"
+        text="O anúncio que procuras não existe ou já foi removido."
+        action={<Link className={buttonClasses()} to="/">Voltar ao início</Link>}
+      />
     )
   }
 
   if (error) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
-          <p role="alert" className="text-sm text-muted mb-6">
-            {error}
-          </p>
-          <Link className={buttonClasses()} to="/">Voltar ao início</Link>
-        </div>
-      </main>
+      <MessageCard
+        alert
+        text={error}
+        action={<Link className={buttonClasses()} to="/">Voltar ao início</Link>}
+      />
     )
   }
 
