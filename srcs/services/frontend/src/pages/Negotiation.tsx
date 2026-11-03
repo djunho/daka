@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
 import Button, { buttonClasses } from '../components/Button'
@@ -43,6 +43,9 @@ export default function Negotiation() {
   // React running the effect twice in development (StrictMode) does not leave
   // two requests open.
   const controller = useRef<AbortController | null>(null)
+  // "Atualizar" is disabled while it works, which drops the keyboard focus.
+  // Holds the button until the refresh ends, so the focus can go back to it.
+  const refreshButton = useRef<HTMLButtonElement | null>(null)
 
   // A refresh keeps what is on screen, so a failure while the tab regains focus
   // does not hide the negotiation, and the chat below is left alone.
@@ -86,6 +89,17 @@ export default function Negotiation() {
     // logout is recreated on every render and does not change what is requested.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [negotiationId])
+
+  function refreshByHand(e: MouseEvent<HTMLButtonElement>) {
+    if (document.activeElement === e.currentTarget) refreshButton.current = e.currentTarget
+    refresh()
+  }
+
+  useEffect(() => {
+    if (refreshing || !refreshButton.current) return
+    refreshButton.current.focus()
+    refreshButton.current = null
+  }, [refreshing])
 
   function retry() {
     setError(null)
@@ -147,7 +161,7 @@ export default function Negotiation() {
         <NegotiationHeader negotiation={negotiation} currentUserId={user?.id} />
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button size="sm" onClick={refresh} aria-busy={refreshing}>
+          <Button size="sm" onClick={refreshByHand} loading={refreshing}>
             {refreshing ? 'A atualizar…' : 'Atualizar'}
           </Button>
           {refreshError && <p role="alert" className="text-sm text-accent">{refreshError}</p>}
