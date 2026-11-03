@@ -146,6 +146,8 @@ export default function ListingDetail() {
           // The session expired after the page loaded. Clear it first, or the
           // login page would see a user and send them straight back here.
           await logout()
+          // The user may have left the page while logout was running.
+          if (startRequest.current !== request) return
           goToLogin()
           return
         }
