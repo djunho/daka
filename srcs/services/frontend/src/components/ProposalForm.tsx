@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import Button from './Button'
-import { apiGetPublicProfile, type ApiListingSummary } from '../lib/api'
+import { ApiError, apiGetPublicProfile, type ApiListingSummary } from '../lib/api'
+import { useAuth } from '../context/AuthContext'
 import { getPortugueseErrorMessage } from '../lib/errors'
 
 // The select holds strings, so "no listing" needs a value of its own.
@@ -17,6 +18,7 @@ type ProposalFormProps = {
 // Whether a listing was already offered in this negotiation is the backend's
 // rule: a repeated proposal comes back as a 409.
 export default function ProposalForm({ userId, busy, error, onSubmit, onCancel }: ProposalFormProps) {
+  const { logout } = useAuth()
   const [listings, setListings] = useState<ApiListingSummary[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState<number>(0)
@@ -38,12 +40,20 @@ export default function ProposalForm({ userId, busy, error, onSubmit, onCancel }
       })
       .catch((err) => {
         if (ignore) return
+        if (err instanceof ApiError && err.status === 401) {
+          // The session expired, as anywhere else on this page: clearing it lets
+          // RequireAuth send the user to login.
+          void logout()
+          return
+        }
         setLoadError(getPortugueseErrorMessage(err, 'Não foi possível carregar os teus anúncios. Tenta outra vez.'))
       })
 
     return () => {
       ignore = true
     }
+    // logout is recreated on every render and does not change what is requested.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, attempt])
 
   const ready = listings !== null

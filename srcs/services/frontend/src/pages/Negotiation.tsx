@@ -205,6 +205,9 @@ export default function Negotiation() {
     controller.current?.abort()
     inFlight.current = false
     setRefreshing(false)
+    // The backend just confirmed the current state, so an earlier failed
+    // refresh no longer applies.
+    setRefreshError(null)
     setNegotiation(data)
   }
 
@@ -247,8 +250,11 @@ export default function Negotiation() {
       }
       return false
     } finally {
-      busyRef.current = false
-      setBusy(false)
+      // After a move to another negotiation, busy belongs to that visit.
+      if (visit.current === current) {
+        busyRef.current = false
+        setBusy(false)
+      }
     }
   }
 
@@ -317,6 +323,9 @@ export default function Negotiation() {
     setProposalFormOpen(false)
     setActionError(null)
     setNotice(null)
+    // An action still running for the previous negotiation must not lock this one.
+    busyRef.current = false
+    setBusy(false)
     refresh()
 
     return () => {
