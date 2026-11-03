@@ -171,6 +171,21 @@ describe('Iniciar negociação em ListingDetail', () => {
     expect(screen.getByRole('button', { name: 'Iniciar negociação' })).toHaveAttribute('aria-describedby', alert.id)
   })
 
+  it('on 409 for a cancelled negotiation says it cannot be reopened', async () => {
+    signIn(VISITOR)
+    vi.mocked(apiCreateNegotiation).mockRejectedValue(
+      new ApiError(409, 'A cancelled negotiation cannot be reopened.'),
+    )
+    renderPage()
+
+    await userEvent.click(await findAction())
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('A tua negociação deste anúncio foi cancelada e não pode ser reaberta.')
+    expect(alert).not.toHaveTextContent('já não está disponível')
+    await waitFor(() => expect(alert).toHaveFocus())
+  })
+
   it('after a network failure lets the user try again', async () => {
     signIn(VISITOR)
     vi.mocked(apiCreateNegotiation)
