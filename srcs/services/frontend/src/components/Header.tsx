@@ -155,7 +155,7 @@ function UserMenu({
           >
             Perfil
           </Link>
-          
+
           <Link
             to={`/users/${id}`}
             role="menuitem"
@@ -164,7 +164,7 @@ function UserMenu({
           >
             Meus anúncios
           </Link>
-          
+
           <button
             type="button"
             role="menuitem"
