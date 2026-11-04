@@ -1,7 +1,10 @@
+import OnlineBadge from './OnlineBadge'
+
 interface AvatarProps {
     avatar?: string | null
     user_name?: string
     size?: 'xs' | 'sm' | 'lg'
+    online?: boolean
 }
 
 // Tailwind only generates the classes it finds written out in full in the
@@ -16,22 +19,38 @@ export default function Avatar({
     avatar,
     user_name = "",
     size = 'lg',
+    online,
 }: AvatarProps) {
-    {/* Avatar: Photo if available, fallback to initial letter */}
+    // Photo if available, fallback to the initial letter.
+    const avatarElement = avatar ? (
+      <img
+        src={avatar}
+        alt={ user_name ? user_name : "" }
+        className={`${SIZES[size]} rounded-full object-cover border border-line shrink-0`}
+      />
+    ) : (
+      <div className={`${SIZES[size]} rounded-full bg-paper border border-line flex items-center justify-center font-bold text-brand shrink-0`}>
+      { user_name ?
+          user_name.charAt(0).toUpperCase() :
+          "?"
+      }
+      </div>
+    )
+
+    if (online === undefined) {
+      return avatarElement
+    }
+
+    // The wrapper becomes the root element, so it needs the same shrink-0 as
+    // the avatar: otherwise a flex row with long text squeezes it.
     return (
-      avatar ? (
-        <img
-          src={avatar}
-          alt={ user_name ? user_name : "" }
-          className={`${SIZES[size]} rounded-full object-cover border border-line shrink-0`}
+      <span className="relative inline-flex shrink-0">
+        {avatarElement}
+        <OnlineBadge
+          online={online}
+          size={size}
+          className="absolute right-0 bottom-0 translate-x-1/6 translate-y-1/6 bg-surface rounded-full p-0.5"
         />
-      ) : (
-        <div className={`${SIZES[size]} rounded-full bg-paper border border-line flex items-center justify-center font-bold text-brand shrink-0`}>
-        { user_name ?
-            user_name.charAt(0).toUpperCase() :
-            "?"
-        }
-        </div>
-      )
+      </span>
     )
 }
