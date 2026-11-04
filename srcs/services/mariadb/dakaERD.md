@@ -25,6 +25,7 @@ erDiagram
         INT friend_id PK,FK
         ENUM status "accepted/removed"
         TIMESTAMP created_at
+        TIMESTAMP updated_at
     }
 
     CATEGORIES {
@@ -204,7 +205,6 @@ erDiagram
 
     USERS ||--o{ FAVORITES : saves
     LISTINGS ||--o{ FAVORITES : favorited
-    USERS ||--o{ FRIENDSHIPS : adds
-    USERS ||--o{ FRIENDSHIPS : added
+    USERS ||--o{ FRIENDSHIPS : participates
 
 ```
