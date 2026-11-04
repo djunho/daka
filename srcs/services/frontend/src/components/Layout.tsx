@@ -65,17 +65,24 @@ export default function Layout() {
         <Link to="/terms" className="inline-flex items-center min-h-11 px-3 hover:text-brand transition-colors no-underline">Termos</Link>
       </footer>
 
-      {/* Floating dock for quick access to all negotiations */}
-      <NegotiationsDock />
+      {/* Floating dock container pinned to the bottom-right */}
+      <div className="fixed bottom-0 right-6 z-50 flex items-end gap-3 pointer-events-none max-w-[calc(100vw-3rem)]">
+        {/* 1. Chat Widget (positioned to the left of the dock) */}
+        {activeChat && (
+          <div className="pointer-events-auto">
+            <NegotiationChatWidget
+              negotiationId={activeChat.negotiationId}
+              interlocutorName={activeChat.interlocutorName}
+              onClose={closeChat}
+            />
+          </div>
+        )}
 
-      {/* Floating docked chat widget */}
-      {activeChat && (
-        <NegotiationChatWidget
-          negotiationId={activeChat.negotiationId}
-          interlocutorName={activeChat.interlocutorName}
-          onClose={closeChat}
-        />
-      )}
+        {/* 2. Negotiations Dock (anchored on the far right) */}
+        <div className="pointer-events-auto">
+          <NegotiationsDock />
+        </div>
+      </div>
     </>
   )
 }
