@@ -45,3 +45,17 @@ VALUES
 	('Withdrawn'),
 	('NotSelected'),
 	('ItemUnavailable');
+
+-- Add up to two directed contact-list entries when users already exist.
+-- The fresh database does not seed users, so this is intentionally a no-op
+-- until at least two accounts have been created.
+INSERT INTO friendships (user_id, friend_id)
+SELECT first_user.id, second_user.id
+FROM users AS first_user
+JOIN users AS second_user
+	ON first_user.id <> second_user.id
+	AND first_user.id < second_user.id
+WHERE first_user.deleted_at IS NULL
+	AND second_user.deleted_at IS NULL
+ORDER BY first_user.id, second_user.id
+LIMIT 2;
