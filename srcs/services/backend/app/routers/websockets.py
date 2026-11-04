@@ -9,19 +9,23 @@ Close-code contract (validation precedes a technical accept and close):
 
 Message routing intentionally remains outside this module. The authorised
 user, negotiation, and validated id are placed in ``websocket.state`` for the
-ConnectionManager ticket to consume without trusting client-supplied identity.
+ConnectionManager to consume without trusting client-supplied identity.
 """
 
-from fastapi import APIRouter, WebSocket
+import logging
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import joinedload
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
+from app.connection_manager import manager
 from app.database import SessionLocal
 from app.dependencies import SESSION_COOKIE_NAME, get_user_from_session_token
 from app.models import Listing, Negotiation, User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 WS_UNAUTHENTICATED = 4401
 WS_FORBIDDEN = 4403
@@ -116,11 +120,25 @@ async def negotiation_websocket(websocket: WebSocket, negotiation_id: str) -> No
     websocket.state.current_user = current_user
     websocket.state.negotiation = negotiation
     websocket.state.negotiation_id = validated_id
-    await websocket.accept()
+    try:
+        await manager.connect(validated_id, websocket)
+        # Transport only: payload validation and persistence belong to later
+        # tickets. receive() reports disconnects as events, not exceptions.
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                _log_disconnect(validated_id, message.get("code", 1006))
+                return
+    except WebSocketDisconnect as exc:
+        _log_disconnect(validated_id, exc.code)
+    except Exception:
+        # Do not include exception text: it may contain client-supplied data.
+        logger.error("WebSocket loop failed negotiation_id=%s", validated_id)
+        raise
+    finally:
+        manager.disconnect(validated_id, websocket)
 
-    # ConnectionManager will replace this transport-only wait loop. No payload
-    # is interpreted, so token/sender_id claims cannot influence identity.
-    while True:
-        message = await websocket.receive()
-        if message["type"] == "websocket.disconnect":
-            return
+
+def _log_disconnect(negotiation_id: int, code: int) -> None:
+    log = logger.info if code in (1000, 1001) else logger.warning
+    log("WebSocket disconnected negotiation_id=%s code=%s", negotiation_id, code)

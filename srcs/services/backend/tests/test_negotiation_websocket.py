@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from starlette.websockets import WebSocketDisconnect
 
 from app.database import Base
+from app.connection_manager import ConnectionManager
 from app.main import app
 from app.models import (
     Category,
@@ -90,8 +91,17 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
             "app.routers.websockets.SessionLocal", self.session_factory
         )
         self.session_patch.start()
+        self.manager = ConnectionManager()
+        self.manager_patch = patch("app.routers.websockets.manager", self.manager)
+        self.manager_patch.start()
+        self.connect_patch = patch.object(
+            self.manager, "connect", wraps=self.manager.connect
+        )
+        self.connect_mock = self.connect_patch.start()
 
     def tearDown(self) -> None:
+        self.connect_patch.stop()
+        self.manager_patch.stop()
         self.session_patch.stop()
         self.client.close()
         self.db.close()
@@ -133,9 +143,13 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
 
     def _assert_rejected(self, code: int, token: str | None, **kwargs) -> None:
         with self.assertRaises(WebSocketDisconnect) as raised:
-            with self._connect(token, origin=self.origin, **kwargs):
-                pass
+            with self._connect(token, origin=self.origin, **kwargs) as websocket:
+                # Rejections accept then close so browsers receive the custom
+                # code. Observe that close frame, not just the upgrade.
+                websocket.receive_text()
         self.assertEqual(raised.exception.code, code)
+        self.connect_mock.assert_not_called()
+        self.assertEqual(self.manager.connection_count(), 0)
 
     def test_interested_and_owner_are_accepted(self) -> None:
         for participant in (self.interested, self.owner):
@@ -146,6 +160,16 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
                     # Client identity claims are deliberately ignored: the
                     # authenticated identity came from the cookie already.
                     websocket.send_json({"sender_id": self.outsider.id})
+        self.assertEqual(self.connect_mock.await_count, 2)
+        self.assertEqual(self.manager.room_count, 0)
+
+    def test_same_user_can_keep_two_connections_open(self) -> None:
+        # Nested contexts ensure both connections are alive together. The
+        # endpoint-level cleanup tests separately verify all termination paths.
+        with self._connect(self.tokens["interested"], origin=self.origin):
+            with self._connect(self.tokens["interested"], origin=self.origin):
+                self.assertEqual(self.connect_mock.await_count, 2)
+        self.assertEqual(self.manager.connection_count(), 0)
 
     def test_missing_empty_invalid_and_unknown_sessions_are_4401(self) -> None:
         for token in (None, "", "invalid-token"):
@@ -182,13 +206,14 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
     def test_origin_is_required_and_must_be_allowed(self) -> None:
         token = self.tokens["interested"]
         with self.assertRaises(WebSocketDisconnect) as missing:
-            with self._connect(token):
-                pass
+            with self._connect(token) as websocket:
+                websocket.receive_text()
         self.assertEqual(missing.exception.code, 4403)
         with self.assertRaises(WebSocketDisconnect) as foreign:
-            with self._connect(token, origin="https://evil.example"):
-                pass
+            with self._connect(token, origin="https://evil.example") as websocket:
+                websocket.receive_text()
         self.assertEqual(foreign.exception.code, 4403)
+        self.connect_mock.assert_not_called()
 
     def test_configured_development_and_production_origins(self) -> None:
         with patch(
