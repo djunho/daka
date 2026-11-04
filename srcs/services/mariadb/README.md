@@ -92,7 +92,7 @@ ALTER TABLE users ADD COLUMN deleted_at DATETIME NULL AFTER updated_at;
   previous unilateral schema must apply:
 
 ```sql
-ALTER TABLE users ADD COLUMN last_seen DATETIME NULL DEFAULT NULL AFTER updated_at;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen DATETIME NULL DEFAULT NULL AFTER updated_at;
 
 CREATE TABLE friendships_normalized (
 	user_id INT NOT NULL,
