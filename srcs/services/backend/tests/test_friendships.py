@@ -87,22 +87,22 @@ class FriendshipsTestCase(unittest.TestCase):
         self.db.add_all(
             [
                 Friendship(user_id=alice.id, friend_id=bob.id),
-                Friendship(user_id=carol.id, friend_id=alice.id),
+                Friendship(user_id=alice.id, friend_id=carol.id),
                 Friendship(user_id=bob.id, friend_id=carol.id),
             ]
         )
         self.db.commit()
 
-        delete_me(Response(), alice, self.db)
+        delete_me(Response(), bob, self.db)
 
         remaining = self.db.query(Friendship).order_by(
             Friendship.user_id, Friendship.friend_id
         ).all()
         self.assertEqual(
             [(row.user_id, row.friend_id) for row in remaining],
-            [(bob.id, carol.id)],
+            [(alice.id, carol.id)],
         )
-        self.assertIsNone(self.db.get(User, alice.id).last_seen)
+        self.assertIsNone(self.db.get(User, bob.id).last_seen)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     CHAR,
+    CheckConstraint,
     Computed,
     DateTime,
     ForeignKey,
@@ -107,6 +108,7 @@ class Friendship(Base):
     """Symmetric friendship stored once with the lower user id first."""
 
     __tablename__ = "friendships"
+    __table_args__ = (CheckConstraint("user_id < friend_id", name="chk_friendship_order"),)
 
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
