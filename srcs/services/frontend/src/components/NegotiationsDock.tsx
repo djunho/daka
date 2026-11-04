@@ -51,14 +51,10 @@ export default function NegotiationsDock() {
     (n) => n.state.state_name === 'Open' || n.state.state_name === 'Agreed',
   ).length
 
-  const isChatOpen = Boolean(activeChat)
-
   return (
     <aside
       aria-label="Gaveta de negociações rápidas"
-      className={`fixed bottom-0 z-40 transition-all duration-300 ${
-        isChatOpen ? 'right-6 md:right-[22rem]' : 'right-6'
-      }`}
+      className="flex items-end"
     >
       {/* 1. Minimized mode: compact floating trigger button with 🤝 symbol */}
       {!isOpen ? (
@@ -70,7 +66,7 @@ export default function NegotiationsDock() {
           }}
           aria-label="Abrir gaveta de negociações"
           title="Ver negociações"
-          className="relative mb-4 w-12 h-12 flex items-center justify-center bg-brand hover:bg-brand-hover text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 select-none hover:scale-105 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
+          className="relative mb-3 w-12 h-12 flex items-center justify-center bg-brand hover:bg-brand-hover text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 select-none hover:scale-105 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
         >
           <span className="text-2xl" aria-hidden="true">🤝</span>
           {activeCount > 0 && (

@@ -25,7 +25,7 @@ const ChatContext = createContext<ChatContextType>(defaultContext)
 /**
  * Global Chat Context:
  * Manages the floating docked chat widget state across page transitions.
- * When a user opens a chat in /negotiations/:id, the widget stays docked
+ * When a user opens a chat in /negotiations/:id or the dock, the widget stays docked
  * at the bottom-right corner even if the user navigates to the home feed,
  * a listing page, or their profile.
  */

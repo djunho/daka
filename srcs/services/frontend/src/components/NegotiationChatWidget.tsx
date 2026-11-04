@@ -10,8 +10,7 @@ export interface NegotiationChatWidgetProps {
 
 /**
  * Docked Floating Chat Widget (similar to LinkedIn / Facebook).
- * Positioned fixed at the bottom-right of the viewport.
- * Designed so multiple instances can be rendered side-by-side if needed in the future.
+ * Designed to be rendered inside the bottom-right flex dock container.
  */
 export default function NegotiationChatWidget({
   negotiationId,
@@ -25,7 +24,7 @@ export default function NegotiationChatWidget({
   return (
     <aside
       aria-label={`Chat da negociação #${negotiationId}`}
-      className="fixed bottom-0 right-6 z-50 w-80 bg-surface border border-line rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-200"
+      className="w-80 bg-surface border border-line rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-200 select-none"
     >
       {/* Widget header bar */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-brand text-white select-none">
