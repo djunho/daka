@@ -22,6 +22,8 @@ CREATE TABLE friendships (
 	friend_id		INT NOT NULL,
 	status			ENUM('accepted', 'removed') NOT NULL DEFAULT 'accepted',
 	created_at		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		ON UPDATE CURRENT_TIMESTAMP,
 
 	PRIMARY KEY (user_id, friend_id),
 	CONSTRAINT chk_friendship_order CHECK (user_id < friend_id),
