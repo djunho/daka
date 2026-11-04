@@ -46,6 +46,13 @@ type AuthContextValue = {
 // silently handing back a broken default.
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+// The backend counts a user as online for 3 minutes after their last
+// authenticated request, so one heartbeat a minute keeps an open tab online.
+const HEARTBEAT_INTERVAL_MS = 60_000
+// When a hidden tab becomes visible again, beat right away only if the last
+// beat is at least this old.
+const HEARTBEAT_MIN_GAP_MS = 30_000
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<ApiUser | null>(null)
   const [loading, setLoading] = useState(true)
@@ -68,6 +75,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (user === null) return
+
+    let active = true
+    let intervalId: ReturnType<typeof window.setInterval> | null = null
+    // The user was fetched just before this effect runs (page load or login),
+    // so that request counts as the latest heartbeat.
+    let lastHeartbeatAt = Date.now()
+
+    const stopHeartbeat = () => {
+      if (intervalId !== null) {
+        window.clearInterval(intervalId)
+        intervalId = null
+      }
+    }
+
+    const runHeartbeat = async () => {
+      lastHeartbeatAt = Date.now()
+      try {
+        const me = await apiMe()
+        // Keep the same object while the session still belongs to the same
+        // account. A new object on every beat would re-run every effect that
+        // depends on `user` (the profile form would reset what is being
+        // typed). Only a different account (a login in another tab) replaces it.
+        if (active) setUser((prev) => (prev?.id === me.id ? prev : me))
+      } catch (err) {
+        if (!active) return
+        if (err instanceof ApiError && err.status === 401) {
+          stopHeartbeat()
+          setUser(null)
+        }
+      }
+    }
+
+    const startHeartbeat = () => {
+      if (intervalId !== null || document.visibilityState === 'hidden') return
+      intervalId = window.setInterval(() => {
+        void runHeartbeat()
+      }, HEARTBEAT_INTERVAL_MS)
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        stopHeartbeat()
+        return
+      }
+      // Switching back and forth between tabs must not send a request each
+      // time: the backend keeps someone online for 3 minutes anyway.
+      if (Date.now() - lastHeartbeatAt >= HEARTBEAT_MIN_GAP_MS) {
+        void runHeartbeat()
+      }
+      startHeartbeat()
+    }
+
+    startHeartbeat()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      active = false
+      stopHeartbeat()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [user !== null])
 
   // These wrap the API calls and, on success, update the shared user so the
   // whole app re-renders as logged in. The backend sets the cookie in its
