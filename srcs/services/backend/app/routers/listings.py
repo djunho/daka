@@ -40,6 +40,7 @@ from app.models import (
 from app.schemas import (
     LISTINGS_PAGE_SIZE,
     MAX_LISTINGS_PAGE_SIZE,
+    MAX_PAGE_OFFSET,
     CategoryOut,
     ConditionOut,
     ListingCreateIn,
@@ -113,6 +114,7 @@ def list_listings(
     offset: int = Query(
         default=0,
         ge=0,
+        le=MAX_PAGE_OFFSET,
         description="Number of listings to skip for pagination.",
     ),
     db: Session = Depends(get_db),
@@ -202,6 +204,7 @@ def list_favorites(
     offset: int = Query(
         default=0,
         ge=0,
+        le=MAX_PAGE_OFFSET,
         description="Number of favorite listings to skip for pagination.",
     ),
     current_user: User = Depends(get_current_user),
