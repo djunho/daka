@@ -142,9 +142,23 @@ export type ApiListingPage = {
   offset: number
 }
 
-export type ApiPublicProfile = ApiPublicUser & {
+// Presence, as the backend reports it on profiles and friends (#142):
+// online means an authenticated request in the last 3 minutes. last_seen is
+// null for someone who was never seen.
+export type ApiPresence = {
+  is_online: boolean
+  last_seen: string | null
+}
+
+export type ApiPublicProfile = ApiPublicUser & ApiPresence & {
   created_at: string
   listings: ApiListingSummary[]
+}
+
+export type ApiFriend = ApiPublicUser & ApiPresence
+
+export type ApiFriendStatus = {
+  is_friend: boolean
 }
 
 // --- The four auth calls, named so components read like prose. ---
@@ -301,6 +315,26 @@ export function apiDeleteListingImage(id: number, imageId: number) {
 // Requires a session: the backend answers 401 without one.
 export function apiGetPublicProfile(id: number) {
   return request<ApiPublicProfile>(`/users/${id}`)
+}
+
+// --- Friends (#143). A friendship is mutual and needs no approval: adding
+// or removing it changes it for both users at once. ---
+
+// Only an active friendship counts: a removed one answers false, as does
+// asking about yourself.
+export function apiGetFriendStatus(userId: number, signal?: AbortSignal) {
+  return request<ApiFriendStatus>(`/friends/${userId}/status`, { signal })
+}
+
+// 409 when already friends, 404 when the user does not exist or deleted
+// their account. Adding a removed friendship again reactivates it.
+export function apiAddFriend(userId: number) {
+  return request<ApiFriend>(`/friends/${userId}`, { method: 'POST' })
+}
+
+// 404 when there is no active friendship (the other user may have removed it).
+export function apiRemoveFriend(userId: number): Promise<void> {
+  return request<void>(`/friends/${userId}`, { method: 'DELETE' })
 }
 
 export type ApiNegotiationState = {

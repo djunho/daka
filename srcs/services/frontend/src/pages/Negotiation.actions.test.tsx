@@ -128,6 +128,8 @@ describe('Negotiation actions', () => {
     vi.mocked(apiCompleteNegotiation).mockReset()
     vi.mocked(apiGetPublicProfile).mockReset().mockResolvedValue({
       ...INTERESTED,
+      is_online: false,
+      last_seen: null,
       created_at: '',
       listings: [{ ...LISTING, id: 7, title: 'Livro', owner: INTERESTED }],
     } as ApiPublicProfile)
@@ -248,7 +250,7 @@ describe('Negotiation actions', () => {
     })
 
     it('can offer no listing, also when the user has none', async () => {
-      vi.mocked(apiGetPublicProfile).mockResolvedValue({ ...INTERESTED, created_at: '', listings: [] } as ApiPublicProfile)
+      vi.mocked(apiGetPublicProfile).mockResolvedValue({ ...INTERESTED, is_online: false, last_seen: null, created_at: '', listings: [] } as ApiPublicProfile)
       const select = await openForm()
 
       await userEvent.selectOptions(select, 'Não oferecer nenhum anúncio')
