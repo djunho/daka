@@ -18,7 +18,7 @@ export default function OnlineBadge({
   className = '',
 }: OnlineBadgeProps) {
   const label = online ? 'Online' : 'Offline'
-  const color = online ? 'bg-emerald-500' : 'bg-zinc-400'
+  const color = online ? 'bg-online' : 'bg-offline'
 
   return (
     <span className={`inline-flex items-center gap-1.5 ${className}`.trim()}>
