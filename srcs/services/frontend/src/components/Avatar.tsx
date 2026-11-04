@@ -21,6 +21,7 @@ export default function Avatar({
     size = 'lg',
     online,
 }: AvatarProps) {
+    // Photo if available, fallback to the initial letter.
     const avatarElement = avatar ? (
       <img
         src={avatar}
@@ -40,15 +41,16 @@ export default function Avatar({
       return avatarElement
     }
 
-    {/* Avatar: Photo if available, fallback to initial letter */}
+    // The wrapper becomes the root element, so it needs the same shrink-0 as
+    // the avatar: otherwise a flex row with long text squeezes it.
     return (
-       <span className="relative inline-flex">
+      <span className="relative inline-flex shrink-0">
         {avatarElement}
         <OnlineBadge
           online={online}
           size={size}
           className="absolute right-0 bottom-0 translate-x-1/6 translate-y-1/6 bg-surface rounded-full p-0.5"
         />
-        </span>
+      </span>
     )
 }
