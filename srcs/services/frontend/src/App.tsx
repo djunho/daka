@@ -14,6 +14,7 @@ import Publish from './pages/Publish'
 import EditListing from './pages/EditListing'
 import Negotiation from './pages/Negotiation'
 import Negotiations from './pages/Negotiations'
+import Friends from './pages/Friends'
 
 // The router reads the address bar and decides which page component to show.
 // BrowserRouter enables it; Routes picks the first Route whose path matches.
@@ -72,6 +73,11 @@ export default function App() {
             <Route path="/negotiations/:id" element={
                 <RequireAuth>
                     <Negotiation />
+                </RequireAuth>
+            } />
+            <Route path="/friends" element={
+                <RequireAuth>
+                    <Friends />
                 </RequireAuth>
             } />
 
