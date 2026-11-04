@@ -1,8 +1,9 @@
 """Handshake security tests for negotiation WebSockets."""
 
 from datetime import timedelta
+import asyncio
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -23,6 +24,19 @@ from app.models import (
     UserSession,
 )
 from app.security import hash_session_token, utcnow
+from app.routers.websockets import _reject
+
+
+class RejectionProtocolTestCase(unittest.TestCase):
+    def test_rejection_accepts_before_sending_close_code(self) -> None:
+        for code in (4401, 4403, 4404):
+            with self.subTest(code=code):
+                websocket = AsyncMock()
+                asyncio.run(_reject(websocket, code))
+                self.assertEqual(
+                    websocket.method_calls,
+                    [unittest.mock.call.accept(), unittest.mock.call.close(code=code)],
+                )
 
 
 class NegotiationWebSocketTestCase(unittest.TestCase):
