@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, type FormEvent } from 'react'
 import OnlineBadge, { type PresenceStatus } from './OnlineBadge'
 import ChatMessageBubble from './ChatMessageBubble'
+
+const MAX_MESSAGE_LENGTH = 250
 
 export interface NegotiationChatWidgetProps {
   negotiationId: number
@@ -21,9 +23,10 @@ export default function NegotiationChatWidget({
 }: NegotiationChatWidgetProps) {
   // State to toggle widget between minimized and expanded
   const [isMinimized, setIsMinimized] = useState(false)
+  const [inputText, setInputText] = useState('')
 
   // Mock messages for initial visual scaffolding (replaced by API data in step 3)
-  const mockMessages = [
+  const [messages, setMessages] = useState([
     {
       id: 1,
       content: 'Olá! Vi o teu anúncio e tenho muito interesse na troca. Ainda está disponível?',
@@ -36,6 +39,7 @@ export default function NegotiationChatWidget({
       content: 'Olá! Sim, ainda está disponível. Podes ver as especificações completas no anúncio.',
       createdAt: '14:35',
       isOwn: true,
+      senderName: undefined,
     },
     {
       id: 3,
@@ -44,7 +48,39 @@ export default function NegotiationChatWidget({
       isOwn: false,
       senderName: interlocutorName,
     },
-  ]
+  ])
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(null)
+
+  // Auto-scroll to the bottom whenever a new message is added.
+  // Reference: https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollIntoView
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  // Measure code-point length safely for UTF-16 code units (e.g. emojis)
+  const charCount = [...inputText].length
+  const isOverLimit = charCount > MAX_MESSAGE_LENGTH
+  const canSend = charCount > 0 && !isOverLimit
+
+  const handleSendMessage = (e: FormEvent) => {
+    e.preventDefault()
+    const trimmed = inputText.trim()
+    if (!trimmed || [...trimmed].length > MAX_MESSAGE_LENGTH) return
+
+    // Append locally for immediate visual verification
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now(),
+        content: trimmed,
+        createdAt: new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }),
+        isOwn: true,
+        senderName: undefined,
+      },
+    ])
+    setInputText('')
+  }
 
   return (
     <aside
@@ -91,7 +127,7 @@ export default function NegotiationChatWidget({
         <div className="flex flex-col h-80 bg-paper">
           {/* Scrollable message thread area */}
           <div className="flex-1 p-3 overflow-y-auto space-y-3 flex flex-col">
-            {mockMessages.map((msg) => (
+            {messages.map((msg) => (
               <ChatMessageBubble
                 key={msg.id}
                 content={msg.content}
@@ -100,24 +136,41 @@ export default function NegotiationChatWidget({
                 senderName={msg.senderName}
               />
             ))}
+            <div ref={messagesEndRef} />
           </div>
 
-          {/* Basic message input row */}
-          <div className="p-2.5 bg-surface border-t border-line flex gap-2">
-            <input
-              type="text"
-              placeholder="Escreve uma mensagem..."
-              disabled
-              className="flex-1 px-3 py-1.5 bg-paper border border-line rounded-xl text-xs text-ink placeholder:text-muted opacity-60 cursor-not-allowed"
-            />
-            <button
-              type="button"
-              disabled
-              className="px-3 py-1.5 bg-brand text-white text-xs font-semibold rounded-xl opacity-60 cursor-not-allowed"
-            >
-              Enviar
-            </button>
-          </div>
+          {/* Interactive message input form */}
+          <form
+            onSubmit={handleSendMessage}
+            className="p-2.5 bg-surface border-t border-line flex flex-col gap-1.5"
+          >
+            <div className="flex gap-2 items-center">
+              {/* Allow typing/pasting beyond 250 chars so users see the overflow in red (X/250) instead of silent truncation */}
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder="Escreve uma mensagem..."
+                maxLength={MAX_MESSAGE_LENGTH + 50}
+                className="flex-1 px-3 py-1.5 bg-paper border border-line focus:border-brand focus:outline-none rounded-xl text-xs text-ink placeholder:text-muted transition-colors"
+              />
+              <button
+                type="submit"
+                disabled={!canSend}
+                className="px-3 py-1.5 bg-brand hover:bg-brand-hover text-white text-xs font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+              >
+                Enviar
+              </button>
+            </div>
+
+            {/* Helper text and character counter */}
+            <div className="flex justify-between items-center text-[10px] text-muted px-0.5 select-none">
+              <span>Pressiona Enter para enviar</span>
+              <span className={isOverLimit ? 'text-accent font-semibold' : ''}>
+                {charCount}/{MAX_MESSAGE_LENGTH}
+              </span>
+            </div>
+          </form>
         </div>
       )}
     </aside>
