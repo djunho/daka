@@ -107,7 +107,7 @@ Semantic names allow the visual identity to change without affecting component c
 # OnlineBadge
 
 - Reusable presence indicator for online state.
-- Colors: green for online (`bg-emerald-500`) and gray for offline (`bg-zinc-400`).
+- Colors: green for online (`bg-online`) and gray for offline (`bg-offline`), from the `--color-online` and `--color-offline` theme tokens.
 - Always includes accessible text (`Online` / `Offline`), with optional visible label.
 - Supports Avatar sizes: `xs`, `sm`, `lg`.
 
