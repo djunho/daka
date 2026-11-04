@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type FormEvent } from 'react'
-import OnlineBadge, { type PresenceStatus } from './OnlineBadge'
+import OnlineBadge from './OnlineBadge'
 import ChatMessageBubble from './ChatMessageBubble'
 
 const MAX_MESSAGE_LENGTH = 250
@@ -7,7 +7,7 @@ const MAX_MESSAGE_LENGTH = 250
 export interface NegotiationChatWidgetProps {
   negotiationId: number
   interlocutorName: string
-  interlocutorStatus?: PresenceStatus
+  interlocutorOnline?: boolean
   onClose?: () => void
 }
 
@@ -18,7 +18,7 @@ export interface NegotiationChatWidgetProps {
 export default function NegotiationChatWidget({
   negotiationId,
   interlocutorName,
-  interlocutorStatus = 'online',
+  interlocutorOnline = false,
   onClose,
 }: NegotiationChatWidgetProps) {
   // State to toggle widget between minimized and expanded
@@ -90,7 +90,7 @@ export default function NegotiationChatWidget({
       {/* Widget header bar */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-brand text-white select-none">
         <div className="flex items-center gap-2 min-w-0">
-          <OnlineBadge status={interlocutorStatus} size="md" />
+          <OnlineBadge online={interlocutorOnline} size="sm" />
           <h3 className="font-semibold text-sm truncate">
             {interlocutorName}
           </h3>
