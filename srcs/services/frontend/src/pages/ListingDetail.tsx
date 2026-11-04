@@ -1,19 +1,27 @@
-import { useEffect, useState } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ApiError, apiDeleteListing, apiGetListing, type ApiListingDetail } from '../lib/api'
+import { useEffect, useId, useRef, useState } from 'react'
+import { useParams, Link, useLocation, useNavigate } from 'react-router-dom'
+import { ApiError, apiCreateNegotiation, apiDeleteListing, apiGetListing, type ApiListingDetail } from '../lib/api'
+import { getPortugueseErrorMessage } from '../lib/errors'
 import { categoryLabel, conditionLabel } from '../types/listing'
 import ListingGallery from '../components/ListingGallery'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
+import MessageCard from '../components/MessageCard'
+
+// POST /negotiations answers 409 both when the listing can no longer be
+// negotiated and when this pair already has a cancelled negotiation for it.
+// The backend sends no error code, so only this detail tells them apart.
+const CANCELLED_NEGOTIATION_DETAIL = 'A cancelled negotiation cannot be reopened.'
 
 // useParams reads the :id piece from the URL (/listing/3 -> id === "3").
 // This is the router feature that lets one component serve many listings.
 export default function ListingDetail() {
   const { id } = useParams()
-  const { user: currentUser } = useAuth()
+  const { user: currentUser, loading: authLoading, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   // Anything that is not a positive whole number ("/listing/abc") can never
   // exist, so it goes straight to "not found" without asking the backend.
   const listingId = Number(id)
@@ -29,6 +37,28 @@ export default function ListingDetail() {
   const [removing, setRemoving] = useState<boolean>(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
 
+  // Start-negotiation flow: the request in flight and its error.
+  const [starting, setStarting] = useState<boolean>(false)
+  const [startError, setStartError] = useState<string | null>(null)
+  const startErrorId = useId()
+  const startErrorRef = useRef<HTMLParagraphElement>(null)
+  // Bumped by each new request and when the user leaves this listing, so only
+  // the latest request can act, and a late response does not pull them to a
+  // negotiation after they have already moved on.
+  const startRequest = useRef(0)
+
+  // The button is disabled during the request, which drops the keyboard focus.
+  // Moving it to the error gives it a predictable place to land.
+  useEffect(() => {
+    if (startError) startErrorRef.current?.focus()
+  }, [startError])
+
+  useEffect(() => {
+    return () => {
+      startRequest.current += 1
+    }
+  }, [listingId])
+
   useEffect(() => {
     if (!validId) return
 
@@ -42,6 +72,8 @@ export default function ListingDetail() {
     setLoading(true)
     setNotFound(false)
     setError(null)
+    setStarting(false)
+    setStartError(null)
     apiGetListing(listingId)
       .then((data) => {
         if (ignore) return
@@ -88,32 +120,72 @@ export default function ListingDetail() {
       })
   }
 
+  function goToLogin() {
+    // Login sends the user back here; nothing is created until they click again.
+    navigate('/login', { state: { from: location.pathname } })
+  }
+
+  function handleStartNegotiation() {
+    if (starting) return
+    if (!currentUser) {
+      goToLogin()
+      return
+    }
+
+    const request = ++startRequest.current
+    setStarting(true)
+    setStartError(null)
+    apiCreateNegotiation(listingId)
+      .then((negotiation) => {
+        if (startRequest.current !== request) return
+        navigate(`/negotiations/${negotiation.id}`)
+      })
+      .catch(async (err) => {
+        if (startRequest.current !== request) return
+        setStarting(false)
+
+        if (err instanceof ApiError && err.status === 401) {
+          // The session expired after the page loaded. Clear it first, or the
+          // login page would see a user and send them straight back here.
+          await logout()
+          // The user may have left the page while logout was running.
+          if (startRequest.current !== request) return
+          goToLogin()
+          return
+        }
+        if (err instanceof ApiError && err.status === 404) {
+          setNotFound(true)
+          return
+        }
+        if (err instanceof ApiError && err.status === 409 && err.message === CANCELLED_NEGOTIATION_DETAIL) {
+          setStartError('A tua negociação deste anúncio foi cancelada e não pode ser reaberta.')
+          return
+        }
+        setStartError(getPortugueseErrorMessage(
+          err,
+          'Não foi possível iniciar a negociação. Tenta outra vez.',
+          { 409: 'Este anúncio já não está disponível para negociação.' },
+        ))
+      })
+  }
+
   if (!validId || notFound) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
-          <h1 className="font-display text-2xl font-bold text-ink mb-2">
-            Anúncio não encontrado
-          </h1>
-          <p className="text-sm text-muted mb-6">
-            O anúncio que procuras não existe ou já foi removido.
-          </p>
-          <Link className={buttonClasses()} to="/">Voltar ao início</Link>
-        </div>
-      </main>
+      <MessageCard
+        title="Anúncio não encontrado"
+        text="O anúncio que procuras não existe ou já foi removido."
+        action={<Link className={buttonClasses()} to="/">Voltar ao início</Link>}
+      />
     )
   }
 
   if (error) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
-          <p role="alert" className="text-sm text-muted mb-6">
-            {error}
-          </p>
-          <Link className={buttonClasses()} to="/">Voltar ao início</Link>
-        </div>
-      </main>
+      <MessageCard
+        alert
+        text={error}
+        action={<Link className={buttonClasses()} to="/">Voltar ao início</Link>}
+      />
     )
   }
 
@@ -237,6 +309,32 @@ export default function ListingDetail() {
                     Remover anúncio
                   </Button>
                 </div>
+              </div>
+            )}
+            {/* Waits for the session check: until then every visitor looks
+                logged out, and the owner would see this flash. */}
+            {!isOwner && !authLoading && (
+              <div className="mt-4 pt-4 border-t border-line space-y-3">
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  loading={starting}
+                  onClick={handleStartNegotiation}
+                  aria-describedby={startError ? startErrorId : undefined}
+                >
+                  {starting ? 'A abrir negociação…' : 'Iniciar negociação'}
+                </Button>
+                {startError && (
+                  <p
+                    id={startErrorId}
+                    ref={startErrorRef}
+                    tabIndex={-1}
+                    role="alert"
+                    className="text-sm text-accent"
+                  >
+                    {startError}
+                  </p>
+                )}
               </div>
             )}
           </div>

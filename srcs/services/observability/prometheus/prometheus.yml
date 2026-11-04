@@ -65,6 +65,7 @@ scrape_configs:
       - targets:
           - https://nginx/healthz
           - https://nginx/api/health
+          - https://nginx/api/health/db
           - https://nginx/
     relabel_configs:
       - source_labels: [__address__]

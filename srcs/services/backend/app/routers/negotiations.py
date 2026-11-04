@@ -22,6 +22,7 @@ from app.models import (
 from app.schemas import (
     DEFAULT_NEGOTIATIONS_PAGE_SIZE,
     MAX_NEGOTIATIONS_PAGE_SIZE,
+    MAX_PAGE_OFFSET,
     ListingDetailOut,
     ListingSummaryOut,
     NegotiationCreateIn,
@@ -362,7 +363,7 @@ def list_negotiations(
         ge=1,
         le=MAX_NEGOTIATIONS_PAGE_SIZE,
     ),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=MAX_PAGE_OFFSET),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> NegotiationPageOut:

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
 import { buttonClasses } from '../components/Button'
+import MessageCard from '../components/MessageCard'
 import ListingCard, { EMPTY_STATE_CLASSES, LISTING_GRID_CLASSES } from '../components/ListingCard'
 import { ApiError, apiGetPublicProfile, type ApiPublicProfile } from '../lib/api'
 
@@ -62,34 +63,21 @@ export default function UserProfile() {
 
   if (!validId || notFound) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
-          <h1 className="font-display text-2xl font-bold text-ink mb-2">
-            Utilizador não encontrado
-          </h1>
-          <p className="text-sm text-muted mb-6">
-            O utilizador que procuras não existe ou foi removido.
-          </p>
-          <Link className={buttonClasses()} to="/">
-            Voltar ao início
-          </Link>
-        </div>
-      </main>
+      <MessageCard
+        title="Utilizador não encontrado"
+        text="O utilizador que procuras não existe ou foi removido."
+        action={<Link className={buttonClasses()} to="/">Voltar ao início</Link>}
+      />
     )
   }
 
   if (error) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="bg-surface border border-line rounded-2xl p-8 text-center shadow-sm">
-          <p role="alert" className="text-sm text-muted mb-6">
-            {error}
-          </p>
-          <Link className={buttonClasses()} to="/">
-            Voltar ao início
-          </Link>
-        </div>
-      </main>
+      <MessageCard
+        alert
+        text={error}
+        action={<Link className={buttonClasses()} to="/">Voltar ao início</Link>}
+      />
     )
   }
 

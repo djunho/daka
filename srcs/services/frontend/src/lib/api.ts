@@ -33,9 +33,9 @@ export class ApiError extends Error {
 // The core request function. `T` is whatever shape the caller expects back.
 export async function request<T>(
   path: string,
-  options: { method?: string; body?: unknown } = {},
+  options: { method?: string; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<T> {
-  const { method = 'GET', body } = options
+  const { method = 'GET', body, signal } = options
 
   // FormData (file uploads) is sent as-is: the browser writes the multipart
   // Content-Type itself, including the "boundary" that separates the parts.
@@ -50,8 +50,12 @@ export async function request<T>(
       credentials: 'include',
       headers: body && !isForm ? { 'Content-Type': 'application/json' } : {},
       body: isForm ? body : body ? JSON.stringify(body) : undefined,
+      signal,
     })
-  } catch {
+  } catch (err) {
+    // The caller cancelled the request on purpose: pass that on unchanged,
+    // instead of reporting it as a connection problem.
+    if (signal?.aborted) throw err
     // fetch only rejects on a network-level failure (server down, no
     // connection) -- not on a 4xx/5xx, which resolve normally. Give the UI a
     // status 0 it can recognise as "could not reach the server".
@@ -293,4 +297,121 @@ export function apiDeleteListingImage(id: number, imageId: number) {
 // Requires a session: the backend answers 401 without one.
 export function apiGetPublicProfile(id: number) {
   return request<ApiPublicProfile>(`/users/${id}`)
+}
+
+export type ApiNegotiationState = {
+  id: number
+  state_name: 'Open' | 'Agreed' | 'Completed' | 'Cancelled' | 'Unavailable'
+}
+
+export type ApiProposalState = {
+  id: number
+  state_name: 'Pending' | 'Accepted' | 'Rejected' | 'Withdrawn' | 'NotSelected' | 'ItemUnavailable'
+}
+
+export type ApiProposal = {
+  id: number
+  offered_listing: ApiListingSummary | null
+  state: ApiProposalState
+  created_at: string
+  responded_at: string | null
+}
+
+export type ApiNegotiationDetail = {
+  id: number
+  requested_listing: ApiListingDetail
+  owner: ApiPublicUser
+  interested_user: ApiPublicUser
+  state: ApiNegotiationState
+  proposals: ApiProposal[]
+  cancelled_by: ApiPublicUser | null
+  cancelled_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ApiNegotiationSummary = {
+  id: number
+  requested_listing: ApiListingSummary
+  other_participant: ApiPublicUser
+  state: ApiNegotiationState
+  // The accepted proposal, else the most recent pending one.
+  active_proposal: ApiProposal | null
+  created_at: string
+  updated_at: string
+}
+
+export type ApiNegotiationPage = {
+  items: ApiNegotiationSummary[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type NegotiationRole = 'owner' | 'interested'
+
+export type ListNegotiationsParams = {
+  role?: NegotiationRole
+  state?: ApiNegotiationState['state_name']
+  limit?: number
+  offset?: number
+}
+
+// `signal` lets the page cancel a request it no longer needs.
+export function apiListNegotiations(params: ListNegotiationsParams = {}, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  if (params.role) query.set('role', params.role)
+  if (params.state) query.set('state', params.state)
+  // Compare with undefined, because 0 is a valid offset.
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+
+  const qs = query.toString()
+  return request<ApiNegotiationPage>(qs ? `/negotiations?${qs}` : '/negotiations', { signal })
+}
+
+// `signal` lets the page cancel a request it no longer needs.
+export function apiGetNegotiation(id: number, signal?: AbortSignal) {
+  return request<ApiNegotiationDetail>(`/negotiations/${id}`, { signal })
+}
+
+// offeredListingId is required on purpose: null means "offering no listing",
+// which the backend accepts, while leaving the field out is a 422.
+export function apiCreateProposal(negotiationId: number, offeredListingId: number | null) {
+  return request<ApiProposal>(`/negotiations/${negotiationId}/proposals`, {
+    method: 'POST',
+    body: { offered_listing_id: offeredListingId },
+  })
+}
+
+// These three answer with the proposal alone. Other parts of the negotiation
+// change with them, so callers load the negotiation again afterwards.
+export function apiAcceptProposal(id: number) {
+  return request<ApiProposal>(`/proposals/${id}/accept`, { method: 'PATCH' })
+}
+
+export function apiRejectProposal(id: number) {
+  return request<ApiProposal>(`/proposals/${id}/reject`, { method: 'PATCH' })
+}
+
+export function apiWithdrawProposal(id: number) {
+  return request<ApiProposal>(`/proposals/${id}/withdraw`, { method: 'PATCH' })
+}
+
+export function apiCancelNegotiation(id: number) {
+  return request<ApiNegotiationDetail>(`/negotiations/${id}/cancel`, { method: 'PATCH' })
+}
+
+export function apiCompleteNegotiation(id: number) {
+  return request<ApiNegotiationDetail>(`/negotiations/${id}/complete`, { method: 'PATCH' })
+}
+
+// Creates the negotiation, or returns the one this user already has for this
+// listing. The backend answers 201 or 200 with the same body, so callers only
+// need the id.
+export function apiCreateNegotiation(listingId: number) {
+  return request<ApiNegotiationDetail>('/negotiations', {
+    method: 'POST',
+    body: { listing_id: listingId },
+  })
 }
