@@ -4,6 +4,7 @@ import Avatar from '../components/Avatar'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
 import MessageCard from '../components/MessageCard'
+import NegotiationChatWidget from '../components/NegotiationChatWidget'
 import ProposalForm from '../components/ProposalForm'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -117,6 +118,7 @@ export default function Negotiation() {
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState<boolean>(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [chatOpen, setChatOpen] = useState<boolean>(false)
 
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const [proposalFormOpen, setProposalFormOpen] = useState<boolean>(false)
@@ -430,6 +432,13 @@ export default function Negotiation() {
 
         {(stateName === 'Open' || stateName === 'Agreed') && (
           <div className="flex flex-wrap items-center gap-3">
+            <Button
+              size="sm"
+              variant={chatOpen ? 'secondary' : 'primary'}
+              onClick={() => setChatOpen((v) => !v)}
+            >
+              💬 {chatOpen ? 'Fechar conversa' : 'Conversar'}
+            </Button>
             {stateName === 'Agreed' && isInterested && hasAccepted && (
               <Button variant="primary" size="sm" disabled={busy} onClick={() => askToConfirm({ kind: 'complete' })}>
                 Confirmar conclusão
@@ -504,6 +513,18 @@ export default function Negotiation() {
             setActionError(null)
           }}
         />
+
+        {chatOpen && (
+          <NegotiationChatWidget
+            negotiationId={negotiation.id}
+            interlocutorName={
+              isOwner
+                ? negotiation.interested_user.user_name
+                : negotiation.owner.user_name
+            }
+            onClose={() => setChatOpen(false)}
+          />
+        )}
       </main>
     )
   }

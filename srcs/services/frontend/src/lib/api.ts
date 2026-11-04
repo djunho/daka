@@ -1,3 +1,5 @@
+import { type ApiChatMessagePage } from '../types/chat'
+
 // A thin wrapper around fetch for talking to our backend.
 //
 // Everything the frontend sends to the API goes through here, for three
@@ -481,4 +483,23 @@ export function apiCreateNegotiation(listingId: number) {
     method: 'POST',
     body: { listing_id: listingId },
   })
+}
+
+/**
+ * Fetch paginated chat messages for a negotiation.
+ * GET /api/negotiations/{negotiation_id}/messages?limit=50&before_id=...
+ */
+export function apiListNegotiationMessages(
+  negotiationId: number,
+  options: { limit?: number; before_id?: number | null } = {},
+) {
+  const params = new URLSearchParams()
+  if (options.limit)
+      params.set('limit', String(options.limit))
+  if (options.before_id)
+      params.set('before_id', String(options.before_id))
+
+  const query = params.toString()
+  const path = `/negotiations/${negotiationId}/messages${query ? `?${query}` : ''}`
+  return request<ApiChatMessagePage>(path)
 }
