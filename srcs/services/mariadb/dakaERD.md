@@ -23,6 +23,7 @@ erDiagram
     FRIENDSHIPS {
         INT user_id PK,FK
         INT friend_id PK,FK
+        ENUM status "accepted/removed"
         TIMESTAMP created_at
     }
 
@@ -87,8 +88,7 @@ erDiagram
     }
 
     USERS ||--o{ LISTINGS : publishes
-    USERS ||--o{ FRIENDSHIPS : adds
-    USERS ||--o{ FRIENDSHIPS : added
+    USERS ||--o{ FRIENDSHIPS : participates
     CATEGORIES ||--o{ LISTINGS : categorizes
     CONDITIONS ||--o{ LISTINGS : condition
     LISTINGS_STATES ||--o{ LISTINGS : state
@@ -149,6 +149,7 @@ erDiagram
     FRIENDSHIPS {
         INT user_id PK,FK
         INT friend_id PK,FK
+        ENUM status "accepted/removed"
         TIMESTAMP created_at
     }
 

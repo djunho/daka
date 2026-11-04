@@ -87,8 +87,18 @@ Migration notes
 ALTER TABLE users ADD COLUMN deleted_at DATETIME NULL AFTER updated_at;
 ```
 
-- Friend presence and contacts add `users.last_seen` and the `friendships`
-  table. Existing MariaDB volumes must apply:
+- Friend presence and symmetric contacts add `users.last_seen` and the
+  `friendships` table. Existing MariaDB volumes that already applied the
+  previous unilateral schema must apply:
+
+```sql
+ALTER TABLE friendships
+	DROP CONSTRAINT chk_friendship_not_self,
+	ADD COLUMN status ENUM('accepted', 'removed') NOT NULL DEFAULT 'accepted',
+	ADD CONSTRAINT chk_friendship_order CHECK (user_id < friend_id);
+```
+
+For existing volumes that have not yet applied the friends schema, apply:
 
 ```sql
 ALTER TABLE users ADD COLUMN last_seen DATETIME NULL DEFAULT NULL AFTER updated_at;
@@ -96,13 +106,19 @@ ALTER TABLE users ADD COLUMN last_seen DATETIME NULL DEFAULT NULL AFTER updated_
 CREATE TABLE friendships (
 	user_id INT NOT NULL,
 	friend_id INT NOT NULL,
+	status ENUM('accepted', 'removed') NOT NULL DEFAULT 'accepted',
 	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	PRIMARY KEY (user_id, friend_id),
-	CONSTRAINT chk_friendship_not_self CHECK (user_id <> friend_id),
+	CONSTRAINT chk_friendship_order CHECK (user_id < friend_id),
 	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
 	FOREIGN KEY (friend_id) REFERENCES users(id) ON DELETE CASCADE
 );
 ```
+
+The pair must always be normalized before insert or lookup (`user_id <
+friend_id`). Adding a friendship creates or reactivates the row with
+`status = 'accepted'`; removing it sets `status = 'removed'` without deleting
+the row. Friend lists include only rows with `status = 'accepted'`.
 
 License
 - Follow the repository LICENSE in the project root.

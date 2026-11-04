@@ -15,15 +15,16 @@ CREATE TABLE users (
 	deleted_at 		DATETIME NULL
 );
 
--- A friendship is a unilateral contact-list entry. The composite primary key
--- prevents adding the same friend twice, while the CHECK prevents self-links.
+-- A friendship is symmetric and stored once with the lower user id first.
+-- Removing a friendship keeps the row so it can be reactivated later.
 CREATE TABLE friendships (
 	user_id			INT NOT NULL,
 	friend_id		INT NOT NULL,
+	status			ENUM('accepted', 'removed') NOT NULL DEFAULT 'accepted',
 	created_at		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
 	PRIMARY KEY (user_id, friend_id),
-	CONSTRAINT chk_friendship_not_self CHECK (user_id <> friend_id),
+	CONSTRAINT chk_friendship_order CHECK (user_id < friend_id),
 	FOREIGN KEY (user_id)
 		REFERENCES users(id)
 		ON DELETE CASCADE,
