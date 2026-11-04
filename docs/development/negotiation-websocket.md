@@ -1,4 +1,4 @@
-# Negotiation WebSocket: authentication, connections and message persistence
+# Negotiation WebSocket: authentication, persistence and local broadcast
 
 The backend endpoint is `/ws/negotiations/{negotiation_id}`. Its expected
 public path through the infrastructure proxy is
@@ -69,18 +69,21 @@ last connection leaves. Other unexpected exceptions propagate after cleanup.
 The manager must be used only from the application's event loop, not from worker
 threads. Dictionary/set mutations contain no awaits; registration takes place
 after the awaited acceptance using the current room collection. No mutable room
-collection is exposed. Future broadcast work must take a snapshot before iterating
-over connections across awaits.
+collection is exposed. Broadcast takes a snapshot of the requested room before
+iterating over connections across awaits. Network sends never hold a global
+manager/room lock. A private lock per connection serialises its message and error
+writes, and is removed with that connection.
 
 State is held only in memory, independently in each backend process. Restarts and
 development reloads discard it. Multiple workers or replicas do not share rooms or
 counts; cross-process delivery requires a separate future design. There is no
-connection table, Redis, broker, message persistence, broadcast, or frontend
-reconnection in this component.
+connection table, Redis, broker or frontend reconnection. Message persistence
+remains separate from delivery and connection management.
 
 A broken network connection is removed when the server detects the disconnect or
 a transport error. The manager itself does not detect silent network failures or
-implement heartbeat/timeouts.
+implement a receive heartbeat. Delivery has bounded send/close timeouts as
+described below.
 
 ## Diagnostics
 
@@ -156,11 +159,80 @@ fail after a successful write. Database failures roll back and return a controll
 error; logs contain ids and the exception class, not SQL, parameters or exception
 text. There is no automatic retry of the insert.
 
-The next broadcast ticket will consume the committed result. This ticket sends
-no success acknowledgement and defines no `message.created` event. It adds no
-history endpoint; terminal states reject writes without deleting past messages.
+After the worker returns, the endpoint passes the committed result to
+`manager.broadcast`. It adds no history endpoint; terminal states reject writes
+without deleting past messages.
 There is no deduplication across separate client sends/retries: at most one
 insert occurs per processing attempt.
+
+## Message output and delivery
+
+All connections in the message's negotiation, including the submitting connection
+and the sender's other tabs/devices, receive the same event:
+
+```json
+{
+  "type": "message.created",
+  "message": {
+    "id": 123,
+    "negotiation_id": 20,
+    "sender_id": 7,
+    "content": "O comando é o original?",
+    "created_at": "2026-10-28T14:30:00Z"
+  }
+}
+```
+
+`MessageCreatedData` is the public message representation available for reuse by
+future REST history. It maps persisted `msg_sender`/`msg` to `sender_id`/`content`
+and serialises datetimes as ISO 8601 UTC with a `Z` suffix. Naive database
+datetimes follow the project's UTC convention. No sender profile, session or
+cookie data is included. `message.created` is the sender's confirmation; the
+frontend must use its persisted id/timestamp rather than treat an optimistic
+placeholder as a confirmed message. There is no separate acknowledgement event.
+
+`broadcast` accepts a `PersistedMessage` returned by the commit-confirmed worker,
+not a raw input event or a separate room argument. Public schema validation
+requires positive ids and a timestamp. This typed boundary trusts the persistence
+worker's commit guarantee; delivery does not query the database or commit again.
+The event is serialised once, then sent to a stable snapshot of only that room.
+An absent room is harmless. Connections added after the snapshot do not receive
+that event; a connection removed before its send begins is skipped. An already
+in-flight send may finish while that connection is being removed.
+
+Recipients are sent to concurrently so a slow connection does not delay healthy
+recipients' writes. Each network send has a five-second timeout, after acquiring
+its connection lock. Send failure or timeout unregisters only that socket and
+attempts to close it with `1011`, with a separate one-second close timeout.
+Repeated removal and already-closed transports are harmless. If the originating
+socket is removed, its endpoint stops processing additional payloads.
+
+Serialization/preparation failures produce a controlled `delivery_failed` error
+to the origin when that connection is still usable. Individual failed recipients
+are removed without failing delivery to healthy recipients. Neither case rolls
+back, deletes or retries the committed message. Broadcast logs include negotiation
+and message ids, delivered counts and removed counts, never the payload or raw
+exception text. Expected closed-transport failures use INFO, timeouts WARNING,
+and unexpected failures ERROR.
+
+## Ordering and recovery limitations
+
+Within one submitting connection, its receive loop processes one message and
+awaits delivery before processing the next. Concurrent broadcasts and errors
+share each recipient's send lock, so writes on that connection never overlap.
+There is no room-wide ordering queue: delivery order across concurrent senders
+need not match message-id/commit order or be identical across recipients. No
+ordering or delivery guarantee is made across backend processes or replicas.
+
+This is best-effort, process-local live delivery, not durable delivery or an
+exactly-once protocol. A successful send means the transport accepted the write,
+not that a user read it. Clients should identify messages by persisted id and
+must not blindly resend after a delivery failure, which can create another row.
+
+Undelivered messages remain in the database. The REST history endpoint and
+frontend reconnection/recovery are still pending separate tickets: recovery is
+not available to clients yet. Multiple backend processes will require a shared
+broker or equivalent design; none is introduced here.
 
 ## Frequency limit
 
@@ -179,7 +251,7 @@ allowance. It is not a distributed abuse-prevention mechanism.
 Errors are sent only to the submitting connection, for example:
 
 ```json
-{"type": "error", "code": "empty_content", "message": "Content must not be empty."}
+{"type": "error", "error": {"code": "empty_content", "message": "Content must not be empty."}}
 ```
 
 | Code | Meaning / connection behaviour |
@@ -196,6 +268,19 @@ Errors are sent only to the submitting connection, for example:
 | forbidden | Sender no longer a participant; close 4403 |
 | negotiation_read_only | State disallows new messages; keep open |
 | persistence_failed | Database operation failed; keep open |
+| delivery_failed | Commit succeeded but live delivery preparation failed; keep open if usable |
+
+`WebSocketErrorEvent` provides the common envelope. The #125 contract nests
+fields under `error`, replacing #124's top-level `code`/`message`/`retry_after`.
+Clients must read `event.error.code`; rate-limit delay is
+`event.error.retry_after`. Optional `error.details` is a list of safe
+`{field, code}` validation metadata and is omitted when unused; raw input and
+exception text must never be included.
+
+Errors use the same per-connection send lock and timeout as broadcasts, but are
+sent only to their origin. Failed error delivery unregisters and closes that
+connection; it is not retried or broadcast. Fatal errors are sent before the
+corresponding close, with cleanup even when closing fails.
 
 Frontend logic should use stable codes, not compare human-readable messages.
 Authentication changes are detected on the next valid send, not via background
@@ -209,6 +294,7 @@ From `srcs/services/backend`, with backend requirements installed:
 python -m unittest discover -s tests -p 'test*websocket.py' -v
 python -m unittest discover -s tests -p 'test_connection_manager.py' -v
 python -m unittest discover -s tests -p 'test_message_processing.py' -v
+python -m unittest discover -s tests -p 'test_websocket_broadcast.py' -v
 ```
 
 The tests cover isolated rooms, multiple connections per participant, duplicate
@@ -216,6 +302,9 @@ registration, failed acceptance, repeated cleanup, rejected authorisation,
 disconnects, unexpected loop errors, cancellation, and safe logging.
 Message tests cover validation, Unicode boundaries, identity injection, current
 session/membership/state checks, rate limiting, rollback and commit-before-return.
+Broadcast tests cover serialisation, room isolation, sender devices, slow/failed
+recipients, concurrent connection changes, concurrent writes, private error
+delivery and retention of committed messages after live delivery failures.
 The opt-in MariaDB suite additionally checks that a message waits for a concurrent
 state transition and is rejected after the terminal state commits:
 

@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 import asyncio
+import threading
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -53,7 +54,7 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
         Base.metadata.create_all(engine)
         self.session_factory = sessionmaker(bind=engine, expire_on_commit=False)
         self.db = self.session_factory()
-        self.client = TestClient(app)
+        self.client = self.enterContext(TestClient(app))
 
         available = ListingState(state_name="Available")
         open_state = NegotiationState(state_name="Open")
@@ -97,6 +98,15 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
         )
         self.message_session_patch.start()
         self.manager = ConnectionManager()
+        self.disconnect_condition = threading.Condition()
+        original_disconnect = self.manager.disconnect
+
+        def observe_disconnect(*args):
+            with self.disconnect_condition:
+                original_disconnect(*args)
+                self.disconnect_condition.notify_all()
+
+        self.enterContext(patch.object(self.manager, "disconnect", side_effect=observe_disconnect))
         self.manager_patch = patch("app.routers.websockets.manager", self.manager)
         self.manager_patch.start()
         self.connect_patch = patch.object(
@@ -157,6 +167,16 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
         self.connect_mock.assert_not_called()
         self.assertEqual(self.manager.connection_count(), 0)
 
+    def _assert_no_connections(self) -> None:
+        # The shared TestClient portal keeps all sockets on one event loop.
+        # Its websocket context exit signals cancellation without joining the
+        # endpoint task, so wait on cleanup notification rather than sleeping.
+        with self.disconnect_condition:
+            self.assertTrue(self.disconnect_condition.wait_for(
+                lambda: self.manager.connection_count() == 0, timeout=2,
+            ), "WebSocket cleanup did not complete")
+        self.assertEqual(self.manager.room_count, 0)
+
     def test_interested_and_owner_are_accepted(self) -> None:
         for participant in (self.interested, self.owner):
             with self.subTest(participant=participant.user_name):
@@ -166,8 +186,9 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
                     # Client identity claims are deliberately ignored: the
                     # authenticated identity came from the cookie already.
                     websocket.send_json({"sender_id": self.outsider.id})
+                    self.assertEqual(websocket.receive_json()["error"]["code"], "invalid_payload")
         self.assertEqual(self.connect_mock.await_count, 2)
-        self.assertEqual(self.manager.room_count, 0)
+        self._assert_no_connections()
 
     def test_same_user_can_keep_two_connections_open(self) -> None:
         # Nested contexts ensure both connections are alive together. The
@@ -175,17 +196,16 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
         with self._connect(self.tokens["interested"], origin=self.origin):
             with self._connect(self.tokens["interested"], origin=self.origin):
                 self.assertEqual(self.connect_mock.await_count, 2)
-        self.assertEqual(self.manager.connection_count(), 0)
+        self._assert_no_connections()
 
     def test_invalid_payload_does_not_close_connection_or_persist(self) -> None:
         with self._connect(self.tokens["interested"], origin=self.origin) as websocket:
             websocket.send_text("{")
-            self.assertEqual(websocket.receive_json()["code"], "invalid_json")
+            self.assertEqual(websocket.receive_json()["error"]["code"], "invalid_json")
             websocket.send_json({"type": "message.send", "content": "  Olá\nparceira  "})
-            # No success event is defined until broadcast. This subsequent
-            # error is an ordering barrier proving the preceding send finished.
+            self.assertEqual(websocket.receive_json()["type"], "message.created")
             websocket.send_json({"type": "unknown"})
-            self.assertEqual(websocket.receive_json()["code"], "unsupported_event")
+            self.assertEqual(websocket.receive_json()["error"]["code"], "unsupported_event")
         self.db.expire_all()
         message = self.db.query(Message).one()
         self.assertEqual(message.msg, "Olá\nparceira")
@@ -196,42 +216,45 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
         with self._connect(self.tokens["interested"], origin=self.origin) as websocket:
             for field in ("sender_id", "negotiation_id", "id", "created_at"):
                 websocket.send_json({"type": "message.send", "content": "hi", field: 999})
-                self.assertEqual(websocket.receive_json()["code"], "invalid_payload")
+                self.assertEqual(websocket.receive_json()["error"]["code"], "invalid_payload")
         self.assertEqual(self.db.query(Message).count(), 0)
 
     def test_binary_and_oversized_payloads_are_controlled(self) -> None:
         with self._connect(self.tokens["interested"], origin=self.origin) as websocket:
             websocket.send_bytes(b"binary")
-            self.assertEqual(websocket.receive_json()["code"], "invalid_payload")
+            self.assertEqual(websocket.receive_json()["error"]["code"], "invalid_payload")
             # TestClient bypasses the Uvicorn transport size limit.
             websocket.send_text("x" * 4097)
-            self.assertEqual(websocket.receive_json()["code"], "payload_too_large")
+            self.assertEqual(websocket.receive_json()["error"]["code"], "payload_too_large")
         self.assertEqual(self.db.query(Message).count(), 0)
 
     def test_rate_limit_prevents_persistence_and_reports_retry_after(self) -> None:
         with self._connect(self.tokens["interested"], origin=self.origin) as websocket:
             for _ in range(10):
                 websocket.send_json({"type": "message.send", "content": ""})
-                self.assertEqual(websocket.receive_json()["code"], "empty_content")
+                self.assertEqual(websocket.receive_json()["error"]["code"], "empty_content")
             websocket.send_json({"type": "message.send", "content": "valid"})
             error = websocket.receive_json()
-            self.assertEqual(error["code"], "rate_limited")
-            self.assertGreater(error["retry_after"], 0)
+            self.assertEqual(error["error"]["code"], "rate_limited")
+            self.assertGreater(error["error"]["retry_after"], 0)
         self.assertEqual(self.db.query(Message).count(), 0)
 
     def test_only_first_ten_valid_messages_are_persisted_in_window(self) -> None:
         with self._connect(self.tokens["interested"], origin=self.origin) as websocket:
-            for _ in range(11):
+            for _ in range(10):
                 websocket.send_json({"type": "message.send", "content": "valid"})
-            self.assertEqual(websocket.receive_json()["code"], "rate_limited")
+                self.assertEqual(websocket.receive_json()["type"], "message.created")
+            websocket.send_json({"type": "message.send", "content": "valid"})
+            self.assertEqual(websocket.receive_json()["error"]["code"], "rate_limited")
         self.assertEqual(self.db.query(Message).count(), 10)
 
     def test_both_participants_persist_with_their_real_identity(self) -> None:
         for participant in (self.owner, self.interested):
             with self._connect(self.tokens[participant.user_name], origin=self.origin) as websocket:
                 websocket.send_json({"type": "message.send", "content": participant.user_name})
+                self.assertEqual(websocket.receive_json()["message"]["sender_id"], participant.id)
                 websocket.send_json({"type": "unknown"})
-                self.assertEqual(websocket.receive_json()["code"], "unsupported_event")
+                self.assertEqual(websocket.receive_json()["error"]["code"], "unsupported_event")
         messages = self.db.query(Message).order_by(Message.id).all()
         self.assertEqual([message.msg_sender for message in messages], [self.owner.id, self.interested.id])
 
@@ -240,7 +263,7 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
             self.negotiation.interested_user_id = self.outsider.id
             self.db.commit()
             websocket.send_json({"type": "message.send", "content": "hi"})
-            self.assertEqual(websocket.receive_json()["code"], "forbidden")
+            self.assertEqual(websocket.receive_json()["error"]["code"], "forbidden")
             with self.assertRaises(WebSocketDisconnect) as raised:
                 websocket.receive_json()
             self.assertEqual(raised.exception.code, 4403)
@@ -256,15 +279,16 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
             self.negotiation.negotiation_state_id = terminal.id
             self.db.commit()
             websocket.send_json({"type": "message.send", "content": "not saved"})
-            self.assertEqual(websocket.receive_json()["code"], "negotiation_read_only")
+            self.assertEqual(websocket.receive_json()["error"]["code"], "negotiation_read_only")
             self.assertEqual(self.db.query(Message).count(), 0)
             # Direct fixture change verifies a fresh state check per attempt;
             # this is not a supported REST transition out of Completed.
             self.negotiation.negotiation_state_id = original_state
             self.db.commit()
             websocket.send_json({"type": "message.send", "content": "saved"})
+            self.assertEqual(websocket.receive_json()["type"], "message.created")
             websocket.send_json({"type": "unknown"})
-            self.assertEqual(websocket.receive_json()["code"], "unsupported_event")
+            self.assertEqual(websocket.receive_json()["error"]["code"], "unsupported_event")
         self.assertEqual(self.db.query(Message).one().msg, "saved")
 
     def test_session_revocation_after_handshake_closes_and_cleans_up(self) -> None:
@@ -272,7 +296,7 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
             self.db.query(UserSession).filter(UserSession.user_id == self.interested.id).delete()
             self.db.commit()
             websocket.send_json({"type": "message.send", "content": "hi"})
-            self.assertEqual(websocket.receive_json()["code"], "unauthenticated")
+            self.assertEqual(websocket.receive_json()["error"]["code"], "unauthenticated")
             with self.assertRaises(WebSocketDisconnect) as raised:
                 websocket.receive_json()
             self.assertEqual(raised.exception.code, 4401)
@@ -285,11 +309,103 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
         with self._connect(self.tokens["interested"], origin=self.origin) as websocket:
             with patch("app.routers.websockets.persist_message", side_effect=MessageProcessingError("persistence_failed")):
                 websocket.send_json({"type": "message.send", "content": "first"})
-                self.assertEqual(websocket.receive_json()["code"], "persistence_failed")
+                self.assertEqual(websocket.receive_json()["error"]["code"], "persistence_failed")
             websocket.send_json({"type": "message.send", "content": "second"})
+            self.assertEqual(websocket.receive_json()["type"], "message.created")
             websocket.send_json({"type": "unknown"})
-            self.assertEqual(websocket.receive_json()["code"], "unsupported_event")
+            self.assertEqual(websocket.receive_json()["error"]["code"], "unsupported_event")
         self.assertEqual(self.db.query(Message).one().msg, "second")
+
+    def test_broadcast_reaches_sender_devices_and_owner_but_not_another_room(self) -> None:
+        second_room = Negotiation(
+            listing_id=self.negotiation.listing_id,
+            interested_user_id=self.outsider.id,
+            negotiation_state_id=self.negotiation.negotiation_state_id,
+        )
+        self.db.add(second_room)
+        self.db.commit()
+        with (
+            self._connect(self.tokens["interested"], origin=self.origin) as sender,
+            self._connect(self.tokens["interested"], origin=self.origin) as device,
+            self._connect(self.tokens["owner"], origin=self.origin) as owner,
+            self._connect(self.tokens["outsider"], origin=self.origin, room=second_room.id) as isolated,
+        ):
+            sender.send_json({"type": "message.send", "content": "  Olá  "})
+            event = sender.receive_json()
+            self.assertEqual(event["type"], "message.created")
+            self.assertEqual(device.receive_json(), event)
+            self.assertEqual(owner.receive_json(), event)
+            self.assertEqual(event["message"]["sender_id"], self.interested.id)
+            self.assertEqual(event["message"]["content"], "Olá")
+            self.assertTrue(event["message"]["created_at"].endswith("Z"))
+            # Receipt itself confirms a committed row, not just a flushed one.
+            stored = self.db.get(Message, event["message"]["id"])
+            self.assertIsNotNone(stored)
+            self.assertEqual(stored.msg, event["message"]["content"])
+            isolated.send_json({"type": "unknown"})
+            self.assertEqual(isolated.receive_json()["error"]["code"], "unsupported_event")
+
+    def test_validation_errors_are_not_broadcast_to_other_participants(self) -> None:
+        with (
+            self._connect(self.tokens["interested"], origin=self.origin) as sender,
+            self._connect(self.tokens["owner"], origin=self.origin) as owner,
+            patch.object(self.manager, "broadcast", wraps=self.manager.broadcast) as broadcast,
+        ):
+            sender.send_json({"type": "message.send", "content": ""})
+            self.assertEqual(sender.receive_json()["error"]["code"], "empty_content")
+            broadcast.assert_not_called()
+            owner.send_json({"type": "unknown"})
+            self.assertEqual(owner.receive_json()["error"]["code"], "unsupported_event")
+        self.assertEqual(self.db.query(Message).count(), 0)
+
+    def test_failed_persistence_does_not_call_broadcast(self) -> None:
+        from app.message_processing import MessageProcessingError
+
+        with self._connect(self.tokens["interested"], origin=self.origin) as websocket, patch(
+            "app.routers.websockets.persist_message", side_effect=MessageProcessingError("persistence_failed")
+        ), patch.object(self.manager, "broadcast", wraps=self.manager.broadcast) as broadcast:
+            websocket.send_json({"type": "message.send", "content": "not saved"})
+            self.assertEqual(websocket.receive_json()["error"]["code"], "persistence_failed")
+            broadcast.assert_not_called()
+        self.assertEqual(self.db.query(Message).count(), 0)
+
+    def test_serialisation_failure_keeps_committed_message_and_connection(self) -> None:
+        from app.schemas import MessageCreatedEvent
+
+        with self._connect(self.tokens["interested"], origin=self.origin) as websocket:
+            with patch.object(MessageCreatedEvent, "model_dump_json", side_effect=ValueError("private content")), self.assertLogs(
+                "app.connection_manager", level="ERROR"
+            ) as logs:
+                websocket.send_json({"type": "message.send", "content": "saved despite delivery failure"})
+                self.assertEqual(websocket.receive_json()["error"]["code"], "delivery_failed")
+            self.assertNotIn("private content", " ".join(logs.output))
+            self.assertEqual(self.db.query(Message).count(), 1)
+            self.db.rollback()
+            websocket.send_json({"type": "message.send", "content": "next"})
+            self.assertEqual(websocket.receive_json()["type"], "message.created")
+        self.assertEqual(self.db.query(Message).count(), 2)
+
+    def test_all_delivery_failures_preserve_committed_message(self) -> None:
+        with self._connect(self.tokens["interested"], origin=self.origin) as websocket:
+            server_socket = self.connect_mock.call_args.args[1]
+            with patch.object(server_socket, "send_text", side_effect=OSError("gone")):
+                websocket.send_json({"type": "message.send", "content": "saved"})
+                with self.assertRaises(WebSocketDisconnect) as raised:
+                    websocket.receive_json()
+                self.assertEqual(raised.exception.code, 1011)
+        self.assertEqual(self.db.query(Message).one().msg, "saved")
+        self.assertEqual(self.manager.room_count, 0)
+
+    def test_failed_error_send_removes_connection_without_persisting(self) -> None:
+        with self._connect(self.tokens["interested"], origin=self.origin) as websocket:
+            server_socket = self.connect_mock.call_args.args[1]
+            with patch.object(server_socket, "send_text", side_effect=OSError("gone")):
+                websocket.send_json({"type": "message.send", "content": ""})
+                with self.assertRaises(WebSocketDisconnect) as raised:
+                    websocket.receive_json()
+                self.assertEqual(raised.exception.code, 1011)
+        self.assertEqual(self.db.query(Message).count(), 0)
+        self._assert_no_connections()
 
     def test_missing_empty_invalid_and_unknown_sessions_are_4401(self) -> None:
         for token in (None, "", "invalid-token"):

@@ -64,7 +64,7 @@ class MessageContractTestCase(unittest.TestCase):
             with self.assertRaises(MessageProcessingError) as raised:
                 limiter.check()
             self.assertEqual(raised.exception.code, "rate_limited")
-            self.assertEqual(raised.exception.as_event()["retry_after"], 10)
+            self.assertEqual(raised.exception.as_event()["error"]["retry_after"], 10)
         self.assertEqual(len(limiter._attempts), 10)
         clock.now = 10
         limiter.check()

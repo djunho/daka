@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import SessionLocal
 from app.models import Listing, Message, Negotiation, NegotiationState, User, UserSession
-from app.schemas import MessageSendEvent, PersistedMessage
+from app.schemas import MessageSendEvent, PersistedMessage, WebSocketErrorData, WebSocketErrorEvent
 from app.security import hash_session_token, utcnow
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ ERROR_MESSAGES = {
     "forbidden": "You can no longer send messages in this negotiation.",
     "negotiation_read_only": "Negotiation no longer accepts new messages.",
     "persistence_failed": "Message could not be saved.",
+    "delivery_failed": "Message was saved but live delivery could not be completed.",
 }
 
 
@@ -41,10 +42,9 @@ class MessageProcessingError(Exception):
         self.retry_after = retry_after
 
     def as_event(self) -> dict:
-        event = {"type": "error", "code": self.code, "message": ERROR_MESSAGES[self.code]}
-        if self.retry_after is not None:
-            event["retry_after"] = self.retry_after
-        return event
+        return WebSocketErrorEvent(error=WebSocketErrorData(
+            code=self.code, message=ERROR_MESSAGES[self.code], retry_after=self.retry_after,
+        )).model_dump(mode="json", exclude_none=True)
 
 
 class MessageRateLimiter:

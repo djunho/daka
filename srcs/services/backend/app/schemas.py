@@ -18,7 +18,7 @@ Two jobs, and it helps to keep them apart in your head:
 SQLAlchemy models describe rows in a table. These describe messages on the
 wire. They look similar and are deliberately not the same thing.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import (
@@ -27,6 +27,7 @@ from pydantic import (
     EmailStr,
     Field,
     field_validator,
+    field_serializer,
     model_validator,
 )
 from pydantic_core import PydanticCustomError
@@ -78,6 +79,59 @@ class PersistedMessage(BaseModel):
     msg_sender: int
     msg: str
     created_at: datetime
+
+
+class MessageCreatedData(BaseModel):
+    """Public message format shared by delivery and future REST history."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: int = Field(gt=0)
+    negotiation_id: int = Field(gt=0)
+    sender_id: int = Field(gt=0)
+    content: str
+    created_at: datetime
+
+    @field_serializer("created_at")
+    def serialise_created_at(self, value: datetime) -> str:
+        # Database datetimes in this project are naive UTC.
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+class MessageCreatedEvent(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["message.created"] = "message.created"
+    message: MessageCreatedData
+
+    @classmethod
+    def from_persisted(cls, message: PersistedMessage) -> "MessageCreatedEvent":
+        return cls(message=MessageCreatedData(
+            id=message.id, negotiation_id=message.negotiation_id,
+            sender_id=message.msg_sender, content=message.msg,
+            created_at=message.created_at,
+        ))
+
+
+class WebSocketValidationDetail(BaseModel):
+    """Optional safe metadata, never raw input or exception text."""
+
+    field: str
+    code: str
+
+
+class WebSocketErrorData(BaseModel):
+    code: str
+    message: str
+    retry_after: int | None = Field(default=None, gt=0)
+    details: list[WebSocketValidationDetail] | None = None
+
+
+class WebSocketErrorEvent(BaseModel):
+    type: Literal["error"] = "error"
+    error: WebSocketErrorData
 
 # ---------------------------------------------------------------------------
 # Shared pieces

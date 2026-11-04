@@ -126,24 +126,32 @@ async def negotiation_websocket(websocket: WebSocket, negotiation_id: str) -> No
     limiter = MessageRateLimiter()
     try:
         await manager.connect(validated_id, websocket)
-        while True:
+        while manager.is_connected(validated_id, websocket):
             message = await websocket.receive()
             if message["type"] == "websocket.disconnect":
                 _log_disconnect(validated_id, message.get("code", 1006))
                 return
+            if not manager.is_connected(validated_id, websocket):
+                return
             try:
                 limiter.check()
                 event = parse_message_event(message.get("text"))
-                _persisted_message = await run_in_threadpool(
+                persisted_message = await run_in_threadpool(
                     persist_message, event, validated_id, current_user.id,
                     websocket.cookies.get(SESSION_COOKIE_NAME),
                 )
-                # The next ticket will pass this committed result to broadcast.
-                # No message.created event or success acknowledgement yet.
             except MessageProcessingError as exc:
-                await websocket.send_json(exc.as_event())
-                if exc.close_code is not None:
-                    await websocket.close(code=exc.close_code)
+                sent = await manager.send_error(
+                    validated_id, websocket, exc.as_event(), close_code=exc.close_code,
+                )
+                if not sent or exc.close_code is not None:
+                    return
+                continue
+            if not await manager.broadcast(persisted_message):
+                # A committed message must never be retried/rolled back here.
+                if not await manager.send_error(
+                    validated_id, websocket, MessageProcessingError("delivery_failed").as_event(),
+                ):
                     return
     except WebSocketDisconnect as exc:
         _log_disconnect(validated_id, exc.code)
