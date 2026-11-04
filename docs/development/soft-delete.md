@@ -46,10 +46,12 @@ The route performs the following actions:
 5. Changes the listings to the `Removed` state.
 6. Closes active negotiations and proposals related to the user or their listings.
 7. Removes favorites related to the account or listings.
-8. Removes the user's active sessions.
-9. Commits all changes in a single transaction.
-10. Removes the physical avatar file after the `commit`.
-11. Clears the `daka_session` cookie.
+8. Removes friendships where the account appears on either side.
+9. Clears `last_seen`.
+10. Removes the user's active sessions.
+11. Commits all changes in a single transaction.
+12. Removes the physical avatar file after the `commit`.
+13. Clears the `daka_session` cookie.
 
 ## Anonymized fields
 
@@ -62,6 +64,7 @@ pass_hash     = NULL
 google_sub    = NULL
 avatar        = NULL
 user_location = NULL
+last_seen     = NULL
 deleted_at    = current timestamp
 ```
 
@@ -99,6 +102,12 @@ The corresponding SQLAlchemy model field is:
 
 ```python
 deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
+```
+
+The `last_seen` field is also cleared during deactivation:
+
+```python
+last_seen: Mapped[datetime | None] = mapped_column(DateTime)
 ```
 
 ## Authentication after deactivation
