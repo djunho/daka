@@ -161,6 +161,13 @@ export type ApiFriendStatus = {
   is_friend: boolean
 }
 
+export type ApiFriendPage = {
+  items: ApiFriend[]
+  total: number
+  limit: number
+  offset: number
+}
+
 // --- The four auth calls, named so components read like prose. ---
 
 export function apiRegister(user_name: string, email: string, password: string) {
@@ -315,6 +322,23 @@ export function apiGetPublicProfile(id: number) {
 
 // --- Friends (#143). A friendship is mutual and needs no approval: adding
 // or removing it changes it for both users at once. ---
+
+export type ListFriendsParams = {
+  limit?: number
+  offset?: number
+}
+
+// Active friendships only, online friends first. `signal` lets the page
+// cancel a request it no longer needs.
+export function apiGetFriends(params: ListFriendsParams = {}, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  // Compare with undefined, because 0 is a valid offset.
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+
+  const qs = query.toString()
+  return request<ApiFriendPage>(qs ? `/friends?${qs}` : '/friends', { signal })
+}
 
 // Only an active friendship counts: a removed one answers false, as does
 // asking about yourself.
