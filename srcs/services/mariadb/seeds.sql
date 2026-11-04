@@ -46,15 +46,15 @@ VALUES
 	('NotSelected'),
 	('ItemUnavailable');
 
--- Add up to two directed contact-list entries when users already exist.
+-- Add up to two symmetric friendships when users already exist. IDs are
+-- ordered so each pair is stored only once.
 -- The fresh database does not seed users, so this is intentionally a no-op
 -- until at least two accounts have been created.
-INSERT INTO friendships (user_id, friend_id)
-SELECT first_user.id, second_user.id
+INSERT INTO friendships (user_id, friend_id, status)
+SELECT first_user.id, second_user.id, 'accepted'
 FROM users AS first_user
 JOIN users AS second_user
-	ON first_user.id <> second_user.id
-	AND first_user.id < second_user.id
+	ON first_user.id < second_user.id
 WHERE first_user.deleted_at IS NULL
 	AND second_user.deleted_at IS NULL
 ORDER BY first_user.id, second_user.id
