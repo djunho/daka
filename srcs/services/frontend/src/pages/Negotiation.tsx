@@ -4,7 +4,7 @@ import Avatar from '../components/Avatar'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
 import MessageCard from '../components/MessageCard'
-import NegotiationChatWidget from '../components/NegotiationChatWidget'
+import { useChat } from '../context/ChatContext'
 import ProposalForm from '../components/ProposalForm'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -118,7 +118,8 @@ export default function Negotiation() {
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState<boolean>(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
-  const [chatOpen, setChatOpen] = useState<boolean>(false)
+  const { isChatOpen, openChat, closeChat } = useChat()
+  const chatOpen = negotiation ? isChatOpen(negotiation.id) : false
 
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const [proposalFormOpen, setProposalFormOpen] = useState<boolean>(false)
@@ -435,7 +436,16 @@ export default function Negotiation() {
             <Button
               size="sm"
               variant={chatOpen ? 'secondary' : 'primary'}
-              onClick={() => setChatOpen((v) => !v)}
+              onClick={() => {
+                if (chatOpen) {
+                  closeChat()
+                } else {
+                  const partnerName = isOwner
+                    ? negotiation.interested_user.user_name
+                    : negotiation.owner.user_name
+                  openChat(negotiation.id, partnerName)
+                }
+              }}
             >
               💬 {chatOpen ? 'Fechar conversa' : 'Conversar'}
             </Button>
@@ -513,18 +523,6 @@ export default function Negotiation() {
             setActionError(null)
           }}
         />
-
-        {chatOpen && (
-          <NegotiationChatWidget
-            negotiationId={negotiation.id}
-            interlocutorName={
-              isOwner
-                ? negotiation.interested_user.user_name
-                : negotiation.owner.user_name
-            }
-            onClose={() => setChatOpen(false)}
-          />
-        )}
       </main>
     )
   }

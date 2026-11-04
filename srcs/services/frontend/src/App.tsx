@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { ChatProvider } from './context/ChatContext'
 import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
 import Home from './pages/Home'
@@ -31,7 +32,8 @@ export default function App() {
       }}
     >
       <AuthProvider>
-        <Routes>
+        <ChatProvider>
+          <Routes>
           <Route element={<Layout />}>
             {/* ---- Public routes ---- */}
             <Route path="/" element={<Home />} />
@@ -78,6 +80,7 @@ export default function App() {
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
+        </ChatProvider>
       </AuthProvider>
     </BrowserRouter>
   )

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import Header from './Header'
+import NegotiationChatWidget from './NegotiationChatWidget'
+import { useChat } from '../context/ChatContext'
 
 // A page can send a one-off message to the next one through the navigation
 // state, e.g. navigate('/', { state: { notice: 'O teu anúncio foi removido.' } }).
@@ -12,6 +14,7 @@ export default function Layout() {
   const location = useLocation()
   const navigate = useNavigate()
   const [notice, setNotice] = useState<string | null>(null)
+  const { activeChat, closeChat } = useChat()
 
   // A new page starts at the top. Changing the route does not reload the
   // document, so without this the scroll position of the previous page stays
@@ -60,6 +63,14 @@ export default function Layout() {
         <span aria-hidden="true">·</span>
         <Link to="/terms" className="inline-flex items-center min-h-11 px-3 hover:text-brand transition-colors no-underline">Termos</Link>
       </footer>
+
+      {activeChat && (
+        <NegotiationChatWidget
+          negotiationId={activeChat.negotiationId}
+          interlocutorName={activeChat.interlocutorName}
+          onClose={closeChat}
+        />
+      )}
     </>
   )
 }
