@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useLocation, useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
 import Button, { buttonClasses } from '../components/Button'
@@ -18,6 +18,7 @@ import { getPortugueseErrorMessage } from '../lib/errors'
 
 export default function UserProfile() {
   const { id } = useParams<{ id: string }>()
+  const { hash } = useLocation()
   const { user: currentUser, logout } = useAuth()
 
   // The backend looks users up by numeric id only. Anything else
@@ -164,6 +165,18 @@ export default function UserProfile() {
     // session, whichever render it comes from.
   }, [userId, validId, isOwnProfile])
 
+  // "Ver anúncios" in the friends list links to /users/{id}#anuncios. The
+  // router does not scroll to a hash, and the section only exists once the
+  // profile is on screen, so scroll here. The profile and the end of loading
+  // arrive in separate renders: both are needed, the same as the check that
+  // decides between the skeleton and the page below.
+  const profileReady = !loading && profile !== null && profile.id === userId
+  useEffect(() => {
+    if (profileReady && hash === '#anuncios') {
+      document.getElementById('anuncios')?.scrollIntoView?.({ block: 'start' })
+    }
+  }, [profileReady, hash])
+
   if (!validId || notFound) {
     return (
       <MessageCard
@@ -295,7 +308,7 @@ export default function UserProfile() {
       </div>
 
       {/* Listings Section */}
-      <section className="space-y-4">
+      <section id="anuncios" className="space-y-4 scroll-mt-24">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-xl font-bold text-ink">
             Artigos de {profile.user_name}
