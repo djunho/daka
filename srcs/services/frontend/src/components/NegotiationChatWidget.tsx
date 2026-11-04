@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import OnlineBadge, { type PresenceStatus } from './OnlineBadge'
+import ChatMessageBubble from './ChatMessageBubble'
 
 export interface NegotiationChatWidgetProps {
   negotiationId: number
@@ -20,6 +21,30 @@ export default function NegotiationChatWidget({
 }: NegotiationChatWidgetProps) {
   // State to toggle widget between minimized and expanded
   const [isMinimized, setIsMinimized] = useState(false)
+
+  // Mock messages for initial visual scaffolding (replaced by API data in step 3)
+  const mockMessages = [
+    {
+      id: 1,
+      content: 'Olá! Vi o teu anúncio e tenho muito interesse na troca. Ainda está disponível?',
+      createdAt: '14:32',
+      isOwn: false,
+      senderName: interlocutorName,
+    },
+    {
+      id: 2,
+      content: 'Olá! Sim, ainda está disponível. Podes ver as especificações completas no anúncio.',
+      createdAt: '14:35',
+      isOwn: true,
+    },
+    {
+      id: 3,
+      content: 'Perfeito! Fiz uma proposta com um item que acho que vais gostar. Podemos combinar os detalhes por aqui!',
+      createdAt: '14:38',
+      isOwn: false,
+      senderName: interlocutorName,
+    },
+  ]
 
   return (
     <aside
@@ -64,13 +89,17 @@ export default function NegotiationChatWidget({
       {/* Chat body (visible only when not minimized) */}
       {!isMinimized && (
         <div className="flex flex-col h-80 bg-paper">
-          {/* Message history area (empty for now) */}
-          <div className="flex-1 p-4 flex flex-col items-center justify-center text-center text-muted">
-            <span className="text-2xl mb-1" aria-hidden="true">💬</span>
-            <p className="text-xs font-medium text-ink">Área de mensagens</p>
-            <p className="text-[11px] text-muted max-w-[200px] mt-0.5">
-              As mensagens em tempo real vão aparecer aqui.
-            </p>
+          {/* Scrollable message thread area */}
+          <div className="flex-1 p-3 overflow-y-auto space-y-3 flex flex-col">
+            {mockMessages.map((msg) => (
+              <ChatMessageBubble
+                key={msg.id}
+                content={msg.content}
+                createdAt={msg.createdAt}
+                isOwn={msg.isOwn}
+                senderName={msg.senderName}
+              />
+            ))}
           </div>
 
           {/* Basic message input row */}
