@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import Header from './Header'
 import NegotiationChatWidget from './NegotiationChatWidget'
+import NegotiationsDock from './NegotiationsDock'
 import { useChat } from '../context/ChatContext'
 
 // A page can send a one-off message to the next one through the navigation
@@ -64,6 +65,10 @@ export default function Layout() {
         <Link to="/terms" className="inline-flex items-center min-h-11 px-3 hover:text-brand transition-colors no-underline">Termos</Link>
       </footer>
 
+      {/* Floating dock for quick access to all negotiations */}
+      <NegotiationsDock />
+
+      {/* Floating docked chat widget */}
       {activeChat && (
         <NegotiationChatWidget
           negotiationId={activeChat.negotiationId}
