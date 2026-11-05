@@ -657,6 +657,44 @@ describe('Negotiation actions', () => {
       expect(options).toEqual(['Escolhe uma opção', 'Mesa'])
     })
 
+    it('clears a choice that another tab used first, so it cannot be sent again', async () => {
+      await openFormWith([])
+      const select = await screen.findByLabelText('O que ofereces em troca?')
+      vi.mocked(apiCreateProposal).mockRejectedValue(new ApiError(409, 'An identical proposal already exists.'))
+      // The reload after the 409 shows the proposal the other tab made with Livro.
+      vi.mocked(apiGetNegotiation).mockResolvedValue(negotiation('Open', [{ ...proposal(1, 'Pending', null), offered_listing: BOOK }]))
+
+      await userEvent.selectOptions(select, 'Livro')
+      await userEvent.click(await button('Enviar proposta'))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Já existe uma proposta com este anúncio nesta negociação')
+      await waitFor(() => expect(screen.getByLabelText('O que ofereces em troca?')).toHaveValue(''))
+      expect(within(screen.getByLabelText('O que ofereces em troca?')).queryByRole('option', { name: 'Livro' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Enviar proposta' })).toBeDisabled()
+      expect(apiCreateProposal).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the 409 explanation when it used up the last choice', async () => {
+      // Only Livro is left: Mesa and "no listing" are already used.
+      await openFormWith([
+        { ...proposal(1, 'Rejected', null), offered_listing: TABLE },
+        proposal(2, 'Pending', null),
+      ])
+      const select = await screen.findByLabelText('O que ofereces em troca?')
+      vi.mocked(apiCreateProposal).mockRejectedValue(new ApiError(409, 'An identical proposal already exists.'))
+      vi.mocked(apiGetNegotiation).mockResolvedValue(negotiation('Open', [
+        { ...proposal(1, 'Rejected', null), offered_listing: TABLE },
+        proposal(2, 'Pending', null),
+        { ...proposal(3, 'Pending', null), offered_listing: BOOK },
+      ]))
+
+      await userEvent.selectOptions(select, 'Livro')
+      await userEvent.click(await button('Enviar proposta'))
+
+      expect(await screen.findByText(/Já usaste todos os teus anúncios disponíveis nesta negociação/)).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent('Já existe uma proposta com este anúncio nesta negociação')
+    })
+
     it('says nothing is left and points to the history when everything was used', async () => {
       await openFormWith([
         { ...proposal(1, 'Withdrawn', null), offered_listing: BOOK },

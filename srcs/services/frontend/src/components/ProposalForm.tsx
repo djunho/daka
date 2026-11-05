@@ -75,6 +75,13 @@ export default function ProposalForm({
   const ready = listings !== null
   const offerable = (listings ?? []).filter((listing) => !usedListingIds.includes(listing.id))
   const nothingLeft = ready && offerable.length === 0 && hasNoListingProposal
+  // The choice can stop being offered while the form is open: a 409 reloads the
+  // negotiation, and another tab may have used that listing first.
+  const choiceAvailable =
+    choice === NO_LISTING ? !hasNoListingProposal : offerable.some((listing) => String(listing.id) === choice)
+  useEffect(() => {
+    if (ready && choice && !choiceAvailable) setChoice('')
+  }, [ready, choice, choiceAvailable])
   useEffect(() => {
     if (ready) selectRef.current?.focus()
   }, [ready])
@@ -87,7 +94,7 @@ export default function ProposalForm({
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!choice || busy) return
+    if (!choice || !choiceAvailable || busy) return
     onSubmit(choice === NO_LISTING ? null : Number(choice))
   }
 
@@ -109,6 +116,8 @@ export default function ProposalForm({
             Já usaste todos os teus anúncios disponíveis nesta negociação.
             {canReopen && ' Podes reabrir uma proposta retirada no histórico.'}
           </p>
+          {/* A 409 can be what used up the last choice: its explanation stays. */}
+          {error && <p role="alert" className="text-sm text-accent">{error}</p>}
           <Button variant="ghost" size="sm" onClick={onCancel}>Fechar</Button>
         </div>
       ) : (
@@ -134,7 +143,7 @@ export default function ProposalForm({
           </div>
           {error && <p role="alert" className="text-sm text-accent">{error}</p>}
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" variant="primary" size="sm" disabled={!choice} loading={busy}>
+            <Button type="submit" variant="primary" size="sm" disabled={!choice || !choiceAvailable} loading={busy}>
               {busy ? 'A enviar…' : 'Enviar proposta'}
             </Button>
             <Button variant="ghost" size="sm" disabled={busy} onClick={onCancel}>Cancelar</Button>
