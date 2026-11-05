@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import CategoryChips from './CategoryChips'
 import type { ApiCategory } from '../lib/api'
@@ -27,12 +28,37 @@ function chip(name: string) {
   return screen.getByRole('button', { name, hidden: true })
 }
 
+// jsdom has no ResizeObserver. This one records what is observed and lets the
+// test fire a resize, as the browser would when the web font arrives.
+function fakeResizeObserver() {
+  const observed: Element[] = []
+  let notify = () => {}
+  class FakeResizeObserver {
+    constructor(callback: () => void) {
+      notify = callback
+    }
+    observe(target: Element) {
+      observed.push(target)
+    }
+    disconnect() {}
+  }
+  vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+  return { observed, resize: () => act(() => notify()) }
+}
+
+// Holds the selected category the way Home does, so a chip can be cleared.
+function StatefulChips({ initial }: { initial: number | null }) {
+  const [active, setActive] = useState<number | null>(initial)
+  return <CategoryChips categories={CATEGORIES} active={active} onToggle={(id) => setActive((a) => (a === id ? null : id))} />
+}
+
 describe('CategoryChips', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
   })
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('has no toggle when every chip fits in one row', () => {
@@ -86,6 +112,44 @@ describe('CategoryChips', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Ver todas/ }))
     expect(names()).toEqual(['Livros', 'Roupas & Acessórios', 'Jogos', 'Música', 'Brinquedos'])
+  })
+
+  it('measures again when a chip changes size, e.g. when the web font arrives', () => {
+    const { observed, resize } = fakeResizeObserver()
+    let perRow = 2
+    vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
+      if (!this.dataset.categoryId) return 0
+      return Math.floor([...(this.parentElement?.children ?? [])].indexOf(this) / perRow) * 40
+    })
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(38)
+    render(<CategoryChips categories={CATEGORIES} active={null} onToggle={vi.fn()} />)
+
+    // The row and every chip are watched: while collapsed the row's size is
+    // fixed, so only the chips notice the font change.
+    expect(observed).toContain(screen.getByRole('navigation'))
+    expect(observed).toContain(chip('Livros'))
+    expect(chip('Roupas & Acessórios')).not.toHaveAttribute('inert')
+
+    // The wider font leaves room for one chip per row.
+    perRow = 1
+    resize()
+    expect(chip('Livros')).not.toHaveAttribute('inert')
+    expect(chip('Roupas & Acessórios')).toHaveAttribute('inert')
+  })
+
+  it('moves the focus to the toggle when the cleared category goes back to a hidden row', async () => {
+    fakeRows(2)
+    render(<StatefulChips initial={5} />)
+
+    // While collapsed, the selected Brinquedos is first and visible.
+    const toys = chip('Brinquedos')
+    expect(toys).not.toHaveAttribute('inert')
+
+    // Clearing it puts it back in its place, in a hidden row.
+    await userEvent.click(toys)
+    expect(toys).toHaveAttribute('aria-pressed', 'false')
+    expect(toys).toHaveAttribute('inert')
+    expect(screen.getByRole('button', { name: /Ver todas/ })).toHaveFocus()
   })
 
   it('reports the chip that was pressed', async () => {
