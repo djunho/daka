@@ -26,7 +26,7 @@ export default function NegotiationChatWidget({
   const [isMinimized, setIsMinimized] = useState(false)
   const [inputText, setInputText] = useState('')
 
-  const { messages, status, isLoadingHistory, error, sendMessage } = useNegotiationChat(negotiationId)
+  const { messages, status, isLoadingHistory, error, clearError, sendMessage } = useNegotiationChat(negotiationId)
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
@@ -129,8 +129,19 @@ export default function NegotiationChatWidget({
             className="p-2.5 bg-surface border-t border-line flex flex-col gap-1.5"
           >
             {error && (
-              <div className="text-[10px] text-accent px-1 truncate select-none" title={error}>
-                ⚠️ {error}
+              <div className="flex items-start justify-between gap-2 text-[11px] text-accent bg-accent/10 px-2.5 py-1.5 rounded-lg select-none leading-tight">
+                {/* For more info about this word break: https://tailwindcss.com/docs/overflow-wrap */}
+                <span className="wrap-break-word">
+                  ⚠️ {error}
+                </span>
+                <button
+                  type="button"
+                  onClick={clearError}
+                  aria-label="Dispensar aviso de erro"
+                  className="text-accent hover:text-accent-hover font-bold px-1 rounded transition-colors shrink-0 -mr-0.5"
+                >
+                  ✕
+                </button>
               </div>
             )}
             <div className="flex gap-2 items-center">
@@ -138,7 +149,10 @@ export default function NegotiationChatWidget({
               <input
                 type="text"
                 value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+                onChange={(e) => {
+                  setInputText(e.target.value)
+                  if (error) clearError()
+                }}
                 placeholder={
                   status === 'connecting'
                     ? 'A ligar ao chat...'

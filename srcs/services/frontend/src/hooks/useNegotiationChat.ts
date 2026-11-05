@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { apiListNegotiationMessages } from '../lib/api'
+import { getWebSocketErrorMessage } from '../lib/errors'
 import type {
   IncomingWebSocketEvent,
   MessageSendEvent,
@@ -22,6 +23,7 @@ export interface UseNegotiationChatReturn {
   status: ChatConnectionStatus
   isLoadingHistory: boolean
   error: string | null
+  clearError: () => void
   sendMessage: (content: string) => boolean
 }
 
@@ -139,7 +141,7 @@ export function useNegotiationChat(
             return [...prev, newItem]
           })
         } else if (data.type === 'error') {
-          setError(data.error.message || data.error.code)
+          setError(getWebSocketErrorMessage(data.error.code, data.error.retry_after))
         }
       } catch (err) {
         console.error('Failed to parse WebSocket message frame:', err)
@@ -152,12 +154,8 @@ export function useNegotiationChat(
     }
 
     socket.onclose = (event: CloseEvent) => {
-      if (event.code === 4401) {
-        setError('Sessão expirada. Por favor, inicia sessão novamente.')
-      } else if (event.code === 4403) {
-        setError('Acesso negado: não participas nesta negociação ou a origem não está autorizada (4403).')
-      } else if (event.code === 4404) {
-        setError('Negociação não encontrada (4404).')
+      if (event.code === 4401 || event.code === 4403 || event.code === 4404) {
+        setError(getWebSocketErrorMessage(event.code))
       }
       setStatus('disconnected')
     }
@@ -168,6 +166,10 @@ export function useNegotiationChat(
       socketRef.current = null
     }
   }, [negotiationId, currentUserId])
+
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
 
   /**
    * Submit a new text message through the active WebSocket channel.
@@ -182,7 +184,7 @@ export function useNegotiationChat(
     }
 
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-      setError('Não foi possível enviar a mensagem. Conexão inativa.')
+      setError(getWebSocketErrorMessage('persistence_failed'))
       return false
     }
 
@@ -200,6 +202,7 @@ export function useNegotiationChat(
     status,
     isLoadingHistory,
     error,
+    clearError,
     sendMessage,
   }
 }
