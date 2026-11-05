@@ -28,6 +28,7 @@ export default function CategoryChips({ categories, active, onToggle }: Category
   const [rows, setRows] = useState<number>(1)
   const [rowHeight, setRowHeight] = useState<number>(0)
   const navRef = useRef<HTMLElement>(null)
+  const toggleRef = useRef<HTMLButtonElement>(null)
   const navId = useId()
 
   // While collapsed, the selected category comes first, so the filter in use is
@@ -54,10 +55,14 @@ export default function CategoryChips({ categories, active, onToggle }: Category
       setRowHeight(chips[0]?.offsetHeight ?? 0)
     }
     measure()
-    // Measured again when the width changes, e.g. when the phone is rotated.
+    // Measured again when the width changes, e.g. when the phone is rotated,
+    // and when a chip changes size without the row changing, e.g. when the web
+    // font arrives after the first paint: while collapsed the row's height is
+    // fixed, so watching only the row would miss chips moving between rows.
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(measure)
     observer.observe(nav)
+    for (const chip of nav.querySelectorAll<HTMLElement>('[data-category-id]')) observer.observe(chip)
     return () => observer.disconnect()
   }, [orderKey])
 
@@ -70,7 +75,11 @@ export default function CategoryChips({ categories, active, onToggle }: Category
     const nav = navRef.current
     if (!nav) return
     for (const chip of nav.querySelectorAll<HTMLElement>('[data-category-id]')) {
-      chip.toggleAttribute('inert', collapsed && overflowIds.includes(Number(chip.dataset.categoryId)))
+      const hidden = collapsed && overflowIds.includes(Number(chip.dataset.categoryId))
+      // Clearing the selected category while collapsed sends its chip back to
+      // a hidden row. Without this the focus would be lost on the page body.
+      if (hidden && chip === document.activeElement) toggleRef.current?.focus()
+      chip.toggleAttribute('inert', hidden)
     }
   }, [collapsed, overflowIds, orderKey])
 
@@ -101,6 +110,7 @@ export default function CategoryChips({ categories, active, onToggle }: Category
 
       {canCollapse && (
         <button
+          ref={toggleRef}
           type="button"
           aria-expanded={expanded}
           aria-controls={navId}
