@@ -157,6 +157,18 @@ describe('Profile errors', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('ends the session and closes the dialog on 401 when deleting the account', async () => {
+    deleteAccount.mockRejectedValue(new ApiError(401, 'Not authenticated.'))
+    renderProfile()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Eliminar conta' }))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Sim, eliminar conta' }))
+
+    expect(logout).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('explains a failed connection in Portuguese', async () => {
     updateProfile.mockRejectedValue(new ApiError(0, 'Could not reach the server. Check your connection.'))
     renderProfile()

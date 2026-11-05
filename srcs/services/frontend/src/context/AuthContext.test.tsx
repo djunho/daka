@@ -2,11 +2,12 @@ import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import { AuthProvider, useAuth } from './AuthContext'
-import { ApiError, apiMe, type ApiUser } from '../lib/api'
+import { ApiError, apiLogout, apiMe, type ApiUser } from '../lib/api'
 
 vi.mock('../lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/api')>()),
   apiMe: vi.fn(),
+  apiLogout: vi.fn(),
 }))
 
 const ME: ApiUser = {
@@ -181,5 +182,50 @@ describe('AuthContext heartbeat', () => {
 
     await advance(60_000)
     expect(apiMe).toHaveBeenCalledTimes(3)
+  })
+})
+describe('AuthContext logout', () => {
+  it('clears the user at once, without waiting for /auth/logout to answer', async () => {
+    vi.mocked(apiMe).mockReset().mockResolvedValue(ME)
+    let answer!: () => void
+    vi.mocked(apiLogout).mockReset().mockReturnValue(new Promise<void>((resolve) => { answer = resolve }))
+    let logout: ReturnType<typeof useAuth>['logout'] | null = null
+    function Capture() {
+      logout = useAuth().logout
+      return null
+    }
+    render(<AuthProvider><Capture /><Probe /></AuthProvider>)
+    await screen.findByText('Com sessão')
+
+    let done: Promise<void> | null = null
+    act(() => {
+      done = logout!()
+    })
+
+    // The request is still running, and the user is already gone.
+    expect(apiLogout).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Sem sessão')).toBeInTheDocument()
+    await act(async () => {
+      answer()
+      await done
+    })
+  })
+
+  it('stays logged out when /auth/logout fails', async () => {
+    vi.mocked(apiMe).mockReset().mockResolvedValue(ME)
+    vi.mocked(apiLogout).mockReset().mockRejectedValue(new ApiError(0, 'Could not reach the server.'))
+    let logout: ReturnType<typeof useAuth>['logout'] | null = null
+    function Capture() {
+      logout = useAuth().logout
+      return null
+    }
+    render(<AuthProvider><Capture /><Probe /></AuthProvider>)
+    await screen.findByText('Com sessão')
+
+    await act(async () => {
+      await logout!()
+    })
+
+    expect(screen.getByText('Sem sessão')).toBeInTheDocument()
   })
 })
