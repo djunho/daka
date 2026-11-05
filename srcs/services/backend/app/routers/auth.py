@@ -12,6 +12,7 @@ from authlib.integrations.base_client import OAuthError
 from authlib.integrations.starlette_client import OAuth
 from fastapi import (
     APIRouter,
+    Cookie,
     Depends,
     File,
     HTTPException,
@@ -27,7 +28,11 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import SESSION_COOKIE_NAME, get_current_user
+from app.dependencies import (
+    SESSION_COOKIE_NAME,
+    get_current_user,
+    get_user_from_session_token,
+)
 from app.media import delete_image, save_image
 from app.models import (
     Favorite,
@@ -41,7 +46,8 @@ from app.models import (
     User,
     UserSession,
 )
-from app.schemas import LoginIn, ProfileUpdate, RegisterIn, UserOut
+from app.presence import touch_last_seen
+from app.schemas import LoginIn, ProfileUpdate, RegisterIn, SessionOut, UserOut
 from app.security import (
     generate_session_token,
     hash_password,
@@ -410,6 +416,42 @@ def login(
 
 
 @router.get(
+    "/session",
+    response_model=SessionOut,
+    summary="Return the logged-in user, or null when there is no session",
+)
+def get_session(
+    response: Response,
+    daka_session: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+    db: Session = Depends(get_db),
+) -> SessionOut:
+    """Tell the frontend on page load whether someone is logged in.
+
+    Unlike GET /me, having no session is a normal answer here, not an error:
+    a visitor without a session gets 200 with ``user: null``. Every visit to
+    the site makes this call, and a 401 would show up in red in the browser
+    console each time. The same checks as get_current_user apply, so a
+    missing, unknown, expired or deactivated session all read as no session.
+    """
+    user = get_user_from_session_token(daka_session, db)
+    if user is None:
+        if daka_session:
+            # The cookie no longer opens a session: drop it, with the same
+            # attributes it was set with, so the browser stops sending it.
+            response.delete_cookie(
+                key=SESSION_COOKIE_NAME,
+                path="/",
+                httponly=True,
+                secure=True,
+                samesite="lax",
+            )
+        return SessionOut(user=None)
+    # Opening the site is activity, as with every authenticated request.
+    touch_last_seen(db, user)
+    return SessionOut(user=UserOut.model_validate(user))
+
+
+@router.get(
     "/me",
     response_model=UserOut,
     summary="Return the currently logged-in user",
@@ -420,8 +462,8 @@ def me(current_user: User = Depends(get_current_user)) -> User:
     The whole job is done by the get_current_user dependency: if the cookie is
     missing, unknown or expired, it raises 401 before this function runs, so
     reaching the body at all means there is a valid user. The frontend calls
-    this once on page load to decide whether someone is logged in -- that is
-    what keeps a session alive across a browser refresh.
+    this as the presence heartbeat while someone is logged in. On page load it
+    calls GET /session instead, which answers without an error when nobody is.
     """
     return current_user
 
