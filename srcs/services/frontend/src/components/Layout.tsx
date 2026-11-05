@@ -37,7 +37,7 @@ export default function Layout() {
       {/* Always in the page, so screen readers announce the text put in it. */}
       <div role="status">
         {notice && (
-          <div className="px-6 pt-4">
+          <div className="px-4 sm:px-6 pt-4">
             {/* w-fit: the box is as wide as its message, no empty stretch. */}
             <div className="w-fit max-w-full flex items-center gap-3 bg-brand text-white rounded-xl pl-4 pr-2 py-2.5 shadow-md">
               <span aria-hidden="true" className="font-bold">✓</span>
@@ -55,10 +55,10 @@ export default function Layout() {
         )}
       </div>
       <Outlet />
-      <footer className="flex justify-center gap-3 px-6 py-8 mt-6 border-t border-line text-muted text-sm">
-        <Link to="/privacy" className="hover:text-brand transition-colors no-underline">Privacidade</Link>
+      <footer className="flex justify-center items-center gap-1 px-4 sm:px-6 py-6 mt-6 border-t border-line text-muted text-sm">
+        <Link to="/privacy" className="inline-flex items-center min-h-11 px-3 hover:text-brand transition-colors no-underline">Privacidade</Link>
         <span aria-hidden="true">·</span>
-        <Link to="/terms" className="hover:text-brand transition-colors no-underline">Termos</Link>
+        <Link to="/terms" className="inline-flex items-center min-h-11 px-3 hover:text-brand transition-colors no-underline">Termos</Link>
       </footer>
     </>
   )

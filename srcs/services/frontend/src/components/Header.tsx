@@ -33,8 +33,7 @@ export default function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-10 flex items-center gap-4 px-6 py-3 bg-surface/90 backdrop-blur-md border-b border-line">
-
+    <header className="sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:gap-4 sm:px-6 bg-surface/90 backdrop-blur-md border-b border-line">
       {/* --- Brand --- */}
       <Link to="/" aria-label="Daka — home" className="flex items-center gap-2.5 shrink-0">
         <LogoMark />
@@ -42,7 +41,7 @@ export default function Header() {
       </Link>
 
       {/* --- Search --- */}
-      <form role="search" onSubmit={handleSearch} className="flex-1 max-w-[440px] mx-auto">
+      <form role="search" onSubmit={handleSearch} className="order-last w-full sm:order-none sm:w-auto sm:flex-1 sm:max-w-[440px] sm:mx-auto">
         <input
           type="search"
           placeholder="Pesquisar trocas…"
@@ -55,13 +54,13 @@ export default function Header() {
       </form>
 
       {/* --- Right side --- */}
-      <div className="flex items-center gap-2.5 shrink-0">
+      <div className="flex items-center gap-2.5 shrink-0 ml-auto">
         {/* The one branch that changes with the session: a "Sign in" link when
             logged out, the avatar menu when logged in. */}
         {user === null ? (
           <Link
             to="/login"
-            className="px-4 py-2 rounded-full font-medium text-ink hover:bg-paper transition-colors"
+            className="px-3 sm:px-4 py-2 rounded-full font-medium text-ink hover:bg-paper transition-colors"
           >
             Iniciar sessão
           </Link>
@@ -71,10 +70,10 @@ export default function Header() {
 
         <Link
           to="/publish"
-          className="flex items-center gap-1 px-4 py-2 rounded-full font-semibold bg-brand text-surface hover:opacity-95 transition-opacity"
+          className="flex items-center justify-center gap-1 w-9 h-9 sm:w-auto sm:h-auto sm:px-4 sm:py-2 rounded-full font-semibold bg-brand text-surface hover:opacity-95 transition-opacity"
         >
           <span aria-hidden="true" className="text-lg leading-none">+</span>
-          Publicar
+          <span className="sr-only sm:not-sr-only">Publicar</span>
         </Link>
       </div>
     </header>
@@ -95,20 +94,34 @@ function UserMenu({
 }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
 
-  // Close the menu when the user clicks anywhere outside it. Without this the
-  // dropdown would stay open until you clicked the avatar again, which feels
-  // broken. We attach the listener only while the menu is open.
+  // Close the menu when the user clicks or taps anywhere outside it, or presses
+  // Escape. Without this the dropdown would stay open until you clicked the
+  // avatar again, which feels broken. The listeners exist only while it is open.
   useEffect(() => {
     if (!open) return
-    function onClickOutside(e: MouseEvent) {
+    // pointerdown covers mouse, touch and pen.
+    function onPointerDownOutside(e: PointerEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setOpen(false)
       }
     }
-    document.addEventListener('mousedown', onClickOutside)
-    return () => document.removeEventListener('mousedown', onClickOutside)
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        // Focus may be on an item that is about to disappear: give it back
+        // to the button, so keyboard users stay where they were.
+        buttonRef.current?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDownOutside)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDownOutside)
+      document.removeEventListener('keydown', onKeyDown)
+    }
   }, [open])
 
   async function handleLogout() {
@@ -121,6 +134,7 @@ function UserMenu({
   return (
     <div ref={menuRef} className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label="Menu da conta"
@@ -140,7 +154,7 @@ function UserMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 mt-2 w-52 bg-surface border border-line rounded-xl shadow-lg py-1"
+          className="absolute right-0 mt-2 w-52 max-w-[calc(100vw-2rem)] bg-surface border border-line rounded-xl shadow-lg py-1"
         >
           {/* The name lives inside the menu rather than in the header bar, so
               the bar stays compact. */}
