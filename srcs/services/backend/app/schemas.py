@@ -18,7 +18,7 @@ Two jobs, and it helps to keep them apart in your head:
 SQLAlchemy models describe rows in a table. These describe messages on the
 wire. They look similar and are deliberately not the same thing.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import (
@@ -27,8 +27,10 @@ from pydantic import (
     EmailStr,
     Field,
     field_validator,
+    field_serializer,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 from app.security import MAX_PASSWORD_BYTES
 
@@ -42,6 +44,128 @@ MAX_LISTINGS_PAGE_SIZE = 100
 # Without a ceiling, a huge offset passes validation and makes the database
 # fail (500). One billion is far beyond any real list.
 MAX_PAGE_OFFSET = 1_000_000_000
+DEFAULT_MESSAGES_PAGE_SIZE = 50
+MAX_MESSAGES_PAGE_SIZE = 100
+# MariaDB message ids are signed INTs. Larger cursors are invalid inputs.
+MAX_MESSAGE_ID = 2_147_483_647
+
+
+class MessageSendEvent(BaseModel):
+    """Only client-supplied chat fields; identities come from the handshake."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    type: Literal["message.send"]
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def normalise_content(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise PydanticCustomError("empty_content", "Content must not be empty")
+        if len(value) > 250:
+            raise PydanticCustomError("content_too_long", "Content exceeds 250 characters")
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            raise PydanticCustomError("invalid_payload", "Content must be valid Unicode")
+        return value
+
+
+class PersistedMessage(BaseModel):
+    """Detached message data returned only after a successful commit, not an event."""
+
+    model_config = ConfigDict(from_attributes=True, frozen=True)
+
+    id: int
+    negotiation_id: int
+    msg_sender: int
+    msg: str
+    created_at: datetime
+
+
+class MessageCreatedData(BaseModel):
+    """Public message format shared by delivery and future REST history."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: int = Field(gt=0)
+    negotiation_id: int = Field(gt=0)
+    sender_id: int = Field(gt=0)
+    content: str
+    created_at: datetime
+
+    @field_serializer("created_at")
+    def serialise_created_at(self, value: datetime) -> str:
+        # app.database enforces UTC on every MariaDB pool checkout, so naive
+        # TIMESTAMP results represent UTC rather than the server's local zone.
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+class MessageCreatedEvent(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal["message.created"] = "message.created"
+    message: MessageCreatedData
+
+    @classmethod
+    def from_persisted(cls, message: PersistedMessage) -> "MessageCreatedEvent":
+        return cls(message=MessageCreatedData(
+            id=message.id, negotiation_id=message.negotiation_id,
+            sender_id=message.msg_sender, content=message.msg,
+            created_at=message.created_at,
+        ))
+
+
+class MessageHistorySender(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_name: str
+    avatar: str | None
+
+
+class MessageHistoryOut(BaseModel):
+    id: int
+    negotiation_id: int
+    sender: MessageHistorySender
+    content: str
+    created_at: datetime
+
+    @field_serializer("created_at")
+    def serialise_created_at(self, value: datetime) -> str:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+class MessageHistoryPage(BaseModel):
+    items: list[MessageHistoryOut]
+    limit: int
+    next_before_id: int | None
+    has_more: bool
+
+
+class WebSocketValidationDetail(BaseModel):
+    """Optional safe metadata, never raw input or exception text."""
+
+    field: str
+    code: str
+
+
+class WebSocketErrorData(BaseModel):
+    code: str
+    message: str
+    retry_after: int | None = Field(default=None, gt=0)
+    details: list[WebSocketValidationDetail] | None = None
+
+
+class WebSocketErrorEvent(BaseModel):
+    type: Literal["error"] = "error"
+    error: WebSocketErrorData
 
 # ---------------------------------------------------------------------------
 # Shared pieces

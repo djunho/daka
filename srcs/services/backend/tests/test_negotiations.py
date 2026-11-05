@@ -4,21 +4,14 @@ from datetime import datetime
 import unittest
 
 from fastapi import HTTPException, Response
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.database import Base
 from app.models import (
     Category,
     Condition,
     Favorite,
     Listing,
-    ListingState,
     Negotiation,
-    NegotiationState,
     Proposal,
-    ProposalState,
     User,
 )
 from app.routers.listings import delete_listing
@@ -34,44 +27,17 @@ from app.routers.negotiations import (
     withdraw_proposal,
 )
 from app.schemas import NegotiationCreateIn, ProposalCreateIn
+from tests.helpers import make_memory_session
 
 
 class NegotiationsTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        engine = create_engine(
-            "sqlite+pysqlite:///:memory:",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
-        Base.metadata.create_all(engine)
-        self.db = sessionmaker(bind=engine, expire_on_commit=False)()
-
-        self.listing_states = {
-            name: ListingState(state_name=name)
-            for name in ("Available", "Reserved", "Traded", "Expired", "Removed")
-        }
-        self.negotiation_states = {
-            name: NegotiationState(state_name=name)
-            for name in ("Open", "Agreed", "Completed", "Cancelled", "Unavailable")
-        }
-        self.proposal_states = {
-            name: ProposalState(state_name=name)
-            for name in (
-                "Pending",
-                "Accepted",
-                "Rejected",
-                "Withdrawn",
-                "NotSelected",
-                "ItemUnavailable",
-            )
-        }
-        self.db.add_all(
-            [
-                *self.listing_states.values(),
-                *self.negotiation_states.values(),
-                *self.proposal_states.values(),
-            ]
-        )
+        (
+            self.db,
+            self.listing_states,
+            self.negotiation_states,
+            self.proposal_states,
+        ) = make_memory_session()
 
         self.category = Category(category_name="Books")
         self.condition = Condition(condition_name="Good")
