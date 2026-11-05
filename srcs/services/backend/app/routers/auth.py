@@ -388,21 +388,18 @@ def login(
     """
     user = db.query(User).filter(User.email == payload.email).first()
 
-    # Three cases collapse into one here, deliberately:
+    # Four cases collapse into one here, deliberately:
     #   - no account with that email        -> compare against the dummy hash
-    #   - account exists but has no password (Google-only, once OAuth lands)
+    #   - account exists but has no password (Google-only)
+    #   - account is deactivated (deleted_at is set)
     #   - account exists and the password is wrong
-    # All three take the same amount of time and produce the same message, so
-    # the response leaks nothing about which emails are registered.
+    # The password is always checked first, so all four take the same amount
+    # of time and produce the same message: the response leaks nothing about
+    # which emails are registered or which accounts were deactivated.
     stored_hash = user.pass_hash if user and user.pass_hash else _DUMMY_HASH
+    password_ok = verify_password(payload.password, stored_hash)
 
-    if user.deleted_at is not None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="This account is deactivated.",
-        )
-
-    if not verify_password(payload.password, stored_hash) or user is None:
+    if user is None or user.deleted_at is not None or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password.",
