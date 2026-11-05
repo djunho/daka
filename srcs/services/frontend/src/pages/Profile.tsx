@@ -9,9 +9,10 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import ImagePicker from '../components/ImagePicker'
 import { useObjectUrl } from '../hooks/useObjectUrl'
 import { ApiError } from '../lib/api'
+import { getPortugueseErrorMessage } from '../lib/errors'
 
 export default function Profile() {
-  const { user, updateProfile, uploadAvatar, removeAvatar, deleteAccount } = useAuth()
+  const { user, updateProfile, uploadAvatar, removeAvatar, deleteAccount, logout } = useAuth()
 
   const [isEditing, setIsEditing] = useState(false)
   const [formData, setFormData] = useState({
@@ -115,6 +116,9 @@ export default function Profile() {
     }
 
     setSaving(true)
+    // Set once the name and location are stored, so a failure of the photo
+    // that follows can say that part was saved.
+    let fieldsSaved = false
     try {
       // Name and location first. If the photo then fails, the fields are
       // already saved and pressing "Guardar" again only retries the photo.
@@ -123,6 +127,7 @@ export default function Profile() {
           user_name: trimmedName,
           user_location: trimmedLocation || null,
         })
+        fieldsSaved = true
       }
       if (avatarFile) {
         await uploadAvatar(avatarFile)
@@ -133,7 +138,19 @@ export default function Profile() {
       setAvatarRemoved(false)
       setIsEditing(false)
     } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'Erro desconhecido ao guardar alterações. Por favor, tente novamente.')
+      if (err instanceof ApiError && err.status === 401) {
+        // The session expired. Clearing it lets RequireAuth send them to login.
+        void logout()
+        return
+      }
+      // The API answers in English, so the message shown is always ours. The
+      // photo's 413, 415 and 422 already have their own in lib/errors.ts.
+      const reason = getPortugueseErrorMessage(err, 'Não foi possível guardar as alterações. Tenta outra vez.', {
+        // MariaDB refuses the write when another request changed the profile
+        // at the same moment (error 1020, answered as 409).
+        409: 'O teu perfil foi alterado noutro sítio ao mesmo tempo. Tenta guardar outra vez.',
+      })
+      setError(fieldsSaved ? `O nome e a localização foram guardados, mas a foto não foi alterada. ${reason}` : reason)
     } finally {
         setSaving(false)
     }
@@ -145,10 +162,15 @@ export default function Profile() {
     try {
       await deleteAccount()
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setShowDeleteModal(false)
+        void logout()
+        return
+      }
       setError(
-        err instanceof ApiError
-          ? err.message
-          : 'Erro desconhecido. Não foi possível eliminar a conta. Por favor, tenta novamente.'
+        getPortugueseErrorMessage(err, 'Não foi possível eliminar a conta. Tenta outra vez.', {
+          409: 'Não foi possível eliminar a conta agora. Tenta outra vez dentro de momentos.',
+        }),
       )
       setDeleting(false)
       setShowDeleteModal(false)
