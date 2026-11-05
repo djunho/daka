@@ -2,11 +2,15 @@ import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import { AuthProvider, useAuth } from './AuthContext'
-import { ApiError, apiMe, type ApiUser } from '../lib/api'
+import { ApiError, apiLogin, apiLogout, apiMe, apiRegister, type ApiUser } from '../lib/api'
+import { AccountCreatedError } from '../lib/errors'
 
 vi.mock('../lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/api')>()),
   apiMe: vi.fn(),
+  apiLogout: vi.fn(),
+  apiRegister: vi.fn(),
+  apiLogin: vi.fn(),
 }))
 
 const ME: ApiUser = {
@@ -181,5 +185,103 @@ describe('AuthContext heartbeat', () => {
 
     await advance(60_000)
     expect(apiMe).toHaveBeenCalledTimes(3)
+  })
+})
+describe('AuthContext logout', () => {
+  it('clears the user at once, without waiting for /auth/logout to answer', async () => {
+    vi.mocked(apiMe).mockReset().mockResolvedValue(ME)
+    let answer!: () => void
+    vi.mocked(apiLogout).mockReset().mockReturnValue(new Promise<void>((resolve) => { answer = resolve }))
+    let logout: ReturnType<typeof useAuth>['logout'] | null = null
+    function Capture() {
+      logout = useAuth().logout
+      return null
+    }
+    render(<AuthProvider><Capture /><Probe /></AuthProvider>)
+    await screen.findByText('Com sessão')
+
+    let done: Promise<void> | null = null
+    act(() => {
+      done = logout!()
+    })
+
+    // The request is still running, and the user is already gone.
+    expect(apiLogout).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Sem sessão')).toBeInTheDocument()
+    await act(async () => {
+      answer()
+      await done
+    })
+  })
+
+  it('stays logged out when /auth/logout fails', async () => {
+    vi.mocked(apiMe).mockReset().mockResolvedValue(ME)
+    vi.mocked(apiLogout).mockReset().mockRejectedValue(new ApiError(0, 'Could not reach the server.'))
+    let logout: ReturnType<typeof useAuth>['logout'] | null = null
+    function Capture() {
+      logout = useAuth().logout
+      return null
+    }
+    render(<AuthProvider><Capture /><Probe /></AuthProvider>)
+    await screen.findByText('Com sessão')
+
+    await act(async () => {
+      await logout!()
+    })
+
+    expect(screen.getByText('Sem sessão')).toBeInTheDocument()
+  })
+})
+
+describe('AuthContext register', () => {
+  let register: ReturnType<typeof useAuth>['register'] | null = null
+
+  function Capture() {
+    register = useAuth().register
+    return null
+  }
+
+  beforeEach(() => {
+    vi.mocked(apiMe).mockReset().mockRejectedValue(new ApiError(401, 'Not authenticated.'))
+    vi.mocked(apiRegister).mockReset().mockResolvedValue(ME)
+    vi.mocked(apiLogin).mockReset().mockResolvedValue(ME)
+  })
+
+  async function renderAndRegister() {
+    render(<AuthProvider><Capture /><Probe /></AuthProvider>)
+    await screen.findByText('Sem sessão')
+    let thrown: unknown = null
+    await act(async () => {
+      try {
+        await register!('Ana', ME.email, 'correct-horse-battery')
+      } catch (err) {
+        thrown = err
+      }
+    })
+    return thrown
+  }
+
+  it('signs in right after creating the account', async () => {
+    expect(await renderAndRegister()).toBeNull()
+    expect(apiLogin).toHaveBeenCalledWith(ME.email, 'correct-horse-battery')
+    expect(screen.getByText('Com sessão')).toBeInTheDocument()
+  })
+
+  it('says the account was created when only the sign-in after it fails', async () => {
+    const loginError = new ApiError(401, 'Incorrect email or password.')
+    vi.mocked(apiLogin).mockRejectedValue(loginError)
+
+    const thrown = await renderAndRegister()
+    expect(thrown).toBeInstanceOf(AccountCreatedError)
+    expect((thrown as AccountCreatedError).cause).toBe(loginError)
+    expect(screen.getByText('Sem sessão')).toBeInTheDocument()
+  })
+
+  it('keeps the original error when the account could not be created', async () => {
+    const conflict = new ApiError(409, 'An account with this email already exists.')
+    vi.mocked(apiRegister).mockRejectedValue(conflict)
+
+    expect(await renderAndRegister()).toBe(conflict)
+    expect(apiLogin).not.toHaveBeenCalled()
   })
 })

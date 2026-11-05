@@ -323,6 +323,16 @@ class UserOut(BaseModel):
     avatar: str | None
     user_location: str | None
     created_at: datetime
+    last_seen: datetime | None
+    is_online: bool
+
+    @field_serializer("last_seen")
+    def serialise_last_seen(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 # ==========================================================================
 # LISTINGS SCHEMAS
@@ -413,6 +423,7 @@ class PublicUserOut(BaseModel):
     user_name: str
     avatar: str | None
     user_location: str | None
+    is_online: bool
 
 # --- Saídas de Anúncios ---
 class ListingSummaryOut(BaseModel):
@@ -456,7 +467,17 @@ class PublicProfileOut(BaseModel):
     avatar: str | None
     user_location: str | None
     created_at: datetime
+    last_seen: datetime | None
+    is_online: bool
     listings: list[ListingSummaryOut] = Field(default_factory=list)
+
+    @field_serializer("last_seen")
+    def serialise_last_seen(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 # ===========================================================================

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, contains_eager
 
 from app.database import get_db
 from app.models import User, UserSession
+from app.presence import touch_last_seen
 from app.security import hash_session_token, utcnow
 
 # Single source of truth for the session cookie name. Routers import this
@@ -40,6 +41,7 @@ def get_current_user(
     user = get_user_from_session_token(daka_session, db)
     if user is None:
         raise _unauthorised()
+    touch_last_seen(db, user)
     return user
 
 
