@@ -250,6 +250,22 @@ send. The recipient's user id and session token are captured at registration,
 kept only in private memory and removed on disconnect; neither is logged as a
 credential or included in outgoing events.
 
+The recipient authorisation await has its own five-second deadline while holding
+that socket's send lock, separate from the network send's five-second deadline.
+A timeout follows the same removal/1011-close path as other delivery failures;
+healthy recipients are independent, and waiting sends skip the removed socket.
+The close attempt remains bounded to one second.
+
+Cancelling an async wait cannot terminate an already-running synchronous DB
+thread. Recipient checks therefore use a dedicated bounded database pool (five
+connections plus at most five overflow connections, two-second checkout wait),
+with two-second PyMySQL connect/read/write timeouts and MariaDB
+`max_statement_time = 1` per session. This pool keeps the UTC checkout policy.
+These short limits do not change the pool or transaction budgets used by REST,
+handshakes or message persistence. The server query limit and driver I/O limits
+bound worker operations after an async deadline; worker cleanup closes its own
+session when those operations finish. No broker or database migration is needed.
+
 This check protects idle recipients as well as senders. A revoked/expired session
 or soft-deleted account closes with 4401, lost membership with 4403, and a missing
 negotiation with 4404, before sending that message. Database failure fails closed
@@ -380,4 +396,14 @@ temporary table, without changing the server's global timezone:
 
 ```sh
 RUN_MARIADB_INTEGRATION=1 python -m unittest tests.test_mariadb_timezone -v
+```
+
+Recipient deadline tests include a stalled async check, cancellation of a wait on
+an already-running synchronous worker, a real MariaDB query deadline, and driver
+read timeout with the server query limit disabled only in that test session.
+The MariaDB tests use SELECT SLEEP, restore/discard the test connection, and do
+not alter application data or global server settings:
+
+```sh
+RUN_MARIADB_INTEGRATION=1 python -m unittest tests.test_mariadb_authorization_timeout -v
 ```

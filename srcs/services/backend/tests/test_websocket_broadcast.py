@@ -3,6 +3,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 import json
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -11,7 +12,7 @@ from sqlalchemy.exc import OperationalError
 from app.connection_manager import ConnectionManager
 from app.message_processing import MessageProcessingError
 from app.schemas import MessageCreatedEvent, PersistedMessage
-from app.websocket_authorization import _recipient_close_code
+from app.websocket_authorization import _recipient_close_code, authorize_recipient
 
 
 def persisted(room=20, message_id=123, **overrides):
@@ -228,9 +229,60 @@ class BroadcastTestCase(unittest.IsolatedAsyncioTestCase):
         healthy.send_text.assert_awaited_once()
         self.assertNotIn("private cookie", " ".join(logs.output))
 
+    async def test_stalled_authorisation_times_out_and_does_not_block_other_recipients(self):
+        stalled, healthy = await self.connect(user_id=7), await self.connect(user_id=8)
+        delivered = asyncio.Event()
+
+        async def authorise(_room, user_id, _token):
+            if user_id == 7:
+                await asyncio.Event().wait()
+            return None
+
+        async def send(_payload):
+            delivered.set()
+
+        self.authorizer.side_effect = authorise
+        healthy.send_text.side_effect = send
+        with patch("app.connection_manager.RECIPIENT_AUTH_TIMEOUT_SECONDS", 0.05), self.assertLogs(
+            "app.connection_manager", level="WARNING"
+        ):
+            task = asyncio.create_task(self.manager.broadcast(persisted()))
+            await asyncio.wait_for(delivered.wait(), timeout=1)
+            self.assertTrue(await asyncio.wait_for(task, timeout=1))
+        stalled.send_text.assert_not_awaited()
+        stalled.close.assert_awaited_once_with(code=1011)
+        self.assertFalse(self.manager.is_connected(20, stalled))
+        self.assertNotIn(stalled, self.manager._send_locks)
+        self.assertNotIn(stalled, self.manager._identities)
+        # A later broadcast completes and continues to reach the healthy peer.
+        self.assertTrue(await asyncio.wait_for(self.manager.broadcast(persisted(message_id=124)), timeout=1))
+        self.assertEqual(healthy.send_text.await_count, 2)
+
+    async def test_async_deadline_does_not_wait_for_running_sync_worker(self):
+        started, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+        def stalled_worker(*_args):
+            started.set()
+            try:
+                release.wait(timeout=2)
+                return None
+            finally:
+                finished.set()
+
+        with patch("app.websocket_authorization._recipient_close_code", side_effect=stalled_worker):
+            task = asyncio.create_task(authorize_recipient(20, 7, "token"))
+            try:
+                self.assertTrue(await asyncio.to_thread(started.wait, 1))
+                with self.assertRaises(TimeoutError):
+                    await asyncio.wait_for(task, timeout=0.05)
+                self.assertFalse(finished.is_set(), "deadline waited for synchronous work")
+            finally:
+                release.set()
+                self.assertTrue(await asyncio.to_thread(finished.wait, 1))
+
     async def test_database_failure_during_recipient_check_fails_closed(self):
         with patch(
-            "app.websocket_authorization.SessionLocal",
+            "app.websocket_authorization.RecipientSessionLocal",
             side_effect=OperationalError("private SQL", {}, Exception("private token")),
         ), self.assertLogs("app.websocket_authorization", level="ERROR") as logs:
             self.assertEqual(_recipient_close_code(20, 7, "private token"), 1011)

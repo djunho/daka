@@ -12,6 +12,7 @@ from app.websocket_authorization import authorize_recipient
 
 logger = logging.getLogger(__name__)
 SEND_TIMEOUT_SECONDS = 5.0
+RECIPIENT_AUTH_TIMEOUT_SECONDS = 5.0
 CLOSE_TIMEOUT_SECONDS = 1.0
 
 
@@ -170,7 +171,10 @@ class ConnectionManager:
             try:
                 if message_id is not None:
                     user_id, token = self._identities[websocket]
-                    code = await self._recipient_authorizer(negotiation_id, user_id, token)
+                    code = await asyncio.wait_for(
+                        self._recipient_authorizer(negotiation_id, user_id, token),
+                        RECIPIENT_AUTH_TIMEOUT_SECONDS,
+                    )
                     # A disconnect can happen while the worker queries the DB.
                     if not self.is_connected(negotiation_id, websocket):
                         return "skipped"

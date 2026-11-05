@@ -3,15 +3,28 @@
 import logging
 
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, sessionmaker
 from starlette.concurrency import run_in_threadpool
 
-from app.database import SessionLocal
+from app.config import settings
+from app.database import create_database_engine
 from app.dependencies import get_user_from_session_token
 from app.models import Negotiation, User
 from app.negotiation_access import is_participant
 
 logger = logging.getLogger(__name__)
+
+# Keep short live-delivery budgets separate from lifecycle write transactions.
+# UTC checkout handling from create_database_engine applies to this pool too.
+recipient_engine = create_database_engine(
+    settings.database_url,
+    pool_size=5, max_overflow=5, pool_timeout=2,
+    connect_args={
+        "connect_timeout": 2, "read_timeout": 2, "write_timeout": 2,
+        "init_command": "SET SESSION max_statement_time = 1",
+    },
+)
+RecipientSessionLocal = sessionmaker(bind=recipient_engine, autoflush=False, autocommit=False)
 
 
 def authorize_negotiation(db: Session, token: str | None, negotiation_id: int) -> User | int:
@@ -33,7 +46,7 @@ def authorize_negotiation(db: Session, token: str | None, negotiation_id: int) -
 
 def _recipient_close_code(negotiation_id: int, user_id: int, token: str | None) -> int | None:
     try:
-        with SessionLocal() as db:
+        with RecipientSessionLocal() as db:
             result = authorize_negotiation(db, token, negotiation_id)
             if isinstance(result, int):
                 return result

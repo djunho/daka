@@ -117,7 +117,7 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
         )
         self.message_session_patch.start()
         self.recipient_session_patch = patch(
-            "app.websocket_authorization.SessionLocal", self.session_factory
+            "app.websocket_authorization.RecipientSessionLocal", self.session_factory
         )
         self.recipient_session_patch.start()
         self.manager = ConnectionManager()
