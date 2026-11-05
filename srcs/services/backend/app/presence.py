@@ -56,7 +56,7 @@ def touch_last_seen(
         )
         if updated:
             db.commit()
-            user.last_seen = current_time
+            db.expire(user, ["last_seen"])
             return True
     except SQLAlchemyError:
         db.rollback()
