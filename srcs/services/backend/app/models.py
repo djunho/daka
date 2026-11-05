@@ -277,6 +277,7 @@ class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
         Index("idx_messages_negotiation_created", "negotiation_id", "created_at"),
+        Index("idx_messages_negotiation_id", "negotiation_id", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

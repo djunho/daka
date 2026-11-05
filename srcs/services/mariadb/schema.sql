@@ -176,6 +176,9 @@ CREATE TABLE messages (
 CREATE INDEX idx_messages_negotiation_created
     ON messages (negotiation_id, created_at);
 
+CREATE INDEX idx_messages_negotiation_id
+    ON messages (negotiation_id, id);
+
 --  Questionavel (reclamacao depende de admin)
 CREATE TABLE reports (
 	id 						INT AUTO_INCREMENT PRIMARY KEY,

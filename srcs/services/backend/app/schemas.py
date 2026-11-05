@@ -44,6 +44,10 @@ MAX_LISTINGS_PAGE_SIZE = 100
 # Without a ceiling, a huge offset passes validation and makes the database
 # fail (500). One billion is far beyond any real list.
 MAX_PAGE_OFFSET = 1_000_000_000
+DEFAULT_MESSAGES_PAGE_SIZE = 50
+MAX_MESSAGES_PAGE_SIZE = 100
+# MariaDB message ids are signed INTs. Larger cursors are invalid inputs.
+MAX_MESSAGE_ID = 2_147_483_647
 
 
 class MessageSendEvent(BaseModel):
@@ -113,6 +117,35 @@ class MessageCreatedEvent(BaseModel):
             sender_id=message.msg_sender, content=message.msg,
             created_at=message.created_at,
         ))
+
+
+class MessageHistorySender(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_name: str
+    avatar: str | None
+
+
+class MessageHistoryOut(BaseModel):
+    id: int
+    negotiation_id: int
+    sender: MessageHistorySender
+    content: str
+    created_at: datetime
+
+    @field_serializer("created_at")
+    def serialise_created_at(self, value: datetime) -> str:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+class MessageHistoryPage(BaseModel):
+    items: list[MessageHistoryOut]
+    limit: int
+    next_before_id: int | None
+    has_more: bool
 
 
 class WebSocketValidationDetail(BaseModel):

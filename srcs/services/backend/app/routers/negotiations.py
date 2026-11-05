@@ -13,6 +13,7 @@ from app.models import (
     Favorite,
     Listing,
     ListingState,
+    Message,
     Negotiation,
     NegotiationState,
     Proposal,
@@ -21,6 +22,12 @@ from app.models import (
 )
 from app.schemas import (
     DEFAULT_NEGOTIATIONS_PAGE_SIZE,
+    DEFAULT_MESSAGES_PAGE_SIZE,
+    MAX_MESSAGES_PAGE_SIZE,
+    MAX_MESSAGE_ID,
+    MessageHistoryOut,
+    MessageHistoryPage,
+    MessageHistorySender,
     MAX_NEGOTIATIONS_PAGE_SIZE,
     MAX_PAGE_OFFSET,
     ListingDetailOut,
@@ -38,6 +45,49 @@ from app.schemas import (
 from app.security import utcnow
 
 router = APIRouter()
+
+
+@router.get(
+    "/negotiations/{negotiation_id}/messages",
+    response_model=MessageHistoryPage,
+    tags=["negotiations"],
+    summary="Get negotiation message history",
+)
+def get_message_history(
+    negotiation_id: int = Path(gt=0),
+    limit: int = Query(default=DEFAULT_MESSAGES_PAGE_SIZE, ge=1, le=MAX_MESSAGES_PAGE_SIZE),
+    before_id: int | None = Query(default=None, gt=0, le=MAX_MESSAGE_ID),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageHistoryPage:
+    # Only load what authorisation needs, not proposals or the full history.
+    negotiation = (
+        db.query(Negotiation)
+        .options(joinedload(Negotiation.requested_listing))
+        .filter(Negotiation.id == negotiation_id)
+        .first()
+    )
+    if negotiation is None:
+        raise HTTPException(status_code=404, detail="Negotiation not found.")
+    _require_participant(negotiation, current_user.id)
+
+    query = db.query(Message).options(joinedload(Message.sender)).filter(
+        Message.negotiation_id == negotiation_id
+    )
+    if before_id is not None:
+        query = query.filter(Message.id < before_id)
+    rows = query.order_by(Message.id.desc()).limit(limit + 1).all()
+    has_more = len(rows) > limit
+    selected = rows[:limit]
+    next_before_id = selected[-1].id if has_more else None
+    return MessageHistoryPage(
+        items=[MessageHistoryOut(
+            id=message.id, negotiation_id=message.negotiation_id,
+            sender=MessageHistorySender.model_validate(message.sender),
+            content=message.msg, created_at=message.created_at,
+        ) for message in reversed(selected)],
+        limit=limit, next_before_id=next_before_id, has_more=has_more,
+    )
 
 
 def _listing_state(db: Session, name: str) -> ListingState:
