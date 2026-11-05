@@ -64,6 +64,12 @@ class User(Base):
     # preventing the account from authenticating or appearing as active.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    @property
+    def is_online(self) -> bool:
+        from app.presence import is_online
+
+        return is_online(self)
+
     # One-to-many: a user publishes many listings. ``back_populates`` links this
     # to Listing.owner so both sides stay consistent in memory.
     listings: Mapped[list["Listing"]] = relationship(back_populates="owner")
