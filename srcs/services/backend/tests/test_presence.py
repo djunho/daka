@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.dependencies import get_current_user
 from app.models import User, UserSession
 from app.presence import is_online, touch_last_seen
-from app.schemas import UserOut
+from app.schemas import PublicUserOut, UserOut
 from app.security import hash_session_token, utcnow
 from tests.helpers import make_memory_session
 
@@ -74,6 +74,12 @@ class PresenceTestCase(unittest.TestCase):
             f"{now.isoformat()}Z",
         )
 
+    def test_public_user_output_does_not_expose_last_seen(self) -> None:
+        self.user.last_seen = utcnow()
+        output = PublicUserOut.model_validate(self.user)
+
+        self.assertNotIn("last_seen", output.model_dump())
+
     def test_invalid_session_does_not_update_last_seen(self) -> None:
         with self.assertRaises(HTTPException):
             get_current_user("invalid-token", self.db)
@@ -98,11 +104,12 @@ class PresenceTestCase(unittest.TestCase):
     def test_presence_write_failure_does_not_expire_request_user(self) -> None:
         user_id = self.user.id
         with patch(
-            "app.presence.Session.commit",
+            "sqlalchemy.orm.Session.commit",
             side_effect=SQLAlchemyError("write failed"),
         ):
             self.assertFalse(touch_last_seen(self.db, self.user, utcnow()))
 
+        self.assertIsNotNone(self.db.get(User, user_id))
         self.assertEqual(self.user.id, user_id)
         self.assertIsNone(self.user.last_seen)
 
