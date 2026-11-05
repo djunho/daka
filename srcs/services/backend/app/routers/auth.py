@@ -440,6 +440,12 @@ def update_me(
     db: Session = Depends(get_db),
 ) -> User:
     """Update only the profile fields included in the request body."""
+    # get_current_user already read this row, which pins a MariaDB snapshot.
+    # End that read before locking so a concurrent presence update does not
+    # produce error 1020 under innodb_snapshot_isolation.
+    db.rollback()
+    db.refresh(current_user, with_for_update=True)
+
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(current_user, field, value)
 
