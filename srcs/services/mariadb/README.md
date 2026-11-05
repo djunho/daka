@@ -79,6 +79,31 @@ Contributing
 - If you change the schema, update `dakaERD.md` and `schema.sql` together and provide migration notes in this README.
 
 Migration notes
+- Ticket #120 adds `idx_messages_negotiation_id` on `messages (negotiation_id, id)`
+  for cursor pagination. New databases receive it from `schema.sql`. Existing
+  volumes must apply `tools/120-message-history-index.sql`; rebuilding the image
+  does not rerun initialisation on an existing volume. The migration adds only
+  an index and is safe to run again. Do not reload `schema.sql` or delete the
+  volume to apply this change.
+
+  From the repository root, using the existing app credentials inside the backend:
+
+  ```sh
+  docker compose -f srcs/docker-compose.yml exec -T backend python -c '
+  from app.database import engine
+  with engine.begin() as connection:
+      connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_messages_negotiation_id ON messages (negotiation_id, id)")
+  '
+  ```
+
+  Alternatively, execute this statement in the application database using your
+  normal database client:
+
+  ```sql
+  CREATE INDEX IF NOT EXISTS idx_messages_negotiation_id
+      ON messages (negotiation_id, id);
+  ```
+
 - Soft delete adds `users.deleted_at DATETIME NULL`.
 - New databases receive this column from `schema.sql`.
 - Existing MariaDB volumes must apply:

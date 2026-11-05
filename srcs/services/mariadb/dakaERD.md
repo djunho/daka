@@ -104,6 +104,10 @@ erDiagram
     PROPOSAL_STATES ||--o{ PROPOSALS : status
 ```
 
+Message history pagination uses the composite index
+`idx_messages_negotiation_id` on `MESSAGES (negotiation_id, id)`.
+The existing `(negotiation_id, created_at)` index remains available.
+
 `PROPOSALS` has a composite unique constraint on
 `(negotiation_id, offered_listing_unique_key)`. The generated key normalizes a
 missing `offered_listing_id` to `0`, allowing at most one proposal without an
