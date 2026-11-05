@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { apiListNegotiationMessages } from '../lib/api'
 import type {
   IncomingWebSocketEvent,
   MessageSendEvent,
@@ -19,14 +20,17 @@ export interface ChatMessageItem {
 export interface UseNegotiationChatReturn {
   messages: ChatMessageItem[]
   status: ChatConnectionStatus
+  isLoadingHistory: boolean
   error: string | null
   sendMessage: (content: string) => boolean
 }
 
 /**
- * Hook to manage real-time WebSocket communication for a negotiation chat.
- * Handles connecting to wss://<host>/api/ws/negotiations/:id,
- * sending message.send events and appending incoming message.created broadcasts.
+ * Hook to manage real-time WebSocket communication and initial REST history for a negotiation chat.
+ * Handles:
+ * 1. Initial message history fetching via GET /api/negotiations/:id/messages
+ * 2. Connecting to wss://<host>/api/ws/negotiations/:id
+ * 3. Sending message.send events and appending incoming message.created broadcasts with deduplication.
  */
 export function useNegotiationChat(
   negotiationId: number | null,
@@ -36,6 +40,7 @@ export function useNegotiationChat(
 
   const [messages, setMessages] = useState<ChatMessageItem[]>([])
   const [status, setStatus] = useState<ChatConnectionStatus>('disconnected')
+  const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
 
   const socketRef = useRef<WebSocket | null>(null)
@@ -45,6 +50,53 @@ export function useNegotiationChat(
     setMessages([])
     setError(null)
   }, [negotiationId])
+
+  // Fetch initial message history from the REST endpoint
+  useEffect(() => {
+    if (!negotiationId || !currentUserId) {
+      setIsLoadingHistory(false)
+      return
+    }
+
+    let isCancelled = false
+    setIsLoadingHistory(true)
+
+    apiListNegotiationMessages(negotiationId, { limit: 50 })
+      .then((page) => {
+        if (isCancelled) return
+
+        const historicalItems: ChatMessageItem[] = page.items.map((item) => ({
+          id: item.id,
+          negotiationId: item.negotiation_id,
+          senderId: item.sender.id,
+          content: item.content,
+          createdAt: item.created_at,
+          isOwn: item.sender.id === currentUserId,
+        }))
+
+        setMessages((prev) => {
+          // Deduplicate by database message ID
+          const existingIds = new Set(historicalItems.map((m) => m.id))
+          const realtimeOnly = prev.filter((m) => !existingIds.has(m.id))
+          return [...historicalItems, ...realtimeOnly].sort((a, b) => a.id - b.id)
+        })
+      })
+      .catch((err) => {
+        // If the endpoint is not yet available, keep existing messages intact without breaking WebSocket
+        if (!isCancelled) {
+          console.warn('Could not load negotiation history:', err)
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingHistory(false)
+        }
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [negotiationId, currentUserId])
 
   // Establish and manage the WebSocket lifecycle for the active negotiation
   useEffect(() => {
@@ -94,11 +146,19 @@ export function useNegotiationChat(
       }
     }
 
-    socket.onerror = () => {
+    socket.onerror = (e) => {
+      console.error('WebSocket error:', e)
       setStatus('error')
     }
 
-    socket.onclose = () => {
+    socket.onclose = (event: CloseEvent) => {
+      if (event.code === 4401) {
+        setError('Sessão expirada. Por favor, inicia sessão novamente.')
+      } else if (event.code === 4403) {
+        setError('Acesso negado: não participas nesta negociação ou a origem não está autorizada (4403).')
+      } else if (event.code === 4404) {
+        setError('Negociação não encontrada (4404).')
+      }
       setStatus('disconnected')
     }
 
@@ -138,6 +198,7 @@ export function useNegotiationChat(
   return {
     messages,
     status,
+    isLoadingHistory,
     error,
     sendMessage,
   }
