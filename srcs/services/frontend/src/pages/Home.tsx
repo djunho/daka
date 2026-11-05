@@ -137,7 +137,7 @@ export default function Home() {
 
   return (
     <main>
-      <section className="px-6 pt-11 pb-2">
+      <section className="px-4 sm:px-6 pt-11 pb-2">
         <h1 className="font-display font-bold tracking-tight text-[clamp(32px,6vw,52px)]">
           Não compres. <span className="text-accent">Troca.</span>
         </h1>
@@ -147,7 +147,7 @@ export default function Home() {
         </p>
       </section>
 
-      <nav className="flex flex-wrap gap-2 px-6 pt-5 pb-2" aria-label="Filtrar por categoria">
+      <nav className="flex flex-wrap gap-2 px-4 sm:px-6 pt-5 pb-2" aria-label="Filtrar por categoria">
         {categories.map((cat) => (
           <button
             key={cat.id}
@@ -161,12 +161,12 @@ export default function Home() {
         ))}
       </nav>
 
-      <div className="flex flex-wrap items-center gap-2 px-6 pt-2">
+      <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 pt-2">
         <form
           onSubmit={handleLocationSubmit}
           role="search"
           aria-label="Filtrar por localização"
-          className="flex flex-1 gap-2 max-w-md"
+          className="flex w-full gap-2 sm:w-auto sm:flex-1 sm:max-w-md"
         >
           <LocationAutocomplete
             id="home-location"
@@ -210,7 +210,7 @@ export default function Home() {
         </label>
       </div>
 
-      <section className="px-6 pt-2 pb-12">
+      <section className="px-4 sm:px-6 pt-2 pb-12">
         {!loading && !error && (
           <p className="text-muted text-sm mt-2 mb-4">
             {total} {total === 1 ? 'anúncio' : 'anúncios'}
