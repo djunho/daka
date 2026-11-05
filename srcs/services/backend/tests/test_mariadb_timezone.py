@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import create_database_engine
-from app.schemas import MessageCreatedData
+from app.schemas import MessageCreatedData, MessageHistoryOut, MessageHistorySender
 
 
 @unittest.skipUnless(os.getenv("RUN_MARIADB_INTEGRATION") == "1", "requires MariaDB integration")
@@ -64,6 +64,12 @@ class MariaDBTimezoneTestCase(unittest.TestCase):
                 serialized = json.loads(payload)["created_at"]
                 self.assertTrue(serialized.endswith("Z"))
                 self.assertEqual(datetime.fromisoformat(serialized.replace("Z", "+00:00")), expected)
+                history = MessageHistoryOut(
+                    id=1, negotiation_id=1,
+                    sender=MessageHistorySender(id=1, user_name="test", avatar=None),
+                    content="test", created_at=restored,
+                ).model_dump_json()
+                self.assertEqual(json.loads(history)["created_at"], serialized)
         finally:
             # Disposing closes the only connection and drops its temporary table.
             engine.dispose()
