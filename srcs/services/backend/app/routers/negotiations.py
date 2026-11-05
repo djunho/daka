@@ -502,29 +502,9 @@ def create_proposal(
 
     offered = None
     if payload.offered_listing_id is not None:
-        if payload.offered_listing_id == negotiation.listing_id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Requested and offered listings must be different.",
-            )
-        offered = db.get(
-            Listing, payload.offered_listing_id, with_for_update=True
+        offered = _lock_offered_listing(
+            db, negotiation, payload.offered_listing_id, user_id
         )
-        if offered is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Offered listing not found.",
-            )
-        if offered.user_id != user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You may only offer one of your own listings.",
-            )
-        if offered.state_id != _listing_state(db, "Available").id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Offered listing is not available.",
-            )
 
     proposal = Proposal(
         negotiation_id=negotiation.id,
@@ -542,6 +522,39 @@ def create_proposal(
             detail="An identical proposal already exists in this negotiation.",
         ) from exc
     return _proposal_out(_load_proposal(db, proposal.id))
+
+
+def _lock_offered_listing(
+    db: Session, negotiation: Negotiation, listing_id: int, user_id: int
+) -> Listing:
+    """Lock a listing the interested user offers and check it can be offered.
+
+    Shared by creating and reopening a proposal, so both apply the same rules.
+    Call it after locking the negotiation: the lock order is negotiations,
+    proposals, listings.
+    """
+    if listing_id == negotiation.listing_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Requested and offered listings must be different.",
+        )
+    offered = db.get(Listing, listing_id, with_for_update=True)
+    if offered is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Offered listing not found.",
+        )
+    if offered.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You may only offer one of your own listings.",
+        )
+    if offered.state_id != _listing_state(db, "Available").id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Offered listing is not available.",
+        )
+    return offered
 
 
 def _lock_proposal_and_negotiation(
@@ -733,6 +746,59 @@ def withdraw_proposal(
     return _close_pending_proposal(
         proposal_id, current_user, db, action="withdraw"
     )
+
+
+@router.patch(
+    "/proposals/{proposal_id}/reopen",
+    response_model=ProposalOut,
+    tags=["proposals"],
+    summary="Reopen a withdrawn proposal",
+)
+def reopen_proposal(
+    proposal_id: int = Path(gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ProposalOut:
+    """Put a proposal the interested user withdrew back to Pending (ADR-0003).
+
+    The same row is reused, so the unique rule of one proposal per offered
+    listing (or per "no listing") in a negotiation still holds. Rejected and
+    other closed proposals stay closed.
+    """
+    user_id = current_user.id
+    db.rollback()
+    proposal, negotiation = _lock_proposal_and_negotiation(db, proposal_id)
+    if negotiation.interested_user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the interested user may reopen a proposal.",
+        )
+    # Cancelling a negotiation also marks its proposals Withdrawn: requiring an
+    # open negotiation keeps those closed.
+    if (
+        negotiation.negotiation_state_id != _negotiation_state(db, "Open").id
+        or proposal.proposal_state_id != _proposal_state(db, "Withdrawn").id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a withdrawn proposal in an open negotiation may be reopened.",
+        )
+    # The offered listing may have been reserved, traded or removed since.
+    if proposal.offered_listing_id is not None:
+        _lock_offered_listing(db, negotiation, proposal.offered_listing_id, user_id)
+
+    proposal.proposal_state_id = _proposal_state(db, "Pending").id
+    proposal.responded_at = None
+    negotiation.updated_at = utcnow()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Proposal could not be reopened because related data changed.",
+        ) from exc
+    return _proposal_out(_load_proposal(db, proposal.id))
 
 
 @router.patch(
