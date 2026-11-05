@@ -10,7 +10,29 @@ CREATE TABLE users (
 	created_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		ON UPDATE CURRENT_TIMESTAMP,
+	-- NULL means the user has never sent an activity signal and is offline.
+	last_seen 		DATETIME NULL DEFAULT NULL,
 	deleted_at 		DATETIME NULL
+);
+
+-- A friendship is symmetric and stored once with the lower user id first.
+-- Removing a friendship keeps the row so it can be reactivated later.
+CREATE TABLE friendships (
+	user_id			INT NOT NULL,
+	friend_id		INT NOT NULL,
+	status			ENUM('accepted', 'removed') NOT NULL DEFAULT 'accepted',
+	created_at		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		ON UPDATE CURRENT_TIMESTAMP,
+
+	PRIMARY KEY (user_id, friend_id),
+	CONSTRAINT chk_friendship_order CHECK (user_id < friend_id),
+	FOREIGN KEY (user_id)
+		REFERENCES users(id)
+		ON DELETE CASCADE,
+	FOREIGN KEY (friend_id)
+		REFERENCES users(id)
+		ON DELETE CASCADE
 );
 
 -- One row per active login. Logging out deletes the row, which is what makes

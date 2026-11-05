@@ -213,6 +213,19 @@ cookie data is included. `message.created` is the sender's confirmation; the
 frontend must use its persisted id/timestamp rather than treat an optimistic
 placeholder as a confirmed message. There is no separate acknowledgement event.
 
+`messages.created_at` is a MariaDB `TIMESTAMP`, which the server converts using
+the connection's session timezone. `app/database.py` therefore executes
+`SET SESSION time_zone = '+00:00'` on every pool checkout, both for new and reused
+physical connections. This makes naive timestamps returned by PyMySQL represent
+UTC before the serializer labels them with `Z`. The policy does not depend on
+the server/OS timezone or on named timezone tables. Failure to set the timezone
+fails the checkout rather than silently using another zone.
+
+No column migration or global database timezone change is required. Deploy the
+updated backend code and restart workers if they do not reload automatically.
+Other database clients must also use UTC when reading/writing timestamps under
+this convention. This does not retroactively repair incorrectly supplied dates.
+
 `broadcast` accepts a `PersistedMessage` returned by the commit-confirmed worker,
 not a raw input event or a separate room argument. Public schema validation
 requires positive ids and a timestamp. This typed boundary trusts the persistence
@@ -357,4 +370,14 @@ state transition and is rejected after the terminal state commits:
 
 ```sh
 RUN_MARIADB_INTEGRATION=1 python -m unittest tests.test_mariadb_concurrency -v
+```
+
+The timezone integration test starts a physical connection in `+05:30`, verifies
+the production checkout hook resets it to UTC, deliberately changes the session
+zone, then reuses the same connection and verifies UTC is restored. It compares a
+real TIMESTAMP's serialized instant against `UNIX_TIMESTAMP` and uses only a
+temporary table, without changing the server's global timezone:
+
+```sh
+RUN_MARIADB_INTEGRATION=1 python -m unittest tests.test_mariadb_timezone -v
 ```
