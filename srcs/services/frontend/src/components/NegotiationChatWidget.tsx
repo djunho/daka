@@ -26,7 +26,7 @@ export default function NegotiationChatWidget({
   const [isMinimized, setIsMinimized] = useState(false)
   const [inputText, setInputText] = useState('')
 
-  const { messages, status, error, sendMessage } = useNegotiationChat(negotiationId)
+  const { messages, status, isLoadingHistory, error, sendMessage } = useNegotiationChat(negotiationId)
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
@@ -98,7 +98,12 @@ export default function NegotiationChatWidget({
         <div className="flex flex-col h-80 bg-paper">
           {/* Scrollable message thread area */}
           <div className="flex-1 p-3 overflow-y-auto space-y-3 flex flex-col">
-            {messages.length === 0 ? (
+            {isLoadingHistory && messages.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-muted text-xs select-none">
+                <div className="w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin mb-2" />
+                <p className="font-medium text-ink">A carregar mensagens...</p>
+              </div>
+            ) : messages.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-muted text-xs select-none">
                 <span className="text-2xl mb-1">💬</span>
                 <p className="font-medium text-ink">Sem mensagens ainda</p>
