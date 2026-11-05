@@ -44,7 +44,9 @@ class MessageProcessingError(Exception):
 
     def as_event(self) -> dict:
         return WebSocketErrorEvent(error=WebSocketErrorData(
-            code=self.code, message=ERROR_MESSAGES[self.code], retry_after=self.retry_after,
+            code=self.code,
+            message=ERROR_MESSAGES.get(self.code, "An error occurred."),
+            retry_after=self.retry_after,
         )).model_dump(mode="json", exclude_none=True)
 
 
