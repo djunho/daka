@@ -6,6 +6,7 @@ import logging
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import settings
 from app.models import User
@@ -57,7 +58,7 @@ def touch_last_seen(
         )
         db.commit()
         if updated:
-            user.last_seen = current_time
+            set_committed_value(user, "last_seen", current_time)
         return bool(updated)
     except SQLAlchemyError:
         db.rollback()
