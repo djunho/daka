@@ -99,11 +99,21 @@ CREATE TABLE IF NOT EXISTS friendships (
 	friend_id INT NOT NULL,
 	status ENUM('accepted', 'removed') NOT NULL DEFAULT 'accepted',
 	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		ON UPDATE CURRENT_TIMESTAMP,
 	PRIMARY KEY (user_id, friend_id),
 	CONSTRAINT chk_friendship_order CHECK (user_id < friend_id),
 	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
 	FOREIGN KEY (friend_id) REFERENCES users(id) ON DELETE CASCADE
 );
+```
+
+If `friendships` already exists, add the lifecycle timestamp separately:
+
+```sql
+ALTER TABLE friendships ADD COLUMN IF NOT EXISTS updated_at
+    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ON UPDATE CURRENT_TIMESTAMP AFTER created_at;
 ```
 
 The pair must always be normalized before insert or lookup (`user_id <

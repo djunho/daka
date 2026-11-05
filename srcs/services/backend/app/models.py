@@ -79,11 +79,13 @@ class User(Base):
     friendships_as_user: Mapped[list["Friendship"]] = relationship(
         foreign_keys="Friendship.user_id",
         back_populates="user",
+        cascade="all, delete-orphan",
         passive_deletes=True,
     )
     friendships_as_friend: Mapped[list["Friendship"]] = relationship(
         foreign_keys="Friendship.friend_id",
         back_populates="friend",
+        cascade="all, delete-orphan",
         passive_deletes=True,
     )
 
@@ -131,6 +133,9 @@ class Friendship(Base):
         default="accepted",
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
     user: Mapped["User"] = relationship(
         foreign_keys=[user_id],

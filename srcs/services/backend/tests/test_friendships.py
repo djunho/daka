@@ -4,32 +4,26 @@ from datetime import datetime
 import unittest
 
 from fastapi import Response
-from sqlalchemy import create_engine
 from sqlalchemy.exc import StatementError
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.database import Base
+from app.friendships import (
+    active_friendships_query,
+    normalize_pair,
+    remove_friendship,
+    save_friendship,
+)
 from app.models import (
     Friendship,
-    ListingState,
-    NegotiationState,
-    ProposalState,
     User,
 )
 from app.routers.auth import delete_me
 from app.security import utcnow
+from tests.helpers import make_memory_session
 
 
 class FriendshipsTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        engine = create_engine(
-            "sqlite+pysqlite:///:memory:",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
-        Base.metadata.create_all(engine)
-        self.db = sessionmaker(bind=engine, expire_on_commit=False)()
+        self.db, _, _, _ = make_memory_session()
         self.db.add_all(
             [
                 User(
@@ -47,37 +41,6 @@ class FriendshipsTestCase(unittest.TestCase):
                     email="carol-friendships@example.test",
                     last_seen=utcnow(),
                 ),
-                *[
-                    ListingState(state_name=name)
-                    for name in (
-                        "Available",
-                        "Reserved",
-                        "Traded",
-                        "Expired",
-                        "Removed",
-                    )
-                ],
-                *[
-                    NegotiationState(state_name=name)
-                    for name in (
-                        "Open",
-                        "Agreed",
-                        "Completed",
-                        "Cancelled",
-                        "Unavailable",
-                    )
-                ],
-                *[
-                    ProposalState(state_name=name)
-                    for name in (
-                        "Pending",
-                        "Accepted",
-                        "Rejected",
-                        "Withdrawn",
-                        "NotSelected",
-                        "ItemUnavailable",
-                    )
-                ],
             ]
         )
         self.db.commit()
@@ -87,8 +50,7 @@ class FriendshipsTestCase(unittest.TestCase):
 
     def test_friendship_has_two_explicit_user_relationships(self) -> None:
         alice, bob = self.db.query(User).order_by(User.id).limit(2).all()
-        friendship = Friendship(user_id=alice.id, friend_id=bob.id)
-        self.db.add(friendship)
+        friendship = save_friendship(self.db, bob.id, alice.id)
         self.db.commit()
 
         self.assertIs(friendship.user, alice)
@@ -96,15 +58,38 @@ class FriendshipsTestCase(unittest.TestCase):
         self.assertEqual(alice.friendships_as_user, [friendship])
         self.assertEqual(bob.friendships_as_friend, [friendship])
 
+    def test_normalize_pair_is_order_independent(self) -> None:
+        self.assertEqual(normalize_pair(3, 10), (3, 10))
+        self.assertEqual(normalize_pair(10, 3), (3, 10))
+
+    def test_normalize_pair_rejects_self_friendship(self) -> None:
+        with self.assertRaises(ValueError):
+            normalize_pair(3, 3)
+
+    def test_active_friendships_query_finds_both_sides_and_ignores_removed(
+        self,
+    ) -> None:
+        alice, bob, carol = self.db.query(User).order_by(User.id).all()
+        save_friendship(self.db, alice.id, bob.id)
+        save_friendship(self.db, carol.id, alice.id)
+        remove_friendship(self.db, bob.id, carol.id)
+        self.db.commit()
+
+        self.assertEqual(
+            active_friendships_query(self.db, alice.id).all(),
+            [
+                self.db.get(Friendship, (alice.id, bob.id)),
+                self.db.get(Friendship, (alice.id, carol.id)),
+            ],
+        )
+        self.assertEqual(active_friendships_query(self.db, bob.id).count(), 1)
+        self.assertEqual(active_friendships_query(self.db, carol.id).count(), 1)
+
     def test_deleting_user_removes_friendships_on_both_sides_and_last_seen(self) -> None:
         alice, bob, carol = self.db.query(User).order_by(User.id).all()
-        self.db.add_all(
-            [
-                Friendship(user_id=alice.id, friend_id=bob.id),
-                Friendship(user_id=alice.id, friend_id=carol.id),
-                Friendship(user_id=bob.id, friend_id=carol.id),
-            ]
-        )
+        save_friendship(self.db, alice.id, bob.id)
+        save_friendship(self.db, alice.id, carol.id)
+        save_friendship(self.db, bob.id, carol.id)
         self.db.commit()
 
         delete_me(Response(), bob, self.db)
@@ -124,6 +109,40 @@ class FriendshipsTestCase(unittest.TestCase):
 
         with self.assertRaises(StatementError):
             self.db.commit()
+
+    def test_friendship_updates_timestamp_when_status_changes(self) -> None:
+        alice, bob = self.db.query(User).order_by(User.id).limit(2).all()
+        friendship = save_friendship(self.db, alice.id, bob.id)
+        self.db.commit()
+
+        created_updated_at = friendship.updated_at
+        remove_friendship(self.db, bob.id, alice.id)
+        self.db.commit()
+
+        self.assertIsNotNone(created_updated_at)
+        self.assertGreaterEqual(friendship.updated_at, created_updated_at)
+
+    def test_physical_user_delete_cascades_loaded_friendships(self) -> None:
+        alice, bob, carol = self.db.query(User).order_by(User.id).all()
+        save_friendship(self.db, alice.id, bob.id)
+        save_friendship(self.db, alice.id, carol.id)
+        save_friendship(self.db, bob.id, carol.id)
+        self.db.commit()
+
+        self.assertEqual(len(alice.friendships_as_user), 2)
+        self.assertEqual(len(bob.friendships_as_user), 1)
+        self.assertEqual(len(bob.friendships_as_friend), 1)
+
+        self.db.delete(bob)
+        self.db.commit()
+
+        self.assertIsNone(self.db.get(User, bob.id))
+        self.assertEqual(
+            self.db.query(Friendship).count(),
+            1,
+        )
+        remaining = self.db.query(Friendship).one()
+        self.assertEqual((remaining.user_id, remaining.friend_id), (alice.id, carol.id))
 
 
 if __name__ == "__main__":

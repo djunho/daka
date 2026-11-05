@@ -152,6 +152,7 @@ erDiagram
         INT friend_id PK,FK
         ENUM status "accepted/removed"
         TIMESTAMP created_at
+        TIMESTAMP updated_at
     }
 
     USERS {
