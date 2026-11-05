@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
 import Button from '../components/Button'
-import { ApiError } from '../lib/api'
+import { AccountCreatedError, getPortugueseErrorMessage } from '../lib/errors'
 
 // The authentication screen, now with real state and client-side validation.
 //
@@ -195,14 +195,32 @@ export default function Login() {
       // On success the context now holds the user; send them to the intended page.
       navigate(from, { replace: true })
     } catch (err) {
-      // The API layer throws ApiError with the server's message in .message.
-      // Anything else is unexpected, but still worth showing something for.
+      if (err instanceof AccountCreatedError) {
+        // The account was created; only the automatic sign-in failed. Move to
+        // the sign-in tab with the email and password still filled in, so one
+        // press of "Entrar no Daka" tries again.
+        switchTab('signin')
+        setBanner({
+          type: 'success',
+          message:
+            'A tua conta foi criada, mas não foi possível iniciar sessão automaticamente. Carrega em "Entrar no Daka" para tentares outra vez.',
+        })
+        return
+      }
+      // The API answers in English, so the message shown is always ours.
+      // On sign-in a 401 must not say whether the email or the password was
+      // wrong: the backend answers both the same way so as not to reveal which
+      // emails are registered. On sign-up that is already public, so a 409 can
+      // say the email is taken.
       setBanner({
         type: 'error',
-        message:
-          err instanceof ApiError
-            ? err.message
-            : 'Algo correu mal. Por favor, tenta novamente.',
+        message: getPortugueseErrorMessage(
+          err,
+          'Algo correu mal. Por favor, tenta novamente.',
+          isSignup
+            ? { 409: 'Já existe uma conta com este email. Inicia sessão ou usa outro email.' }
+            : { 401: 'O email ou a palavra-passe estão incorretos.' },
+        ),
       })
     } finally {
       // Runs whether we succeeded or failed, so the button never stays stuck.
