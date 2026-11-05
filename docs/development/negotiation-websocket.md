@@ -182,8 +182,8 @@ error; logs contain ids and the exception class, not SQL, parameters or exceptio
 text. There is no automatic retry of the insert.
 
 After the worker returns, the endpoint passes the committed result to
-`manager.broadcast`. It adds no history endpoint; terminal states reject writes
-without deleting past messages.
+`manager.broadcast`. Terminal states reject writes without deleting past messages;
+participants can read those messages through the REST history endpoint.
 There is no deduplication across separate client sends/retries: at most one
 insert occurs per processing attempt.
 
@@ -206,7 +206,7 @@ and the sender's other tabs/devices, receive the same event:
 ```
 
 `MessageCreatedData` is the public message representation available for reuse by
-future REST history. It maps persisted `msg_sender`/`msg` to `sender_id`/`content`
+REST consumers. It maps persisted `msg_sender`/`msg` to `sender_id`/`content`
 and serialises datetimes as ISO 8601 UTC with a `Z` suffix. Naive database
 datetimes follow the project's UTC convention. No sender profile, session or
 cookie data is included. `message.created` is the sender's confirmation; the
@@ -303,10 +303,67 @@ exactly-once protocol. A successful send means the transport accepted the write,
 not that a user read it. Clients should identify messages by persisted id and
 must not blindly resend after a delivery failure, which can create another row.
 
-Undelivered messages remain in the database. The REST history endpoint and
-frontend reconnection/recovery are still pending separate tickets: recovery is
-not available to clients yet. Multiple backend processes will require a shared
-broker or equivalent design; none is introduced here.
+Undelivered messages remain in the database and can be fetched through REST
+history. Frontend reconnection/automatic recovery remains separate work. Multiple
+backend processes will require a shared broker or equivalent design; none is
+introduced here.
+
+## REST message history
+
+`GET /api/negotiations/{negotiation_id}/messages` requires the existing session
+cookie and permits only the interested user and requested listing owner. Missing
+authentication returns 401, a missing negotiation 404 and a nonparticipant 403.
+Access does not depend on negotiation state: Open, Agreed, Completed, Cancelled
+and Unavailable all retain readable history for authenticated participants.
+
+Query parameters:
+
+| Parameter | Default | Valid values |
+| --- | --- | --- |
+| limit | 50 | Integer from 1 to 100 |
+| before_id | omitted | Positive integer up to 2147483647 (message INT range) |
+
+Invalid parameters return 422. A cursor is an exclusive numeric boundary; it
+need not identify an existing message or a message in the same negotiation.
+Every query still filters by the authorised negotiation. No OFFSET is used.
+
+The query fetches `limit + 1` messages in descending id order, checks for an
+extra row, trims the result and reverses it. Thus the first page contains the
+most recent messages in ascending id order, with stable ordering even when
+timestamps are identical. New messages do not shift the boundary of older pages.
+
+```json
+{
+  "items": [{
+    "id": 251,
+    "negotiation_id": 20,
+    "sender": {"id": 7, "user_name": "Alex", "avatar": null},
+    "content": "O comando é o original?",
+    "created_at": "2026-10-28T14:30:00Z"
+  }],
+  "limit": 50,
+  "next_before_id": 251,
+  "has_more": true
+}
+```
+
+When `has_more` is true, `next_before_id` is the oldest id in the returned page.
+Pass it as `before_id` to request the preceding page. When there are no older
+messages, including empty pages, `has_more` is false and `next_before_id` is null.
+Prepend earlier pages when assembling a chronological conversation.
+
+REST adds only the sender's public id, user_name and avatar; email, location,
+session and credentials are not returned. Historical messages remain visible if
+their sender was soft-deleted, while the requesting account must still be active.
+Like WebSocket messages, timestamps use ISO 8601 UTC with a Z suffix and content
+is returned literally. REST includes a `sender` object instead of WebSocket's
+`sender_id`; both identify the same persisted sender.
+
+The cursor query uses `idx_messages_negotiation_id (negotiation_id, id)`. Existing
+database volumes must apply the additive migration documented in
+`srcs/services/mariadb/README.md`; image rebuilds alone do not migrate them.
+This endpoint retrieves committed history but does not implement automatic
+frontend reconnect, merge/deduplication or resend logic.
 
 ## Frequency limit
 
@@ -371,6 +428,7 @@ python -m unittest discover -s tests -p 'test*websocket.py' -v
 python -m unittest discover -s tests -p 'test_connection_manager.py' -v
 python -m unittest discover -s tests -p 'test_message_processing.py' -v
 python -m unittest discover -s tests -p 'test_websocket_broadcast.py' -v
+python -m unittest discover -s tests -p 'test_message_history.py' -v
 ```
 
 The tests cover isolated rooms, multiple connections per participant, duplicate
