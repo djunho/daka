@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ApiProposal } from '../lib/api'
-import { groupProposals } from './negotiation'
+import { groupProposals, isNegotiationReadOnly } from './negotiation'
 
 function proposal(id: number, created_at: string): ApiProposal {
   return {
@@ -30,5 +30,23 @@ describe('groupProposals', () => {
     ])
 
     expect(pending.map((p) => p.id)).toEqual([4, 3])
+  })
+})
+
+describe('isNegotiationReadOnly', () => {
+  it('returns false for active states (Open and Agreed)', () => {
+    expect(isNegotiationReadOnly('Open')).toBe(false)
+    expect(isNegotiationReadOnly('Agreed')).toBe(false)
+    expect(isNegotiationReadOnly({ id: 1, state_name: 'Open' })).toBe(false)
+    expect(isNegotiationReadOnly({ id: 2, state_name: 'Agreed' })).toBe(false)
+  })
+
+  it('returns true for terminal states (Completed, Cancelled, Unavailable)', () => {
+    expect(isNegotiationReadOnly('Completed')).toBe(true)
+    expect(isNegotiationReadOnly('Cancelled')).toBe(true)
+    expect(isNegotiationReadOnly('Unavailable')).toBe(true)
+    expect(isNegotiationReadOnly({ id: 3, state_name: 'Completed' })).toBe(true)
+    expect(isNegotiationReadOnly({ id: 4, state_name: 'Cancelled' })).toBe(true)
+    expect(isNegotiationReadOnly({ id: 5, state_name: 'Unavailable' })).toBe(true)
   })
 })

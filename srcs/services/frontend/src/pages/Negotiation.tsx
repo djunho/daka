@@ -26,6 +26,7 @@ import { categoryTint } from '../types/listing'
 import {
   formatDate,
   groupProposals,
+  isNegotiationReadOnly,
   NEGOTIATION_STATE_LABELS,
   PROPOSAL_STATE_LABELS,
 } from '../types/negotiation'
@@ -118,8 +119,17 @@ export default function Negotiation() {
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState<boolean>(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
-  const { isChatOpen, openChat, closeChat } = useChat()
+  const { activeChat, isChatOpen, openChat, closeChat } = useChat()
   const chatOpen = negotiation ? isChatOpen(negotiation.id) : false
+
+  // Keep active chat read-only state in sync with the negotiation state
+  useEffect(() => {
+    if (!negotiation) return
+    const isReadOnly = isNegotiationReadOnly(negotiation.state)
+    if (activeChat?.negotiationId === negotiation.id && activeChat.isReadOnly !== isReadOnly) {
+      openChat(negotiation.id, activeChat.interlocutorName, isReadOnly)
+    }
+  }, [negotiation, activeChat, openChat])
 
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const [proposalFormOpen, setProposalFormOpen] = useState<boolean>(false)
@@ -443,7 +453,8 @@ export default function Negotiation() {
                   const partnerName = isOwner
                     ? negotiation.interested_user.user_name
                     : negotiation.owner.user_name
-                  openChat(negotiation.id, partnerName)
+                  const isReadOnly = isNegotiationReadOnly(negotiation.state)
+                  openChat(negotiation.id, partnerName, isReadOnly)
                 }
               }}
             >

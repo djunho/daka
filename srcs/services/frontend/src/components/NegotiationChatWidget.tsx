@@ -9,6 +9,7 @@ export interface NegotiationChatWidgetProps {
   negotiationId: number
   interlocutorName: string
   interlocutorOnline?: boolean
+  isReadOnly?: boolean
   onClose?: () => void
 }
 
@@ -20,13 +21,22 @@ export default function NegotiationChatWidget({
   negotiationId,
   interlocutorName,
   interlocutorOnline = false,
+  isReadOnly: initialReadOnly = false,
   onClose,
 }: NegotiationChatWidgetProps) {
   // State to toggle widget between minimized and expanded
   const [isMinimized, setIsMinimized] = useState(false)
   const [inputText, setInputText] = useState('')
 
-  const { messages, status, isLoadingHistory, error, clearError, sendMessage } = useNegotiationChat(negotiationId)
+  const {
+    messages,
+    status,
+    isLoadingHistory,
+    isReadOnly,
+    error,
+    clearError,
+    sendMessage,
+  } = useNegotiationChat(negotiationId, { isReadOnly: initialReadOnly })
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
@@ -40,10 +50,11 @@ export default function NegotiationChatWidget({
   const charCount = [...inputText].length
   const isOverLimit = charCount > MAX_MESSAGE_LENGTH
   const isConnected = status === 'connected'
-  const canSend = charCount > 0 && !isOverLimit && isConnected
+  const canSend = charCount > 0 && !isOverLimit && isConnected && !isReadOnly
 
   const handleSendMessage = (e: FormEvent) => {
     e.preventDefault()
+    if (isReadOnly) return
     const trimmed = inputText.trim()
     if (!trimmed || [...trimmed].length > MAX_MESSAGE_LENGTH) return
 
@@ -154,14 +165,16 @@ export default function NegotiationChatWidget({
                   if (error) clearError()
                 }}
                 placeholder={
-                  status === 'connecting'
-                    ? 'A ligar ao chat...'
-                    : status === 'disconnected'
-                      ? 'Chat desconectado'
-                      : 'Escreve uma mensagem...'
+                  isReadOnly
+                    ? 'Negociação encerrada (modo de leitura)'
+                    : status === 'connecting'
+                      ? 'A ligar ao chat...'
+                      : status === 'disconnected'
+                        ? 'Chat desconectado'
+                        : 'Escreve uma mensagem...'
                 }
                 maxLength={MAX_MESSAGE_LENGTH + 50}
-                disabled={!isConnected}
+                disabled={!isConnected || isReadOnly}
                 className="flex-1 px-3 py-1.5 bg-paper border border-line focus:border-brand focus:outline-none rounded-xl text-xs text-ink placeholder:text-muted transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               />
               <button
@@ -175,10 +188,14 @@ export default function NegotiationChatWidget({
 
             {/* Helper text and character counter */}
             <div className="flex justify-between items-center text-[10px] text-muted px-0.5 select-none">
-              <span>Pressiona Enter para enviar</span>
-              <span className={isOverLimit ? 'text-accent font-semibold' : ''}>
-                {charCount}/{MAX_MESSAGE_LENGTH}
+              <span>
+                {isReadOnly ? 'Chat em modo de leitura' : 'Pressiona Enter para enviar'}
               </span>
+              {!isReadOnly && (
+                <span className={isOverLimit ? 'text-accent font-semibold' : ''}>
+                  {charCount}/{MAX_MESSAGE_LENGTH}
+                </span>
+              )}
             </div>
           </form>
         </div>

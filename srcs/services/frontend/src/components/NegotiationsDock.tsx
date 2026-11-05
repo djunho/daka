@@ -4,6 +4,7 @@ import Avatar from './Avatar'
 import { apiListNegotiations, type ApiNegotiationSummary } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
+import { isNegotiationReadOnly } from '../types/negotiation'
 
 /**
  * NegotiationsDock:
@@ -46,10 +47,8 @@ export default function NegotiationsDock() {
   // Don't render anything for unauthenticated visitors
   if (!user) return null
 
-  // Count active negotiations (Open or Agreed)
-  const activeCount = negotiations.filter(
-    (n) => n.state.state_name === 'Open' || n.state.state_name === 'Agreed',
-  ).length
+  // Count active negotiations (not in read-only mode)
+  const activeCount = negotiations.filter((n) => !isNegotiationReadOnly(n.state)).length
 
   return (
     <aside
@@ -178,7 +177,7 @@ export default function NegotiationsDock() {
                   <div className="flex items-center gap-2 pt-1 border-t border-line/60">
                     <button
                       type="button"
-                      onClick={() => openChat(neg.id, otherUser.user_name)}
+                      onClick={() => openChat(neg.id, otherUser.user_name, isNegotiationReadOnly(neg.state))}
                       className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
                         isCurrentChat
                           ? 'bg-brand/15 text-brand border border-brand/30'

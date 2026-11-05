@@ -4,11 +4,12 @@ import { useAuth } from './AuthContext'
 export interface ActiveChat {
   negotiationId: number
   interlocutorName: string
+  isReadOnly?: boolean
 }
 
 interface ChatContextType {
   activeChat: ActiveChat | null
-  openChat: (negotiationId: number, interlocutorName: string) => void
+  openChat: (negotiationId: number, interlocutorName: string, isReadOnly?: boolean) => void
   closeChat: () => void
   isChatOpen: (negotiationId: number) => boolean
 }
@@ -40,10 +41,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [user])
 
-  const openChat = (negotiationId: number, interlocutorName: string) => {
+  const openChat = (negotiationId: number, interlocutorName: string, isReadOnly?: boolean) => {
     setActiveChat({
       negotiationId,
       interlocutorName,
+      isReadOnly,
     })
   }
 
