@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, type FormEvent } from 'react'
 import OnlineBadge from './OnlineBadge'
 import ChatMessageBubble from './ChatMessageBubble'
+import { useNegotiationChat } from '../hooks/useNegotiationChat'
 
 const MAX_MESSAGE_LENGTH = 250
 
@@ -25,30 +26,7 @@ export default function NegotiationChatWidget({
   const [isMinimized, setIsMinimized] = useState(false)
   const [inputText, setInputText] = useState('')
 
-  // Mock messages for initial visual scaffolding (replaced by API data in step 3)
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      content: 'Olá! Vi o teu anúncio e tenho muito interesse na troca. Ainda está disponível?',
-      createdAt: '14:32',
-      isOwn: false,
-      senderName: interlocutorName,
-    },
-    {
-      id: 2,
-      content: 'Olá! Sim, ainda está disponível. Podes ver as especificações completas no anúncio.',
-      createdAt: '14:35',
-      isOwn: true,
-      senderName: undefined,
-    },
-    {
-      id: 3,
-      content: 'Perfeito! Fiz uma proposta com um item que acho que vais gostar. Podemos combinar os detalhes por aqui!',
-      createdAt: '14:38',
-      isOwn: false,
-      senderName: interlocutorName,
-    },
-  ])
+  const { messages, status, error, sendMessage } = useNegotiationChat(negotiationId)
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
@@ -61,25 +39,18 @@ export default function NegotiationChatWidget({
   // Measure code-point length safely for UTF-16 code units (e.g. emojis)
   const charCount = [...inputText].length
   const isOverLimit = charCount > MAX_MESSAGE_LENGTH
-  const canSend = charCount > 0 && !isOverLimit
+  const isConnected = status === 'connected'
+  const canSend = charCount > 0 && !isOverLimit && isConnected
 
   const handleSendMessage = (e: FormEvent) => {
     e.preventDefault()
     const trimmed = inputText.trim()
     if (!trimmed || [...trimmed].length > MAX_MESSAGE_LENGTH) return
 
-    // Append locally for immediate visual verification
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        content: trimmed,
-        createdAt: new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }),
-        isOwn: true,
-        senderName: undefined,
-      },
-    ])
-    setInputText('')
+    const sent = sendMessage(trimmed)
+    if (sent) {
+      setInputText('')
+    }
   }
 
   return (
@@ -127,15 +98,23 @@ export default function NegotiationChatWidget({
         <div className="flex flex-col h-80 bg-paper">
           {/* Scrollable message thread area */}
           <div className="flex-1 p-3 overflow-y-auto space-y-3 flex flex-col">
-            {messages.map((msg) => (
-              <ChatMessageBubble
-                key={msg.id}
-                content={msg.content}
-                createdAt={msg.createdAt}
-                isOwn={msg.isOwn}
-                senderName={msg.senderName}
-              />
-            ))}
+            {messages.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-muted text-xs select-none">
+                <span className="text-2xl mb-1">💬</span>
+                <p className="font-medium text-ink">Sem mensagens ainda</p>
+                <p className="text-[11px] mt-0.5">Inicia a conversa com {interlocutorName}!</p>
+              </div>
+            ) : (
+              messages.map((msg) => (
+                <ChatMessageBubble
+                  key={msg.id}
+                  content={msg.content}
+                  createdAt={msg.createdAt}
+                  isOwn={msg.isOwn}
+                  senderName={msg.isOwn ? undefined : interlocutorName}
+                />
+              ))
+            )}
             <div ref={messagesEndRef} />
           </div>
 
@@ -144,15 +123,27 @@ export default function NegotiationChatWidget({
             onSubmit={handleSendMessage}
             className="p-2.5 bg-surface border-t border-line flex flex-col gap-1.5"
           >
+            {error && (
+              <div className="text-[10px] text-accent px-1 truncate select-none" title={error}>
+                ⚠️ {error}
+              </div>
+            )}
             <div className="flex gap-2 items-center">
               {/* Allow typing/pasting beyond 250 chars so users see the overflow in red (X/250) instead of silent truncation */}
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="Escreve uma mensagem..."
+                placeholder={
+                  status === 'connecting'
+                    ? 'A ligar ao chat...'
+                    : status === 'disconnected'
+                      ? 'Chat desconectado'
+                      : 'Escreve uma mensagem...'
+                }
                 maxLength={MAX_MESSAGE_LENGTH + 50}
-                className="flex-1 px-3 py-1.5 bg-paper border border-line focus:border-brand focus:outline-none rounded-xl text-xs text-ink placeholder:text-muted transition-colors"
+                disabled={!isConnected}
+                className="flex-1 px-3 py-1.5 bg-paper border border-line focus:border-brand focus:outline-none rounded-xl text-xs text-ink placeholder:text-muted transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               />
               <button
                 type="submit"
