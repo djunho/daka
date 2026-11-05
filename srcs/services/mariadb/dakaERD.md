@@ -16,7 +16,16 @@ erDiagram
         VARCHAR user_location
         TIMESTAMP created_at
         TIMESTAMP updated_at
+        DATETIME last_seen
         DATETIME deleted_at
+    }
+
+    FRIENDSHIPS {
+        INT user_id PK,FK
+        INT friend_id PK,FK
+        ENUM status "accepted/removed"
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
     }
 
     CATEGORIES {
@@ -80,6 +89,7 @@ erDiagram
     }
 
     USERS ||--o{ LISTINGS : publishes
+    USERS ||--o{ FRIENDSHIPS : participates
     CATEGORIES ||--o{ LISTINGS : categorizes
     CONDITIONS ||--o{ LISTINGS : condition
     LISTINGS_STATES ||--o{ LISTINGS : state
@@ -137,6 +147,13 @@ erDiagram
         INT listing_id PK,FK
     }
 
+    FRIENDSHIPS {
+        INT user_id PK,FK
+        INT friend_id PK,FK
+        ENUM status "accepted/removed"
+        TIMESTAMP created_at
+    }
+
     USERS {
         INT id PK
         VARCHAR user_name
@@ -148,6 +165,7 @@ erDiagram
         VARCHAR user_location
         TIMESTAMP created_at
         TIMESTAMP updated_at
+        DATETIME last_seen
         DATETIME deleted_at
     }
 
@@ -187,5 +205,6 @@ erDiagram
 
     USERS ||--o{ FAVORITES : saves
     LISTINGS ||--o{ FAVORITES : favorited
+    USERS ||--o{ FRIENDSHIPS : participates
 
 ```
