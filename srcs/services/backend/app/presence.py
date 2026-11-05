@@ -37,31 +37,29 @@ def touch_last_seen(
     """Persist activity at most once per minute without changing updated_at."""
     current_time = now or utcnow()
     cutoff = current_time - PRESENCE_WRITE_INTERVAL
+    if user.last_seen is not None and user.last_seen >= cutoff:
+        return False
     user_id = user.id
     try:
-        with Session(
-            bind=db.get_bind(),
-            autoflush=False,
-            expire_on_commit=False,
-        ) as presence_db:
-            updated = (
-                presence_db.query(User)
-                .filter(
-                    User.id == user_id,
-                    or_(User.last_seen.is_(None), User.last_seen < cutoff),
-                )
-                .update(
-                    {
-                        User.last_seen: current_time,
-                        User.updated_at: User.updated_at,
-                    },
-                    synchronize_session=False,
-                )
+        updated = (
+            db.query(User)
+            .filter(
+                User.id == user_id,
+                or_(User.last_seen.is_(None), User.last_seen < cutoff),
             )
-            if updated:
-                presence_db.commit()
-                user.last_seen = current_time
-                return True
+            .update(
+                {
+                    User.last_seen: current_time,
+                    User.updated_at: User.updated_at,
+                },
+                synchronize_session=False,
+            )
+        )
+        db.commit()
+        if updated:
+            user.last_seen = current_time
+        return bool(updated)
     except SQLAlchemyError:
+        db.rollback()
         logger.exception("Could not update last_seen for user %s", user_id)
-    return False
+        return False
