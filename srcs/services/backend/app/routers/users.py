@@ -58,5 +58,7 @@ def get_public_profile(
         avatar=user.avatar,
         user_location=user.user_location,
         created_at=user.created_at,
+        last_seen=user.last_seen,
+        is_online=user.is_online,
         listings=[ListingSummaryOut.model_validate(listing) for listing in listings],
     )

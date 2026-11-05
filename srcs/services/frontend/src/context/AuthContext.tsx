@@ -19,6 +19,7 @@ import {
   type UpdateProfileData,
   type ApiUser,
 } from '../lib/api'
+import { AccountCreatedError } from '../lib/errors'
 
 // The single place that knows who is logged in. Any component that needs the
 // current user -- the header, the route guard, a profile page -- reads it from
@@ -153,7 +154,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // rather than being sent back to the sign-in tab. This is the "auto login
     // after register" behaviour we chose.
     await apiRegister(name, email, password)
-    const me = await apiLogin(email, password)
+    let me: ApiUser
+    try {
+      me = await apiLogin(email, password)
+    } catch (err) {
+      // The account exists from here on: say so, rather than let the sign-in
+      // error look like the sign-up failed.
+      throw new AccountCreatedError(err)
+    }
     setUser(me)
   }
 
@@ -186,15 +194,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
-    // Tell the server to delete the session row, then forget the user locally.
-    // We clear user even if the request fails, because the intent is to be
-    // logged out -- a failed logout should not trap someone in a signed-in UI.
+    // Forget the user first, so the UI leaves the signed-in state at once.
+    // Pages call this when the server already answered 401: waiting for
+    // /auth/logout would leave them on screen, with no message, for as long as
+    // that request takes. It is still sent, to delete the session row and the
+    // cookie, and a failure is ignored: a failed logout should not trap
+    // someone in a signed-in UI.
+    setUser(null)
     try {
       await apiLogout()
     } catch {
-      // Network/server failure: still log out locally.
-    } finally {
-      setUser(null)
+      // Network/server failure: already logged out locally.
     }
   }
 
