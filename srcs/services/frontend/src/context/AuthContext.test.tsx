@@ -3,11 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import { AuthProvider, useAuth } from './AuthContext'
 import { ApiError, apiLogout, apiMe, type ApiUser } from '../lib/api'
+import { ApiError, apiLogin, apiMe, apiRegister, type ApiUser } from '../lib/api'
+import { AccountCreatedError } from '../lib/errors'
 
 vi.mock('../lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/api')>()),
   apiMe: vi.fn(),
   apiLogout: vi.fn(),
+  apiRegister: vi.fn(),
+  apiLogin: vi.fn(),
 }))
 
 const ME: ApiUser = {
@@ -227,5 +231,56 @@ describe('AuthContext logout', () => {
     })
 
     expect(screen.getByText('Sem sessão')).toBeInTheDocument()
+  })
+describe('AuthContext register', () => {
+  let register: ReturnType<typeof useAuth>['register'] | null = null
+
+  function Capture() {
+    register = useAuth().register
+    return null
+  }
+
+  beforeEach(() => {
+    vi.mocked(apiMe).mockReset().mockRejectedValue(new ApiError(401, 'Not authenticated.'))
+    vi.mocked(apiRegister).mockReset().mockResolvedValue(ME)
+    vi.mocked(apiLogin).mockReset().mockResolvedValue(ME)
+  })
+
+  async function renderAndRegister() {
+    render(<AuthProvider><Capture /><Probe /></AuthProvider>)
+    await screen.findByText('Sem sessão')
+    let thrown: unknown = null
+    await act(async () => {
+      try {
+        await register!('Ana', ME.email, 'correct-horse-battery')
+      } catch (err) {
+        thrown = err
+      }
+    })
+    return thrown
+  }
+
+  it('signs in right after creating the account', async () => {
+    expect(await renderAndRegister()).toBeNull()
+    expect(apiLogin).toHaveBeenCalledWith(ME.email, 'correct-horse-battery')
+    expect(screen.getByText('Com sessão')).toBeInTheDocument()
+  })
+
+  it('says the account was created when only the sign-in after it fails', async () => {
+    const loginError = new ApiError(401, 'Incorrect email or password.')
+    vi.mocked(apiLogin).mockRejectedValue(loginError)
+
+    const thrown = await renderAndRegister()
+    expect(thrown).toBeInstanceOf(AccountCreatedError)
+    expect((thrown as AccountCreatedError).cause).toBe(loginError)
+    expect(screen.getByText('Sem sessão')).toBeInTheDocument()
+  })
+
+  it('keeps the original error when the account could not be created', async () => {
+    const conflict = new ApiError(409, 'An account with this email already exists.')
+    vi.mocked(apiRegister).mockRejectedValue(conflict)
+
+    expect(await renderAndRegister()).toBe(conflict)
+    expect(apiLogin).not.toHaveBeenCalled()
   })
 })
