@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Button from '../components/Button'
+import CategoryChips from '../components/CategoryChips'
 import ListingCard, { EMPTY_STATE_CLASSES, LISTING_GRID_CLASSES } from '../components/ListingCard'
 import LocationAutocomplete from '../components/LocationAutocomplete'
 import { categoryLabel } from '../types/listing'
@@ -147,19 +148,11 @@ export default function Home() {
         </p>
       </section>
 
-      <nav className="flex flex-wrap gap-2 px-4 sm:px-6 pt-5 pb-2" aria-label="Filtrar por categoria">
-        {categories.map((cat) => (
-          <button
-            key={cat.id}
-            type="button"
-            className="px-3.5 py-2 rounded-full border border-line bg-surface text-muted capitalize font-semibold text-sm transition-colors hover:border-brand aria-pressed:bg-brand-soft aria-pressed:border-brand-soft aria-pressed:text-brand"
-            aria-pressed={active === cat.id}
-            onClick={() => setFilter('category_id', active === cat.id ? null : String(cat.id))}
-          >
-            {categoryLabel(cat)}
-          </button>
-        ))}
-      </nav>
+      <CategoryChips
+        categories={categories}
+        active={active}
+        onToggle={(id) => setFilter('category_id', active === id ? null : String(id))}
+      />
 
       <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 pt-2">
         <form
