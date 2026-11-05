@@ -1,10 +1,11 @@
 """Tests for friendship ORM mapping and account deactivation cleanup."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 import unittest
 
 from fastapi import Response
 from sqlalchemy import create_engine
+from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -17,6 +18,7 @@ from app.models import (
     User,
 )
 from app.routers.auth import delete_me
+from app.security import utcnow
 
 
 class FriendshipsTestCase(unittest.TestCase):
@@ -33,25 +35,37 @@ class FriendshipsTestCase(unittest.TestCase):
                 User(
                     user_name="Alice",
                     email="alice-friendships@example.test",
-                    last_seen=datetime.now(timezone.utc),
+                    last_seen=utcnow(),
                 ),
                 User(
                     user_name="Bob",
                     email="bob-friendships@example.test",
-                    last_seen=datetime.now(timezone.utc),
+                    last_seen=utcnow(),
                 ),
                 User(
                     user_name="Carol",
                     email="carol-friendships@example.test",
-                    last_seen=datetime.now(timezone.utc),
+                    last_seen=utcnow(),
                 ),
                 *[
                     ListingState(state_name=name)
-                    for name in ("Available", "Reserved", "Traded", "Removed")
+                    for name in (
+                        "Available",
+                        "Reserved",
+                        "Traded",
+                        "Expired",
+                        "Removed",
+                    )
                 ],
                 *[
                     NegotiationState(state_name=name)
-                    for name in ("Open", "Agreed", "Cancelled", "Unavailable")
+                    for name in (
+                        "Open",
+                        "Agreed",
+                        "Completed",
+                        "Cancelled",
+                        "Unavailable",
+                    )
                 ],
                 *[
                     ProposalState(state_name=name)
@@ -103,6 +117,13 @@ class FriendshipsTestCase(unittest.TestCase):
             [(alice.id, carol.id)],
         )
         self.assertIsNone(self.db.get(User, bob.id).last_seen)
+
+    def test_friendship_rejects_unknown_status(self) -> None:
+        alice, bob = self.db.query(User).order_by(User.id).limit(2).all()
+        self.db.add(Friendship(user_id=alice.id, friend_id=bob.id, status="pending"))
+
+        with self.assertRaises(StatementError):
+            self.db.commit()
 
 
 if __name__ == "__main__":

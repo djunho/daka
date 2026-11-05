@@ -19,6 +19,7 @@ from sqlalchemy import (
     CheckConstraint,
     Computed,
     DateTime,
+    Enum,
     ForeignKey,
     Index,
     String,
@@ -73,13 +74,17 @@ class User(Base):
     sessions: Mapped[list["UserSession"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    # These collections include both accepted and removed rows. Callers that
+    # display the active friend list must filter by Friendship.status.
     friendships_as_user: Mapped[list["Friendship"]] = relationship(
         foreign_keys="Friendship.user_id",
         back_populates="user",
+        passive_deletes=True,
     )
     friendships_as_friend: Mapped[list["Friendship"]] = relationship(
         foreign_keys="Friendship.friend_id",
         back_populates="friend",
+        passive_deletes=True,
     )
 
 
@@ -116,16 +121,26 @@ class Friendship(Base):
     friend_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    status: Mapped[str] = mapped_column(String(8), default="accepted")
+    status: Mapped[str] = mapped_column(
+        Enum(
+            "accepted",
+            "removed",
+            name="friendship_status",
+            validate_strings=True,
+        ),
+        default="accepted",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship(
         foreign_keys=[user_id],
         back_populates="friendships_as_user",
+        passive_deletes=True,
     )
     friend: Mapped["User"] = relationship(
         foreign_keys=[friend_id],
         back_populates="friendships_as_friend",
+        passive_deletes=True,
     )
 
 

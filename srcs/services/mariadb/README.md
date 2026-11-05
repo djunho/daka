@@ -88,43 +88,13 @@ ALTER TABLE users ADD COLUMN deleted_at DATETIME NULL AFTER updated_at;
 ```
 
 - Friend presence and symmetric contacts add `users.last_seen` and the
-  `friendships` table. Existing MariaDB volumes that already applied the
-  previous unilateral schema must apply:
+  `friendships` table. Before deploying a branch that uses these models to an
+  existing MariaDB volume, apply:
 
 ```sql
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen DATETIME NULL DEFAULT NULL AFTER updated_at;
 
-CREATE TABLE friendships_normalized (
-	user_id INT NOT NULL,
-	friend_id INT NOT NULL,
-	status ENUM('accepted', 'removed') NOT NULL DEFAULT 'accepted',
-	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	PRIMARY KEY (user_id, friend_id),
-	CONSTRAINT chk_friendship_order CHECK (user_id < friend_id),
-	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-	FOREIGN KEY (friend_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-INSERT INTO friendships_normalized (user_id, friend_id, status, created_at)
-SELECT
-	LEAST(user_id, friend_id),
-	GREATEST(user_id, friend_id),
-	'accepted',
-	MIN(created_at)
-FROM friendships
-WHERE user_id <> friend_id
-GROUP BY LEAST(user_id, friend_id), GREATEST(user_id, friend_id);
-
-DROP TABLE friendships;
-RENAME TABLE friendships_normalized TO friendships;
-```
-
-For existing volumes that have not yet applied the friends schema, apply:
-
-```sql
-ALTER TABLE users ADD COLUMN last_seen DATETIME NULL DEFAULT NULL AFTER updated_at;
-
-CREATE TABLE friendships (
+CREATE TABLE IF NOT EXISTS friendships (
 	user_id INT NOT NULL,
 	friend_id INT NOT NULL,
 	status ENUM('accepted', 'removed') NOT NULL DEFAULT 'accepted',
@@ -139,7 +109,8 @@ CREATE TABLE friendships (
 The pair must always be normalized before insert or lookup (`user_id <
 friend_id`). Adding a friendship creates or reactivates the row with
 `status = 'accepted'`; removing it sets `status = 'removed'` without deleting
-the row. Friend lists include only rows with `status = 'accepted'`.
+the row. Friend lists include only rows with `status = 'accepted'`. Account
+deactivation permanently removes that user's friendship rows.
 
 License
 - Follow the repository LICENSE in the project root.

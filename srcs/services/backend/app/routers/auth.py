@@ -801,6 +801,8 @@ def delete_me(
                 Favorite.listing_id.in_(listing_ids),
             )
         ).delete(synchronize_session=False)
+        # Account deletion is permanent, so its friendship rows are removed
+        # rather than retained as reusable "removed" relationships.
         db.query(Friendship).filter(
             or_(
                 Friendship.user_id == user_id,
