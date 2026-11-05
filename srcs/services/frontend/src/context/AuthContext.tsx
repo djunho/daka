@@ -194,15 +194,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
-    // Tell the server to delete the session row, then forget the user locally.
-    // We clear user even if the request fails, because the intent is to be
-    // logged out -- a failed logout should not trap someone in a signed-in UI.
+    // Forget the user first, so the UI leaves the signed-in state at once.
+    // Pages call this when the server already answered 401: waiting for
+    // /auth/logout would leave them on screen, with no message, for as long as
+    // that request takes. It is still sent, to delete the session row and the
+    // cookie, and a failure is ignored: a failed logout should not trap
+    // someone in a signed-in UI.
+    setUser(null)
     try {
       await apiLogout()
     } catch {
-      // Network/server failure: still log out locally.
-    } finally {
-      setUser(null)
+      // Network/server failure: already logged out locally.
     }
   }
 

@@ -2,12 +2,13 @@ import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import { AuthProvider, useAuth } from './AuthContext'
-import { ApiError, apiLogin, apiMe, apiRegister, type ApiUser } from '../lib/api'
+import { ApiError, apiLogin, apiLogout, apiMe, apiRegister, type ApiUser } from '../lib/api'
 import { AccountCreatedError } from '../lib/errors'
 
 vi.mock('../lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/api')>()),
   apiMe: vi.fn(),
+  apiLogout: vi.fn(),
   apiRegister: vi.fn(),
   apiLogin: vi.fn(),
 }))
@@ -186,6 +187,52 @@ describe('AuthContext heartbeat', () => {
     expect(apiMe).toHaveBeenCalledTimes(3)
   })
 })
+describe('AuthContext logout', () => {
+  it('clears the user at once, without waiting for /auth/logout to answer', async () => {
+    vi.mocked(apiMe).mockReset().mockResolvedValue(ME)
+    let answer!: () => void
+    vi.mocked(apiLogout).mockReset().mockReturnValue(new Promise<void>((resolve) => { answer = resolve }))
+    let logout: ReturnType<typeof useAuth>['logout'] | null = null
+    function Capture() {
+      logout = useAuth().logout
+      return null
+    }
+    render(<AuthProvider><Capture /><Probe /></AuthProvider>)
+    await screen.findByText('Com sessão')
+
+    let done: Promise<void> | null = null
+    act(() => {
+      done = logout!()
+    })
+
+    // The request is still running, and the user is already gone.
+    expect(apiLogout).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Sem sessão')).toBeInTheDocument()
+    await act(async () => {
+      answer()
+      await done
+    })
+  })
+
+  it('stays logged out when /auth/logout fails', async () => {
+    vi.mocked(apiMe).mockReset().mockResolvedValue(ME)
+    vi.mocked(apiLogout).mockReset().mockRejectedValue(new ApiError(0, 'Could not reach the server.'))
+    let logout: ReturnType<typeof useAuth>['logout'] | null = null
+    function Capture() {
+      logout = useAuth().logout
+      return null
+    }
+    render(<AuthProvider><Capture /><Probe /></AuthProvider>)
+    await screen.findByText('Com sessão')
+
+    await act(async () => {
+      await logout!()
+    })
+
+    expect(screen.getByText('Sem sessão')).toBeInTheDocument()
+  })
+})
+
 describe('AuthContext register', () => {
   let register: ReturnType<typeof useAuth>['register'] | null = null
 
