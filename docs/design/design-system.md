@@ -101,3 +101,20 @@ Semantic names allow the visual identity to change without affecting component c
 - Do not rely exclusively on color to convey information.
 - Ensure interactive elements have visible hover and focus states.
 - Prefer semantic design tokens over hardcoded hexadecimal values.
+
+---
+
+# OnlineBadge
+
+- Reusable presence indicator for online state.
+- Colors: green for online (`bg-online`) and gray for offline (`bg-offline`), from the `--color-online` and `--color-offline` theme tokens.
+- Always includes accessible text (`Online` / `Offline`), with optional visible label.
+- Supports Avatar sizes: `xs`, `sm`, `lg`.
+
+Usage examples:
+
+```tsx
+<OnlineBadge online={friend.is_online} />
+<OnlineBadge online={friend.is_online} showLabel />
+<Avatar avatar={friend.avatar} user_name={friend.user_name} size="sm" online={friend.is_online} />
+```

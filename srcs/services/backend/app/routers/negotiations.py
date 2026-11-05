@@ -43,6 +43,7 @@ from app.schemas import (
     PublicUserOut,
 )
 from app.security import utcnow
+from app.negotiation_access import is_participant
 
 router = APIRouter()
 
@@ -259,10 +260,7 @@ def _negotiation_summary(
 
 
 def _require_participant(negotiation: Negotiation, user_id: int) -> None:
-    if (
-        negotiation.interested_user_id != user_id
-        and negotiation.requested_listing.user_id != user_id
-    ):
+    if not is_participant(negotiation, user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only negotiation participants may access this negotiation.",

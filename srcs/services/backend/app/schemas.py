@@ -98,7 +98,8 @@ class MessageCreatedData(BaseModel):
 
     @field_serializer("created_at")
     def serialise_created_at(self, value: datetime) -> str:
-        # Database datetimes in this project are naive UTC.
+        # app.database enforces UTC on every MariaDB pool checkout, so naive
+        # TIMESTAMP results represent UTC rather than the server's local zone.
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")

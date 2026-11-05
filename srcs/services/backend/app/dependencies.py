@@ -8,7 +8,7 @@ Keeping it in a neutral module avoids a circular import once those routers also
 import it.
 """
 from fastapi import Cookie, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, contains_eager
 
 from app.database import get_db
 from app.models import User, UserSession
@@ -59,6 +59,7 @@ def get_user_from_session_token(token: str | None, db: Session) -> User | None:
     session = (
         db.query(UserSession)
         .join(User)
+        .options(contains_eager(UserSession.user))
         .filter(
             UserSession.token_hash == token_hash,
             User.deleted_at.is_(None),

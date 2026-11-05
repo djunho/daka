@@ -2,22 +2,31 @@
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.schemas import MessageCreatedEvent, PersistedMessage, WebSocketErrorEvent
+from app.dependencies import SESSION_COOKIE_NAME
+from app.websocket_authorization import authorize_recipient
 
 logger = logging.getLogger(__name__)
 SEND_TIMEOUT_SECONDS = 5.0
+RECIPIENT_AUTH_TIMEOUT_SECONDS = 5.0
 CLOSE_TIMEOUT_SECONDS = 1.0
 
 
 class ConnectionManager:
     """Track authorised connections without persisting or exposing room sets."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, recipient_authorizer: Callable[[int, int, str | None], Awaitable[int | None]] = authorize_recipient,
+    ) -> None:
         self._connections: dict[int, set[WebSocket]] = {}
         self._send_locks: dict[WebSocket, asyncio.Lock] = {}
+        self._connecting: dict[WebSocket, asyncio.Task] = {}
+        self._identities: dict[WebSocket, tuple[int, str | None]] = {}
+        self._recipient_authorizer = recipient_authorizer
 
     def is_connected(self, negotiation_id: int, websocket: WebSocket) -> bool:
         return websocket in self._connections.get(negotiation_id, ())
@@ -46,11 +55,27 @@ class ConnectionManager:
         if websocket in self._connections.get(negotiation_id, ()):
             return
 
+        task = self._connecting.get(websocket)
+        if task is None:
+            task = asyncio.create_task(self._accept_and_register(negotiation_id, websocket))
+            self._connecting[websocket] = task
+        try:
+            # One accept attempt per socket; concurrent callers share its result.
+            # Cancellation aborts the shared attempt, preventing orphan sockets.
+            await task
+        finally:
+            if task.done() and self._connecting.get(websocket) is task:
+                self._connecting.pop(websocket, None)
+
+    async def _accept_and_register(self, negotiation_id: int, websocket: WebSocket) -> None:
+        user_id = websocket.state.current_user.id
+        token = websocket.cookies.get(SESSION_COOKIE_NAME)
         await websocket.accept()
         # No await between room lookup and insertion: other event-loop tasks
         # cannot interleave these mutations.
         self._connections.setdefault(negotiation_id, set()).add(websocket)
         self._send_locks[websocket] = asyncio.Lock()
+        self._identities[websocket] = (user_id, token)
         logger.info(
             "WebSocket connected negotiation_id=%s room_connections=%s",
             negotiation_id, self.connection_count(negotiation_id),
@@ -58,11 +83,21 @@ class ConnectionManager:
 
     def disconnect(self, negotiation_id: int, websocket: WebSocket) -> None:
         """Remove only this connection; repeated cleanup is harmless."""
+        pending = self._connecting.get(websocket)
+        if (
+            pending is not None and not pending.done()
+            and websocket.state.negotiation_id == negotiation_id
+        ):
+            pending.cancel()
         room = self._connections.get(negotiation_id)
-        if room is None or websocket not in room:
+        if room is None:
             return
-        room.remove(websocket)
+        previous_count = len(room)
+        room.discard(websocket)
+        if len(room) == previous_count:
+            return
         self._send_locks.pop(websocket, None)
+        self._identities.pop(websocket, None)
         if not room:
             del self._connections[negotiation_id]
         logger.info(
@@ -134,6 +169,23 @@ class ConnectionManager:
             if not self.is_connected(negotiation_id, websocket):
                 return "skipped"
             try:
+                if message_id is not None:
+                    user_id, token = self._identities[websocket]
+                    code = await asyncio.wait_for(
+                        self._recipient_authorizer(negotiation_id, user_id, token),
+                        RECIPIENT_AUTH_TIMEOUT_SECONDS,
+                    )
+                    # A disconnect can happen while the worker queries the DB.
+                    if not self.is_connected(negotiation_id, websocket):
+                        return "skipped"
+                    if code is not None:
+                        logger.info(
+                            "WebSocket recipient removed negotiation_id=%s message_id=%s code=%s",
+                            negotiation_id, message_id, code,
+                        )
+                        self.disconnect(negotiation_id, websocket)
+                        await self._close(websocket, code)
+                        return "removed"
                 await asyncio.wait_for(websocket.send_text(payload), SEND_TIMEOUT_SECONDS)
             except Exception as exc:
                 # Closed transports are expected; unexpected failures are errors.

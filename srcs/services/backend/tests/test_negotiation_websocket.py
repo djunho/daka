@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.websockets import WebSocketDisconnect
@@ -27,7 +27,9 @@ from app.models import (
     UserSession,
 )
 from app.security import hash_session_token, utcnow
-from app.routers.websockets import _reject
+from app.routers.websockets import _authorize_negotiation, _reject
+from app.dependencies import get_user_from_session_token
+from app.config import Settings
 
 
 class RejectionProtocolTestCase(unittest.TestCase):
@@ -40,6 +42,23 @@ class RejectionProtocolTestCase(unittest.TestCase):
                     websocket.method_calls,
                     [unittest.mock.call.accept(), unittest.mock.call.close(code=code)],
                 )
+
+
+class WebSocketOriginSettingsTestCase(unittest.TestCase):
+    def test_default_additional_origins_do_not_allow_localhost_in_production(self):
+        default = Settings.model_fields["websocket_allowed_origins"].default
+        self.assertEqual(default, "")
+        settings = Settings(frontend_url="https://daka.example", websocket_allowed_origins=default)
+        self.assertEqual(settings.allowed_websocket_origins, frozenset({"https://daka.example"}))
+
+    def test_origins_are_normalised_and_additional_origins_remain_explicit(self):
+        settings = Settings(
+            frontend_url="https://DAKA.example/",
+            websocket_allowed_origins=" HTTPS://Localhost:8443/ , ,https://OTHER.example ",
+        )
+        self.assertEqual(settings.allowed_websocket_origins, frozenset({
+            "https://daka.example", "https://localhost:8443", "https://other.example",
+        }))
 
 
 class NegotiationWebSocketTestCase(unittest.TestCase):
@@ -97,6 +116,10 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
             "app.message_processing.SessionLocal", self.session_factory
         )
         self.message_session_patch.start()
+        self.recipient_session_patch = patch(
+            "app.websocket_authorization.RecipientSessionLocal", self.session_factory
+        )
+        self.recipient_session_patch.start()
         self.manager = ConnectionManager()
         self.disconnect_condition = threading.Condition()
         original_disconnect = self.manager.disconnect
@@ -115,6 +138,7 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
         self.connect_mock = self.connect_patch.start()
 
     def tearDown(self) -> None:
+        self.recipient_session_patch.stop()
         self.message_session_patch.stop()
         self.connect_patch.stop()
         self.manager_patch.stop()
@@ -407,6 +431,82 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
         self.assertEqual(self.db.query(Message).count(), 0)
         self._assert_no_connections()
 
+    def test_idle_recipient_cannot_receive_after_session_revocation_or_expiry_or_soft_delete(self):
+        for reason in ("revoked", "expired", "deleted"):
+            with (
+                self.subTest(reason=reason),
+                self._connect(self.tokens["interested"], origin=self.origin) as idle,
+                self._connect(self.tokens["owner"], origin=self.origin) as sender,
+            ):
+                session = self.db.query(UserSession).filter_by(user_id=self.interested.id).one()
+                if reason == "revoked":
+                    self.db.delete(session)
+                elif reason == "expired":
+                    session.expires_at = utcnow() - timedelta(seconds=1)
+                else:
+                    self.interested.deleted_at = utcnow()
+                self.db.commit()
+                sender.send_json({"type": "message.send", "content": reason})
+                self.assertEqual(sender.receive_json()["type"], "message.created")
+                # The idle recipient never submitted a new payload.
+                with self.assertRaises(WebSocketDisconnect) as raised:
+                    idle.receive_json()
+                self.assertEqual(raised.exception.code, 4401)
+            self._assert_no_connections()
+            self.interested.deleted_at = None
+            self.db.query(UserSession).filter_by(user_id=self.interested.id).delete()
+            self.db.add(UserSession(
+                user_id=self.interested.id,
+                token_hash=hash_session_token(self.tokens["interested"]),
+                expires_at=utcnow() + timedelta(hours=1),
+            ))
+            self.db.commit()
+
+    def test_logout_only_revokes_its_session_and_preserves_another_device(self):
+        from app.database import get_db
+
+        token = "second-device"
+        self.db.add(UserSession(
+            user_id=self.interested.id, token_hash=hash_session_token(token),
+            expires_at=utcnow() + timedelta(hours=1),
+        ))
+        self.db.commit()
+        with (
+            self._connect(self.tokens["interested"], origin=self.origin) as logged_out,
+            self._connect(token, origin=self.origin) as other_device,
+            self._connect(self.tokens["owner"], origin=self.origin) as sender,
+        ):
+            previous = app.dependency_overrides.get(get_db)
+            app.dependency_overrides[get_db] = lambda: self.db
+            try:
+                self.client.cookies.set("daka_session", self.tokens["interested"])
+                self.assertEqual(self.client.post("/auth/logout").status_code, 204)
+            finally:
+                self.client.cookies.clear()
+                if previous is None:
+                    app.dependency_overrides.pop(get_db, None)
+                else:
+                    app.dependency_overrides[get_db] = previous
+            sender.send_json({"type": "message.send", "content": "after logout"})
+            event = sender.receive_json()
+            self.assertEqual(other_device.receive_json(), event)
+            with self.assertRaises(WebSocketDisconnect) as raised:
+                logged_out.receive_json()
+            self.assertEqual(raised.exception.code, 4401)
+
+    def test_idle_recipient_with_lost_membership_is_closed_before_delivery(self):
+        with (
+            self._connect(self.tokens["interested"], origin=self.origin) as idle,
+            self._connect(self.tokens["owner"], origin=self.origin) as sender,
+        ):
+            self.negotiation.interested_user_id = self.outsider.id
+            self.db.commit()
+            sender.send_json({"type": "message.send", "content": "private"})
+            self.assertEqual(sender.receive_json()["type"], "message.created")
+            with self.assertRaises(WebSocketDisconnect) as raised:
+                idle.receive_json()
+            self.assertEqual(raised.exception.code, 4403)
+
     def test_missing_empty_invalid_and_unknown_sessions_are_4401(self) -> None:
         for token in (None, "", "invalid-token"):
             with self.subTest(token=token):
@@ -462,6 +562,61 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
                 with self.subTest(origin=origin):
                     with self._connect(self.tokens["owner"], origin=origin):
                         pass
+
+    def test_production_origin_default_rejects_localhost_but_accepts_case_variants(self):
+        with patch("app.routers.websockets.settings.websocket_allowed_origins", ""), patch(
+            "app.routers.websockets.settings.frontend_url", "https://DAKA.example"
+        ):
+            self._assert_rejected(4403, self.tokens["owner"])
+            with self._connect(self.tokens["owner"], origin="HTTPS://Daka.Example") as websocket:
+                websocket.send_json({"type": "unknown"})
+                self.assertEqual(websocket.receive_json()["error"]["code"], "unsupported_event")
+        self._assert_no_connections()
+
+    def test_session_and_user_are_resolved_with_a_single_select(self):
+        statements = []
+
+        def capture(_connection, _cursor, statement, _parameters, _context, _many):
+            if statement.lstrip().upper().startswith("SELECT"):
+                statements.append(statement)
+
+        engine = self.db.get_bind()
+        event.listen(engine, "before_cursor_execute", capture)
+        try:
+            with self.session_factory() as worker:
+                user = get_user_from_session_token(self.tokens["owner"], worker)
+                self.assertEqual(user.id, self.owner.id)
+                self.assertEqual(user.user_name, "owner")
+            self.assertEqual(len(statements), 1)
+            self.assertTrue(inspect(user).detached)
+        finally:
+            event.remove(engine, "before_cursor_execute", capture)
+
+    def test_handshake_uses_two_selects_and_does_not_keep_the_negotiation(self):
+        statements = []
+
+        def capture(_connection, _cursor, statement, _parameters, _context, _many):
+            if statement.lstrip().upper().startswith("SELECT"):
+                statements.append(statement)
+
+        engine = self.db.get_bind()
+        event.listen(engine, "before_cursor_execute", capture)
+        try:
+            user = _authorize_negotiation(self.tokens["interested"], self.negotiation.id)
+            self.assertEqual(user.id, self.interested.id)
+            self.assertTrue(inspect(user).detached)
+            self.assertEqual(len(statements), 2)
+            # The negotiation query joins the listing, not its owner account.
+            self.assertNotIn("JOIN users", statements[1])
+        finally:
+            event.remove(engine, "before_cursor_execute", capture)
+        with self._connect(self.tokens["interested"], origin=self.origin) as websocket:
+            websocket.send_json({"type": "unknown"})
+            websocket.receive_json()
+            state = self.connect_mock.call_args.args[1].state
+            self.assertEqual(state.negotiation_id, self.negotiation.id)
+            self.assertFalse(hasattr(state, "negotiation"))
+        self._assert_no_connections()
 
 
 if __name__ == "__main__":

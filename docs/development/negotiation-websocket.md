@@ -7,8 +7,8 @@ public path through the infrastructure proxy is
 The handshake uses the existing `daka_session` cookie. It never accepts an
 authentication token or sender identity from a WebSocket payload. Before
 allowing access to the negotiation, the backend verifies the exact `Origin`, resolves an
-active unexpired session, loads the requested negotiation and its listing
-owner, and checks that the user is either that owner or the interested user.
+active unexpired session, loads the requested negotiation and listing, and checks
+that the user is either the listing owner or the interested user.
 
 ## Origin configuration
 
@@ -19,7 +19,12 @@ Set `WEBSOCKET_ALLOWED_ORIGINS` to a comma-separated list of exact origins
 - Production: the deployed frontend origin, for example
   `https://daka.example`
 
-`FRONTEND_URL` is always included in the allowed set. Connections without an
+`WEBSOCKET_ALLOWED_ORIGINS` defaults to empty: `FRONTEND_URL` is always included,
+so configuring only the production frontend does not implicitly allow localhost.
+Localhost is allowed in production only if explicitly configured. Scheme and
+host comparisons are case-insensitive; configured values and headers are
+normalised to lowercase. Examples are documented in `.env.example`.
+Connections without an
 `Origin` header are rejected because browser authentication is cookie-based.
 
 ## Close codes
@@ -42,7 +47,18 @@ The rejected connection is never registered in a room and receives no private da
 Database authentication and authorization run in `_authorize_negotiation` via
 Starlette's `run_in_threadpool`, so synchronous SQLAlchemy queries do not block
 the event loop. The worker creates, uses and closes its own `SessionLocal`;
-only detached, preloaded objects or a refusal code return to the endpoint.
+only the detached authenticated user or a refusal code returns to the endpoint.
+The session context closes and detaches objects without explicit `expunge`
+calls. Session and user are loaded in one SELECT using the existing user join;
+authorisation loads the negotiation and listing in a second SELECT without
+loading the owner's account. The socket keeps `current_user` and the validated
+`negotiation_id`, not a negotiation ORM object. Message processing uses the numeric
+ids and a fresh worker session, rechecking current membership and state.
+
+The transport-independent `is_participant` rule in `app/negotiation_access.py`
+is shared by REST participant checks, WebSocket handshake and message persistence.
+It checks membership only. Negotiation state and account/session validity remain
+separate policies, so terminal negotiations can retain readable history.
 
 ## Connection lifecycle
 
@@ -50,6 +66,10 @@ only detached, preloaded objects or a refusal code return to the endpoint.
 dictionary maps each negotiation id to a set of WebSocket connections. Multiple
 tabs or devices, including those belonging to the same participant, are separate
 connections. Registering an already registered connection does not accept it again.
+Concurrent registrations of the same socket share one in-flight accept task;
+other sockets do not wait on that task. Failure or cancellation removes the
+pending registration, and cancellation aborts the shared attempt rather than
+allowing a background task to register an orphan connection later.
 
 The endpoint finishes authentication and authorisation before calling
 `manager.connect(validated_id, websocket)`. The manager checks that the room matches
@@ -63,6 +83,8 @@ Both disconnect events and `WebSocketDisconnect` end the loop. A `finally` block
 calls `disconnect` even after unexpected errors or task cancellation. Removal is
 idempotent, affects only the supplied connection, and deletes the room after its
 last connection leaves. Other unexpected exceptions propagate after cleanup.
+Removal uses `set.discard` and also drops the socket's private send lock and
+captured identity/session context. Repeated cleanup does not remove other sockets.
 
 ## Concurrency and limitations
 
@@ -161,7 +183,7 @@ text. There is no automatic retry of the insert.
 
 After the worker returns, the endpoint passes the committed result to
 `manager.broadcast`. Terminal states reject writes without deleting past messages;
-participants can still read those messages through the REST history endpoint.
+participants can read those messages through the REST history endpoint.
 There is no deduplication across separate client sends/retries: at most one
 insert occurs per processing attempt.
 
@@ -191,6 +213,19 @@ cookie data is included. `message.created` is the sender's confirmation; the
 frontend must use its persisted id/timestamp rather than treat an optimistic
 placeholder as a confirmed message. There is no separate acknowledgement event.
 
+`messages.created_at` is a MariaDB `TIMESTAMP`, which the server converts using
+the connection's session timezone. `app/database.py` therefore executes
+`SET SESSION time_zone = '+00:00'` on every pool checkout, both for new and reused
+physical connections. This makes naive timestamps returned by PyMySQL represent
+UTC before the serializer labels them with `Z`. The policy does not depend on
+the server/OS timezone or on named timezone tables. Failure to set the timezone
+fails the checkout rather than silently using another zone.
+
+No column migration or global database timezone change is required. Deploy the
+updated backend code and restart workers if they do not reload automatically.
+Other database clients must also use UTC when reading/writing timestamps under
+this convention. This does not retroactively repair incorrectly supplied dates.
+
 `broadcast` accepts a `PersistedMessage` returned by the commit-confirmed worker,
 not a raw input event or a separate room argument. Public schema validation
 requires positive ids and a timestamp. This typed boundary trusts the persistence
@@ -206,6 +241,45 @@ its connection lock. Send failure or timeout unregisters only that socket and
 attempts to close it with `1011`, with a separate one-second close timeout.
 Repeated removal and already-closed transports are harmless. If the originating
 socket is removed, its endpoint stops processing additional payloads.
+
+Before each `message.created` write, the manager revalidates the recipient's
+original session, active account and current participation using a fresh database
+session in a worker thread. The handshake and recipient checker share
+`app/websocket_authorization.py`. No transaction remains open during a network
+send. The recipient's user id and session token are captured at registration,
+kept only in private memory and removed on disconnect; neither is logged as a
+credential or included in outgoing events.
+
+The recipient authorisation await has its own five-second deadline while holding
+that socket's send lock, separate from the network send's five-second deadline.
+A timeout follows the same removal/1011-close path as other delivery failures;
+healthy recipients are independent, and waiting sends skip the removed socket.
+The close attempt remains bounded to one second.
+
+Cancelling an async wait cannot terminate an already-running synchronous DB
+thread. Recipient checks therefore use a dedicated bounded database pool (five
+connections plus at most five overflow connections, two-second checkout wait),
+with two-second PyMySQL connect/read/write timeouts and MariaDB
+`max_statement_time = 1` per session. This pool keeps the UTC checkout policy.
+These short limits do not change the pool or transaction budgets used by REST,
+handshakes or message persistence. The server query limit and driver I/O limits
+bound worker operations after an async deadline; worker cleanup closes its own
+session when those operations finish. No broker or database migration is needed.
+
+This check protects idle recipients as well as senders. A revoked/expired session
+or soft-deleted account closes with 4401, lost membership with 4403, and a missing
+negotiation with 4404, before sending that message. Database failure fails closed
+with 1011 and does not prevent delivery to other valid recipients. Checking one
+device's session does not invalidate another valid session for the same user.
+
+Logout and account deletion do not synchronously close every local socket. Idle
+connections are removed on their next send or next attempted broadcast delivery;
+there is no background polling or cross-process socket registry. This approach
+also detects session changes made by other workers or database operations. An
+authorisation check and a network write are not an atomic operation: a write
+already authorised/in flight when revocation commits cannot be recalled.
+The current implementation adds up to two SELECTs per recipient per delivery;
+any future optimisation must retain the recipient-revocation checks.
 
 Serialization/preparation failures produce a controlled `delivery_failed` error
 to the origin when that connection is still usable. Individual failed recipients
@@ -340,8 +414,10 @@ connection; it is not retried or broadcast. Fatal errors are sent before the
 corresponding close, with cleanup even when closing fails.
 
 Frontend logic should use stable codes, not compare human-readable messages.
-Authentication changes are detected on the next valid send, not via background
-polling. Terminal errors are sent before closing and normal manager cleanup runs.
+Authentication changes are detected on the next valid send or next broadcast
+delivery attempt, not via background polling. Send-side terminal errors are sent
+before closing; revoked broadcast recipients are closed without receiving the
+private message. Normal manager cleanup runs in both cases.
 
 ## Tests
 
@@ -368,4 +444,24 @@ state transition and is rejected after the terminal state commits:
 
 ```sh
 RUN_MARIADB_INTEGRATION=1 python -m unittest tests.test_mariadb_concurrency -v
+```
+
+The timezone integration test starts a physical connection in `+05:30`, verifies
+the production checkout hook resets it to UTC, deliberately changes the session
+zone, then reuses the same connection and verifies UTC is restored. It compares a
+real TIMESTAMP's serialized instant against `UNIX_TIMESTAMP` and uses only a
+temporary table, without changing the server's global timezone:
+
+```sh
+RUN_MARIADB_INTEGRATION=1 python -m unittest tests.test_mariadb_timezone -v
+```
+
+Recipient deadline tests include a stalled async check, cancellation of a wait on
+an already-running synchronous worker, a real MariaDB query deadline, and driver
+read timeout with the server query limit disabled only in that test session.
+The MariaDB tests use SELECT SLEEP, restore/discard the test connection, and do
+not alter application data or global server settings:
+
+```sh
+RUN_MARIADB_INTEGRATION=1 python -m unittest tests.test_mariadb_authorization_timeout -v
 ```

@@ -24,6 +24,12 @@ from app.security import hash_session_token, utcnow
 
 
 class MessageContractTestCase(unittest.TestCase):
+    def test_unknown_error_code_uses_safe_fallback_in_existing_envelope(self):
+        self.assertEqual(MessageProcessingError("future_error").as_event(), {
+            "type": "error",
+            "error": {"code": "future_error", "message": "An error occurred."},
+        })
+
     def test_valid_content_normalises_and_preserves_internal_text(self):
         for content in ("  Olá\nTudo bem?  ", "😀" * 250, "<b>texto</b>"):
             parsed = parse_message_event(json.dumps({"type": "message.send", "content": content}))
