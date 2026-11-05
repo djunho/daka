@@ -1,6 +1,6 @@
 # ADR-0003 - Allow Reopening Withdrawn Proposals
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Date:** 05-11-2026
 
