@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import sessionmaker
 
 from app.dependencies import get_current_user
 from app.models import User, UserSession
@@ -52,6 +53,27 @@ class PresenceTestCase(unittest.TestCase):
         original_updated_at = self.user.updated_at
         self.assertTrue(touch_last_seen(self.db, self.user, utcnow()))
         self.assertEqual(self.user.updated_at, original_updated_at)
+
+    def test_presence_write_does_not_dirty_user_after_expiring_commit(self) -> None:
+        expiring_db = sessionmaker(
+            bind=self.db.get_bind(),
+            expire_on_commit=True,
+        )()
+        observer_db = sessionmaker(bind=self.db.get_bind())()
+        try:
+            expiring_user = expiring_db.get(User, self.user.id)
+            original_updated_at = observer_db.get(User, self.user.id).updated_at
+
+            self.assertTrue(touch_last_seen(expiring_db, expiring_user, utcnow()))
+            expiring_db.commit()
+
+            self.assertEqual(
+                observer_db.get(User, self.user.id).updated_at,
+                original_updated_at,
+            )
+        finally:
+            expiring_db.close()
+            observer_db.close()
 
     def test_is_online_uses_three_minute_window(self) -> None:
         now = utcnow()
