@@ -24,6 +24,7 @@ from app.routers.negotiations import (
     get_negotiation,
     list_negotiations,
     reject_proposal,
+    reopen_proposal,
     withdraw_proposal,
 )
 from app.schemas import NegotiationCreateIn, ProposalCreateIn
@@ -486,6 +487,106 @@ class NegotiationsTestCase(unittest.TestCase):
         with self.assertRaises(HTTPException) as actor:
             complete_negotiation(negotiation.id, self.owner, self.db)
         self.assertEqual(actor.exception.status_code, 403)
+
+
+    # --- Reopening a withdrawn proposal (ADR-0003) -------------------------
+
+    def _withdrawn(self, offered: Listing | None = None):
+        negotiation = self._create_negotiation()
+        proposal = self._create_proposal(negotiation.id, offered)
+        withdraw_proposal(proposal.id, self.interested, self.db)
+        return negotiation, proposal
+
+    def _reopen_status(self, proposal_id: int, user: User) -> int:
+        with self.assertRaises(HTTPException) as raised:
+            reopen_proposal(proposal_id, user, self.db)
+        return raised.exception.status_code
+
+    def test_interested_reopens_withdrawn_proposal_with_and_without_listing(self) -> None:
+        for offered in (self.offered, None):
+            with self.subTest(offered=offered.title if offered else None):
+                negotiation, proposal = self._withdrawn(offered)
+
+                reopened = reopen_proposal(proposal.id, self.interested, self.db)
+
+                self.assertEqual(reopened.id, proposal.id)
+                self.assertEqual(reopened.state.state_name, "Pending")
+                self.assertIsNone(reopened.responded_at)
+                accepted = accept_proposal(proposal.id, self.owner, self.db)
+                self.assertEqual(accepted.state.state_name, "Accepted")
+                # Free the listings for the next round.
+                self.db.query(Proposal).delete()
+                self.db.query(Negotiation).delete()
+                for listing in (self.requested, self.offered):
+                    listing.state_id = self.listing_states["Available"].id
+                self.db.commit()
+
+    def test_only_the_interested_user_may_reopen(self) -> None:
+        negotiation = self._create_negotiation()
+        # Without an offered listing no other check stands in for this one.
+        for offered in (self.offered, None):
+            proposal = self._create_proposal(negotiation.id, offered)
+            withdraw_proposal(proposal.id, self.interested, self.db)
+            with self.subTest(offered=offered.title if offered else None):
+                self.assertEqual(self._reopen_status(proposal.id, self.owner), 403)
+                self.assertEqual(self._reopen_status(proposal.id, self.outsider), 403)
+                self.assertEqual(self._state(Proposal, proposal.id), "Withdrawn")
+
+    def test_missing_proposal_is_not_found(self) -> None:
+        self.assertEqual(self._reopen_status(999999, self.interested), 404)
+
+    def test_only_withdrawn_proposals_can_be_reopened(self) -> None:
+        negotiation = self._create_negotiation()
+        pending = self._create_proposal(negotiation.id, self.offered)
+        rejected = self._create_proposal(negotiation.id, self.second_offer)
+        reject_proposal(rejected.id, self.owner, self.db)
+        unavailable = self._create_proposal(negotiation.id)
+        self.db.get(Proposal, unavailable.id).proposal_state_id = (
+            self.proposal_states["ItemUnavailable"].id
+        )
+        self.db.commit()
+
+        for proposal, state in (
+            (pending, "Pending"),
+            (rejected, "Rejected"),
+            (unavailable, "ItemUnavailable"),
+        ):
+            with self.subTest(state=state):
+                self.assertEqual(self._reopen_status(proposal.id, self.interested), 409)
+                self.assertEqual(self._state(Proposal, proposal.id), state)
+
+        accept_proposal(pending.id, self.owner, self.db)
+        self.assertEqual(self._reopen_status(pending.id, self.interested), 409)
+
+    def test_proposals_withdrawn_by_cancelling_stay_closed(self) -> None:
+        negotiation = self._create_negotiation()
+        proposal = self._create_proposal(negotiation.id, self.offered)
+        cancel_negotiation(negotiation.id, self.interested, self.db)
+        self.assertEqual(self._state(Proposal, proposal.id), "Withdrawn")
+
+        self.assertEqual(self._reopen_status(proposal.id, self.interested), 409)
+        self.assertEqual(self._state(Proposal, proposal.id), "Withdrawn")
+
+    def test_offered_listing_must_still_be_available(self) -> None:
+        _, proposal = self._withdrawn(self.offered)
+        self.offered.state_id = self.listing_states["Reserved"].id
+        self.db.commit()
+
+        self.assertEqual(self._reopen_status(proposal.id, self.interested), 409)
+        self.assertEqual(self._state(Proposal, proposal.id), "Withdrawn")
+
+    def test_reopening_twice_fails_the_second_time(self) -> None:
+        _, proposal = self._withdrawn(self.offered)
+
+        reopen_proposal(proposal.id, self.interested, self.db)
+        self.assertEqual(self._reopen_status(proposal.id, self.interested), 409)
+
+    def test_creating_the_same_proposal_after_withdrawing_still_conflicts(self) -> None:
+        negotiation, _ = self._withdrawn(self.offered)
+
+        with self.assertRaises(HTTPException) as raised:
+            self._create_proposal(negotiation.id, self.offered)
+        self.assertEqual(raised.exception.status_code, 409)
 
 
 if __name__ == "__main__":
