@@ -398,6 +398,11 @@ export function apiWithdrawProposal(id: number) {
   return request<ApiProposal>(`/proposals/${id}/withdraw`, { method: 'PATCH' })
 }
 
+// Puts a proposal the interested user withdrew back to Pending (ADR-0003).
+export function apiReopenProposal(id: number) {
+  return request<ApiProposal>(`/proposals/${id}/reopen`, { method: 'PATCH' })
+}
+
 export function apiCancelNegotiation(id: number) {
   return request<ApiNegotiationDetail>(`/negotiations/${id}/cancel`, { method: 'PATCH' })
 }
