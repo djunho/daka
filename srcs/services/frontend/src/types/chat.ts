@@ -76,12 +76,29 @@ export interface MessageCreatedEvent {
 }
 
 /**
+ * Optional safe validation metadata, never raw input or exception text.
+ */
+export interface WebSocketValidationDetail {
+  field: string
+  code: string
+}
+
+/**
+ * Structured error details returned by the server on rejected events.
+ */
+export interface WebSocketErrorData {
+  code: string
+  message: string
+  retry_after?: number
+  details?: WebSocketValidationDetail[]
+}
+
+/**
  * Incoming event: sent by the server to report a recoverable error or rejection.
  */
 export interface WebSocketErrorEvent {
   type: 'error'
-  code: string
-  message: string
+  error: WebSocketErrorData
 }
 
 /**
