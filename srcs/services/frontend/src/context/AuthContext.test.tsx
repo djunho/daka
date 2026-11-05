@@ -2,8 +2,7 @@ import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import { AuthProvider, useAuth } from './AuthContext'
-import { ApiError, apiLogout, apiMe, type ApiUser } from '../lib/api'
-import { ApiError, apiLogin, apiMe, apiRegister, type ApiUser } from '../lib/api'
+import { ApiError, apiLogin, apiLogout, apiMe, apiRegister, type ApiUser } from '../lib/api'
 import { AccountCreatedError } from '../lib/errors'
 
 vi.mock('../lib/api', async (importOriginal) => ({
@@ -232,6 +231,8 @@ describe('AuthContext logout', () => {
 
     expect(screen.getByText('Sem sessão')).toBeInTheDocument()
   })
+})
+
 describe('AuthContext register', () => {
   let register: ReturnType<typeof useAuth>['register'] | null = null
 
