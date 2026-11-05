@@ -171,6 +171,13 @@ export function apiMe() {
   return request<ApiUser>('/auth/me')
 }
 
+// Used on page load. Unlike /auth/me, no session is not an error: the answer
+// is 200 with user null, so a visitor without a session sees no 401 in the
+// browser console.
+export function apiSession() {
+  return request<{ user: ApiUser | null }>('/auth/session')
+}
+
 export function apiDeleteAccount(): Promise<void> {
   return request<void>('/auth/me', { method: 'DELETE' })
 }
