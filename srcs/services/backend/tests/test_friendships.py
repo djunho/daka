@@ -4,7 +4,7 @@ from datetime import datetime
 import unittest
 
 from fastapi import Response
-from sqlalchemy.exc import StatementError
+from sqlalchemy.exc import IntegrityError, StatementError
 
 from app.friendships import (
     active_friendships_query,
@@ -65,6 +65,13 @@ class FriendshipsTestCase(unittest.TestCase):
     def test_normalize_pair_rejects_self_friendship(self) -> None:
         with self.assertRaises(ValueError):
             normalize_pair(3, 3)
+
+    def test_friendship_rejects_unnormalized_pair(self) -> None:
+        alice, bob = self.db.query(User).order_by(User.id).limit(2).all()
+        self.db.add(Friendship(user_id=bob.id, friend_id=alice.id))
+
+        with self.assertRaises(IntegrityError):
+            self.db.commit()
 
     def test_active_friendships_query_finds_both_sides_and_ignores_removed(
         self,
