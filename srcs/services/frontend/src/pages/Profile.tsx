@@ -45,7 +45,7 @@ export default function Profile() {
 
   if (!user) {
       return (
-          <main className="max-w-[720px] mx-auto px-6 py-12">
+          <main className="max-w-[720px] mx-auto px-4 sm:px-6 py-12">
           <h1 className="font-display font-bold tracking-tight text-[32px] mb-4">Erro ao carregar dados do utilizador</h1>
           <Link className={buttonClasses()} to="/">Voltar ao início</Link>
           </main>
@@ -264,7 +264,7 @@ export default function Profile() {
             {!isEditing ? (
               <button
                 type="button"
-                className="text-xs font-semibold text-brand hover:underline"
+                className="inline-flex items-center min-h-6 py-1 text-xs font-semibold text-brand hover:underline"
                 onClick={() => setIsEditing(true)}
               >
                 Editar perfil
