@@ -14,15 +14,14 @@ Only the authenticated user and validated negotiation id are kept in
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy.orm import joinedload
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.connection_manager import manager
 from app.database import SessionLocal
-from app.dependencies import SESSION_COOKIE_NAME, get_user_from_session_token
-from app.models import Negotiation, User
-from app.negotiation_access import is_participant
+from app.dependencies import SESSION_COOKIE_NAME
+from app.models import User
+from app.websocket_authorization import authorize_negotiation
 from app.message_processing import (
     MessageProcessingError, MessageRateLimiter, parse_message_event, persist_message,
 )
@@ -69,26 +68,9 @@ def _authorize_negotiation(
     The negotiation is used only here, never passed into the receive loop.
     """
     with SessionLocal() as db:
-        current_user = get_user_from_session_token(token, db)
-        if current_user is None:
-            return WS_UNAUTHENTICATED
-
-        negotiation = (
-            db.query(Negotiation)
-            .options(joinedload(Negotiation.requested_listing))
-            .filter(Negotiation.id == negotiation_id)
-            .first()
-        )
-        if negotiation is None:
-            return WS_NOT_FOUND
-
-        if not is_participant(negotiation, current_user.id):
-            return WS_FORBIDDEN
-
         # Exiting the session context detaches objects and releases the database
         # connection before the socket starts its long-lived receive loop.
-
-    return current_user
+        return authorize_negotiation(db, token, negotiation_id)
 
 
 @router.websocket("/ws/negotiations/{negotiation_id}")

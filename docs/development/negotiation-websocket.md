@@ -66,6 +66,10 @@ separate policies, so terminal negotiations can retain readable history.
 dictionary maps each negotiation id to a set of WebSocket connections. Multiple
 tabs or devices, including those belonging to the same participant, are separate
 connections. Registering an already registered connection does not accept it again.
+Concurrent registrations of the same socket share one in-flight accept task;
+other sockets do not wait on that task. Failure or cancellation removes the
+pending registration, and cancellation aborts the shared attempt rather than
+allowing a background task to register an orphan connection later.
 
 The endpoint finishes authentication and authorisation before calling
 `manager.connect(validated_id, websocket)`. The manager checks that the room matches
@@ -79,6 +83,8 @@ Both disconnect events and `WebSocketDisconnect` end the loop. A `finally` block
 calls `disconnect` even after unexpected errors or task cancellation. Removal is
 idempotent, affects only the supplied connection, and deletes the room after its
 last connection leaves. Other unexpected exceptions propagate after cleanup.
+Removal uses `set.discard` and also drops the socket's private send lock and
+captured identity/session context. Repeated cleanup does not remove other sockets.
 
 ## Concurrency and limitations
 
@@ -223,6 +229,29 @@ attempts to close it with `1011`, with a separate one-second close timeout.
 Repeated removal and already-closed transports are harmless. If the originating
 socket is removed, its endpoint stops processing additional payloads.
 
+Before each `message.created` write, the manager revalidates the recipient's
+original session, active account and current participation using a fresh database
+session in a worker thread. The handshake and recipient checker share
+`app/websocket_authorization.py`. No transaction remains open during a network
+send. The recipient's user id and session token are captured at registration,
+kept only in private memory and removed on disconnect; neither is logged as a
+credential or included in outgoing events.
+
+This check protects idle recipients as well as senders. A revoked/expired session
+or soft-deleted account closes with 4401, lost membership with 4403, and a missing
+negotiation with 4404, before sending that message. Database failure fails closed
+with 1011 and does not prevent delivery to other valid recipients. Checking one
+device's session does not invalidate another valid session for the same user.
+
+Logout and account deletion do not synchronously close every local socket. Idle
+connections are removed on their next send or next attempted broadcast delivery;
+there is no background polling or cross-process socket registry. This approach
+also detects session changes made by other workers or database operations. An
+authorisation check and a network write are not an atomic operation: a write
+already authorised/in flight when revocation commits cannot be recalled.
+The current implementation adds up to two SELECTs per recipient per delivery;
+any future optimisation must retain the recipient-revocation checks.
+
 Serialization/preparation failures produce a controlled `delivery_failed` error
 to the origin when that connection is still usable. Individual failed recipients
 are removed without failing delivery to healthy recipients. Neither case rolls
@@ -299,8 +328,10 @@ connection; it is not retried or broadcast. Fatal errors are sent before the
 corresponding close, with cleanup even when closing fails.
 
 Frontend logic should use stable codes, not compare human-readable messages.
-Authentication changes are detected on the next valid send, not via background
-polling. Terminal errors are sent before closing and normal manager cleanup runs.
+Authentication changes are detected on the next valid send or next broadcast
+delivery attempt, not via background polling. Send-side terminal errors are sent
+before closing; revoked broadcast recipients are closed without receiving the
+private message. Normal manager cleanup runs in both cases.
 
 ## Tests
 

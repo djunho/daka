@@ -6,10 +6,12 @@ import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
+from sqlalchemy.exc import OperationalError
 
 from app.connection_manager import ConnectionManager
 from app.message_processing import MessageProcessingError
 from app.schemas import MessageCreatedEvent, PersistedMessage
+from app.websocket_authorization import _recipient_close_code
 
 
 def persisted(room=20, message_id=123, **overrides):
@@ -23,13 +25,15 @@ def persisted(room=20, message_id=123, **overrides):
 
 class BroadcastTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.manager = ConnectionManager()
+        self.authorizer = AsyncMock(return_value=None)
+        self.manager = ConnectionManager(recipient_authorizer=self.authorizer)
 
     async def connect(self, room=20, user_id=7):
         websocket = AsyncMock()
         websocket.state = SimpleNamespace(
             negotiation_id=room, current_user=SimpleNamespace(id=user_id)
         )
+        websocket.cookies = {"daka_session": "token"}
         await self.manager.connect(room, websocket)
         return websocket
 
@@ -194,6 +198,43 @@ class BroadcastTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await self.manager.send_error(20, origin, error))
         self.assertFalse(self.manager.is_connected(20, origin))
         self.assertEqual(self.manager.connection_count(20), 1)
+
+    async def test_revoked_recipient_is_closed_without_receiving_private_message(self):
+        revoked, healthy = await self.connect(user_id=7), await self.connect(user_id=8)
+
+        async def authorise(_room, user_id, _token):
+            return 4401 if user_id == 7 else None
+
+        self.authorizer.side_effect = authorise
+        await self.manager.broadcast(persisted())
+        revoked.send_text.assert_not_awaited()
+        revoked.close.assert_awaited_once_with(code=4401)
+        healthy.send_text.assert_awaited_once()
+        self.assertEqual(self.manager.connection_count(20), 1)
+
+    async def test_recipient_authorisation_failure_is_isolated_and_logs_no_secrets(self):
+        failed, healthy = await self.connect(user_id=7), await self.connect(user_id=8)
+
+        async def authorise(_room, user_id, _token):
+            if user_id == 7:
+                raise ValueError("private cookie")
+            return None
+
+        self.authorizer.side_effect = authorise
+        with self.assertLogs("app.connection_manager", level="ERROR") as logs:
+            await self.manager.broadcast(persisted())
+        failed.send_text.assert_not_awaited()
+        failed.close.assert_awaited_once_with(code=1011)
+        healthy.send_text.assert_awaited_once()
+        self.assertNotIn("private cookie", " ".join(logs.output))
+
+    async def test_database_failure_during_recipient_check_fails_closed(self):
+        with patch(
+            "app.websocket_authorization.SessionLocal",
+            side_effect=OperationalError("private SQL", {}, Exception("private token")),
+        ), self.assertLogs("app.websocket_authorization", level="ERROR") as logs:
+            self.assertEqual(_recipient_close_code(20, 7, "private token"), 1011)
+        self.assertNotIn("private", " ".join(logs.output))
 
     async def test_terminal_error_is_sent_before_closing_and_removing_connection(self):
         websocket = await self.connect()

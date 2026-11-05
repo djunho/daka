@@ -116,6 +116,10 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
             "app.message_processing.SessionLocal", self.session_factory
         )
         self.message_session_patch.start()
+        self.recipient_session_patch = patch(
+            "app.websocket_authorization.SessionLocal", self.session_factory
+        )
+        self.recipient_session_patch.start()
         self.manager = ConnectionManager()
         self.disconnect_condition = threading.Condition()
         original_disconnect = self.manager.disconnect
@@ -134,6 +138,7 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
         self.connect_mock = self.connect_patch.start()
 
     def tearDown(self) -> None:
+        self.recipient_session_patch.stop()
         self.message_session_patch.stop()
         self.connect_patch.stop()
         self.manager_patch.stop()
@@ -425,6 +430,82 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
                 self.assertEqual(raised.exception.code, 1011)
         self.assertEqual(self.db.query(Message).count(), 0)
         self._assert_no_connections()
+
+    def test_idle_recipient_cannot_receive_after_session_revocation_or_expiry_or_soft_delete(self):
+        for reason in ("revoked", "expired", "deleted"):
+            with (
+                self.subTest(reason=reason),
+                self._connect(self.tokens["interested"], origin=self.origin) as idle,
+                self._connect(self.tokens["owner"], origin=self.origin) as sender,
+            ):
+                session = self.db.query(UserSession).filter_by(user_id=self.interested.id).one()
+                if reason == "revoked":
+                    self.db.delete(session)
+                elif reason == "expired":
+                    session.expires_at = utcnow() - timedelta(seconds=1)
+                else:
+                    self.interested.deleted_at = utcnow()
+                self.db.commit()
+                sender.send_json({"type": "message.send", "content": reason})
+                self.assertEqual(sender.receive_json()["type"], "message.created")
+                # The idle recipient never submitted a new payload.
+                with self.assertRaises(WebSocketDisconnect) as raised:
+                    idle.receive_json()
+                self.assertEqual(raised.exception.code, 4401)
+            self._assert_no_connections()
+            self.interested.deleted_at = None
+            self.db.query(UserSession).filter_by(user_id=self.interested.id).delete()
+            self.db.add(UserSession(
+                user_id=self.interested.id,
+                token_hash=hash_session_token(self.tokens["interested"]),
+                expires_at=utcnow() + timedelta(hours=1),
+            ))
+            self.db.commit()
+
+    def test_logout_only_revokes_its_session_and_preserves_another_device(self):
+        from app.database import get_db
+
+        token = "second-device"
+        self.db.add(UserSession(
+            user_id=self.interested.id, token_hash=hash_session_token(token),
+            expires_at=utcnow() + timedelta(hours=1),
+        ))
+        self.db.commit()
+        with (
+            self._connect(self.tokens["interested"], origin=self.origin) as logged_out,
+            self._connect(token, origin=self.origin) as other_device,
+            self._connect(self.tokens["owner"], origin=self.origin) as sender,
+        ):
+            previous = app.dependency_overrides.get(get_db)
+            app.dependency_overrides[get_db] = lambda: self.db
+            try:
+                self.client.cookies.set("daka_session", self.tokens["interested"])
+                self.assertEqual(self.client.post("/auth/logout").status_code, 204)
+            finally:
+                self.client.cookies.clear()
+                if previous is None:
+                    app.dependency_overrides.pop(get_db, None)
+                else:
+                    app.dependency_overrides[get_db] = previous
+            sender.send_json({"type": "message.send", "content": "after logout"})
+            event = sender.receive_json()
+            self.assertEqual(other_device.receive_json(), event)
+            with self.assertRaises(WebSocketDisconnect) as raised:
+                logged_out.receive_json()
+            self.assertEqual(raised.exception.code, 4401)
+
+    def test_idle_recipient_with_lost_membership_is_closed_before_delivery(self):
+        with (
+            self._connect(self.tokens["interested"], origin=self.origin) as idle,
+            self._connect(self.tokens["owner"], origin=self.origin) as sender,
+        ):
+            self.negotiation.interested_user_id = self.outsider.id
+            self.db.commit()
+            sender.send_json({"type": "message.send", "content": "private"})
+            self.assertEqual(sender.receive_json()["type"], "message.created")
+            with self.assertRaises(WebSocketDisconnect) as raised:
+                idle.receive_json()
+            self.assertEqual(raised.exception.code, 4403)
 
     def test_missing_empty_invalid_and_unknown_sessions_are_4401(self) -> None:
         for token in (None, "", "invalid-token"):
