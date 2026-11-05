@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     # How long a login stays valid. 168 hours = 7 days. After that the session
     # row is considered expired and the user has to log in again.
     session_ttl_hours: int = 168
+    presence_online_window_seconds: int = 180
+    presence_write_interval_seconds: int = 60
 
     # bcrypt cost factor: the hash runs 2^rounds iterations, so every +1 makes
     # it twice as slow for us AND twice as expensive to crack. 12 is the
