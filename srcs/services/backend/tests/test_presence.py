@@ -2,8 +2,10 @@
 
 from datetime import timedelta
 import unittest
+from unittest.mock import patch
 
 from fastapi import HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.dependencies import get_current_user
 from app.models import User, UserSession
@@ -92,6 +94,17 @@ class PresenceTestCase(unittest.TestCase):
 
         self.assertIs(resolved, self.user)
         self.assertIsNotNone(self.user.last_seen)
+
+    def test_presence_write_failure_does_not_expire_request_user(self) -> None:
+        user_id = self.user.id
+        with patch(
+            "app.presence.Session.commit",
+            side_effect=SQLAlchemyError("write failed"),
+        ):
+            self.assertFalse(touch_last_seen(self.db, self.user, utcnow()))
+
+        self.assertEqual(self.user.id, user_id)
+        self.assertIsNone(self.user.last_seen)
 
 
 if __name__ == "__main__":
