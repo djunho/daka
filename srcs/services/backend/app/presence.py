@@ -37,6 +37,8 @@ def touch_last_seen(
     """Persist activity at most once per minute without changing updated_at."""
     current_time = now or utcnow()
     cutoff = current_time - PRESENCE_WRITE_INTERVAL
+    if user.last_seen is not None and user.last_seen >= cutoff:
+        return False
     try:
         updated = (
             db.query(User)
