@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.websockets import WebSocketDisconnect
@@ -27,7 +27,9 @@ from app.models import (
     UserSession,
 )
 from app.security import hash_session_token, utcnow
-from app.routers.websockets import _reject
+from app.routers.websockets import _authorize_negotiation, _reject
+from app.dependencies import get_user_from_session_token
+from app.config import Settings
 
 
 class RejectionProtocolTestCase(unittest.TestCase):
@@ -40,6 +42,23 @@ class RejectionProtocolTestCase(unittest.TestCase):
                     websocket.method_calls,
                     [unittest.mock.call.accept(), unittest.mock.call.close(code=code)],
                 )
+
+
+class WebSocketOriginSettingsTestCase(unittest.TestCase):
+    def test_default_additional_origins_do_not_allow_localhost_in_production(self):
+        default = Settings.model_fields["websocket_allowed_origins"].default
+        self.assertEqual(default, "")
+        settings = Settings(frontend_url="https://daka.example", websocket_allowed_origins=default)
+        self.assertEqual(settings.allowed_websocket_origins, frozenset({"https://daka.example"}))
+
+    def test_origins_are_normalised_and_additional_origins_remain_explicit(self):
+        settings = Settings(
+            frontend_url="https://DAKA.example/",
+            websocket_allowed_origins=" HTTPS://Localhost:8443/ , ,https://OTHER.example ",
+        )
+        self.assertEqual(settings.allowed_websocket_origins, frozenset({
+            "https://daka.example", "https://localhost:8443", "https://other.example",
+        }))
 
 
 class NegotiationWebSocketTestCase(unittest.TestCase):
@@ -462,6 +481,61 @@ class NegotiationWebSocketTestCase(unittest.TestCase):
                 with self.subTest(origin=origin):
                     with self._connect(self.tokens["owner"], origin=origin):
                         pass
+
+    def test_production_origin_default_rejects_localhost_but_accepts_case_variants(self):
+        with patch("app.routers.websockets.settings.websocket_allowed_origins", ""), patch(
+            "app.routers.websockets.settings.frontend_url", "https://DAKA.example"
+        ):
+            self._assert_rejected(4403, self.tokens["owner"])
+            with self._connect(self.tokens["owner"], origin="HTTPS://Daka.Example") as websocket:
+                websocket.send_json({"type": "unknown"})
+                self.assertEqual(websocket.receive_json()["error"]["code"], "unsupported_event")
+        self._assert_no_connections()
+
+    def test_session_and_user_are_resolved_with_a_single_select(self):
+        statements = []
+
+        def capture(_connection, _cursor, statement, _parameters, _context, _many):
+            if statement.lstrip().upper().startswith("SELECT"):
+                statements.append(statement)
+
+        engine = self.db.get_bind()
+        event.listen(engine, "before_cursor_execute", capture)
+        try:
+            with self.session_factory() as worker:
+                user = get_user_from_session_token(self.tokens["owner"], worker)
+                self.assertEqual(user.id, self.owner.id)
+                self.assertEqual(user.user_name, "owner")
+            self.assertEqual(len(statements), 1)
+            self.assertTrue(inspect(user).detached)
+        finally:
+            event.remove(engine, "before_cursor_execute", capture)
+
+    def test_handshake_uses_two_selects_and_does_not_keep_the_negotiation(self):
+        statements = []
+
+        def capture(_connection, _cursor, statement, _parameters, _context, _many):
+            if statement.lstrip().upper().startswith("SELECT"):
+                statements.append(statement)
+
+        engine = self.db.get_bind()
+        event.listen(engine, "before_cursor_execute", capture)
+        try:
+            user = _authorize_negotiation(self.tokens["interested"], self.negotiation.id)
+            self.assertEqual(user.id, self.interested.id)
+            self.assertTrue(inspect(user).detached)
+            self.assertEqual(len(statements), 2)
+            # The negotiation query joins the listing, not its owner account.
+            self.assertNotIn("JOIN users", statements[1])
+        finally:
+            event.remove(engine, "before_cursor_execute", capture)
+        with self._connect(self.tokens["interested"], origin=self.origin) as websocket:
+            websocket.send_json({"type": "unknown"})
+            websocket.receive_json()
+            state = self.connect_mock.call_args.args[1].state
+            self.assertEqual(state.negotiation_id, self.negotiation.id)
+            self.assertFalse(hasattr(state, "negotiation"))
+        self._assert_no_connections()
 
 
 if __name__ == "__main__":

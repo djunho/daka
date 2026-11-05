@@ -7,9 +7,8 @@ Close-code contract (validation precedes a technical accept and close):
 * 4404: malformed negotiation id or negotiation not found
 * 4403: missing or unrecognised Origin (cookie-CSRF protection)
 
-Message routing intentionally remains outside this module. The authorised
-user, negotiation, and validated id are placed in ``websocket.state`` for the
-ConnectionManager to consume without trusting client-supplied identity.
+Only the authenticated user and validated negotiation id are kept in
+``websocket.state``. The handshake negotiation is not retained by the socket.
 """
 
 import logging
@@ -22,7 +21,8 @@ from app.config import settings
 from app.connection_manager import manager
 from app.database import SessionLocal
 from app.dependencies import SESSION_COOKIE_NAME, get_user_from_session_token
-from app.models import Listing, Negotiation, User
+from app.models import Negotiation, User
+from app.negotiation_access import is_participant
 from app.message_processing import (
     MessageProcessingError, MessageRateLimiter, parse_message_event, persist_message,
 )
@@ -49,7 +49,7 @@ def _origin_is_allowed(websocket: WebSocket) -> bool:
     origin = websocket.headers.get("origin")
     if origin is None:
         return False
-    return origin.rstrip("/") in settings.allowed_websocket_origins
+    return origin.rstrip("/").lower() in settings.allowed_websocket_origins
 
 
 def _parse_negotiation_id(raw_id: str) -> int | None:
@@ -62,11 +62,11 @@ def _parse_negotiation_id(raw_id: str) -> int | None:
 
 def _authorize_negotiation(
     token: str | None, negotiation_id: int
-) -> tuple[User, Negotiation] | int:
-    """Return detached authorised objects or a refusal code.
+) -> User | int:
+    """Return the detached authenticated user or a refusal code.
 
     Create, use and close the database session within the worker thread.
-    All relationships needed by the authorization context are loaded here.
+    The negotiation is used only here, never passed into the receive loop.
     """
     with SessionLocal() as db:
         current_user = get_user_from_session_token(token, db)
@@ -75,27 +75,20 @@ def _authorize_negotiation(
 
         negotiation = (
             db.query(Negotiation)
-            .options(
-                joinedload(Negotiation.requested_listing).joinedload(Listing.owner)
-            )
+            .options(joinedload(Negotiation.requested_listing))
             .filter(Negotiation.id == negotiation_id)
             .first()
         )
         if negotiation is None:
             return WS_NOT_FOUND
 
-        if current_user.id not in (
-            negotiation.interested_user_id,
-            negotiation.requested_listing.user_id,
-        ):
+        if not is_participant(negotiation, current_user.id):
             return WS_FORBIDDEN
 
-        # Detach the fully loaded authorization context. A database connection
-        # must not remain checked out for the lifetime of a WebSocket.
-        db.expunge(current_user)
-        db.expunge(negotiation)
+        # Exiting the session context detaches objects and releases the database
+        # connection before the socket starts its long-lived receive loop.
 
-    return current_user, negotiation
+    return current_user
 
 
 @router.websocket("/ws/negotiations/{negotiation_id}")
@@ -119,9 +112,8 @@ async def negotiation_websocket(websocket: WebSocket, negotiation_id: str) -> No
         await _reject(websocket, authorization)
         return
 
-    current_user, negotiation = authorization
+    current_user = authorization
     websocket.state.current_user = current_user
-    websocket.state.negotiation = negotiation
     websocket.state.negotiation_id = validated_id
     limiter = MessageRateLimiter()
     try:

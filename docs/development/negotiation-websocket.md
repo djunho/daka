@@ -7,8 +7,8 @@ public path through the infrastructure proxy is
 The handshake uses the existing `daka_session` cookie. It never accepts an
 authentication token or sender identity from a WebSocket payload. Before
 allowing access to the negotiation, the backend verifies the exact `Origin`, resolves an
-active unexpired session, loads the requested negotiation and its listing
-owner, and checks that the user is either that owner or the interested user.
+active unexpired session, loads the requested negotiation and listing, and checks
+that the user is either the listing owner or the interested user.
 
 ## Origin configuration
 
@@ -19,7 +19,12 @@ Set `WEBSOCKET_ALLOWED_ORIGINS` to a comma-separated list of exact origins
 - Production: the deployed frontend origin, for example
   `https://daka.example`
 
-`FRONTEND_URL` is always included in the allowed set. Connections without an
+`WEBSOCKET_ALLOWED_ORIGINS` defaults to empty: `FRONTEND_URL` is always included,
+so configuring only the production frontend does not implicitly allow localhost.
+Localhost is allowed in production only if explicitly configured. Scheme and
+host comparisons are case-insensitive; configured values and headers are
+normalised to lowercase. Examples are documented in `.env.example`.
+Connections without an
 `Origin` header are rejected because browser authentication is cookie-based.
 
 ## Close codes
@@ -42,7 +47,18 @@ The rejected connection is never registered in a room and receives no private da
 Database authentication and authorization run in `_authorize_negotiation` via
 Starlette's `run_in_threadpool`, so synchronous SQLAlchemy queries do not block
 the event loop. The worker creates, uses and closes its own `SessionLocal`;
-only detached, preloaded objects or a refusal code return to the endpoint.
+only the detached authenticated user or a refusal code returns to the endpoint.
+The session context closes and detaches objects without explicit `expunge`
+calls. Session and user are loaded in one SELECT using the existing user join;
+authorisation loads the negotiation and listing in a second SELECT without
+loading the owner's account. The socket keeps `current_user` and the validated
+`negotiation_id`, not a negotiation ORM object. Message processing uses the numeric
+ids and a fresh worker session, rechecking current membership and state.
+
+The transport-independent `is_participant` rule in `app/negotiation_access.py`
+is shared by REST participant checks, WebSocket handshake and message persistence.
+It checks membership only. Negotiation state and account/session validity remain
+separate policies, so terminal negotiations can retain readable history.
 
 ## Connection lifecycle
 

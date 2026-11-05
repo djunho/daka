@@ -98,7 +98,7 @@ class EndpointCleanupTestCase(unittest.IsolatedAsyncioTestCase):
                     websocket.receive.return_value = outcome
                 with patch("app.routers.websockets.manager", manager), patch(
                     "app.routers.websockets.run_in_threadpool",
-                    AsyncMock(return_value=(SimpleNamespace(id=1), SimpleNamespace(id=20))),
+                    AsyncMock(return_value=SimpleNamespace(id=1)),
                 ), self.assertLogs("app", level="INFO") as logs:
                     if isinstance(outcome, (RuntimeError, asyncio.CancelledError)):
                         with self.assertRaises(type(outcome)):
