@@ -10,6 +10,7 @@ after each run.  They are skipped during the default isolated SQLite suite.
 """
 
 import os
+from datetime import timedelta
 import threading
 import unittest
 from uuid import uuid4
@@ -24,12 +25,17 @@ from app.models import (
     Condition,
     Listing,
     ListingState,
+    Message,
     Negotiation,
     NegotiationState,
     Proposal,
     ProposalState,
     User,
+    UserSession,
 )
+from app.message_processing import MessageProcessingError, persist_message
+from app.schemas import MessageSendEvent
+from app.security import hash_session_token, utcnow
 from app.routers.auth import delete_me
 from app.routers.listings import create_listing, delete_listing
 from app.routers.negotiations import (
@@ -107,6 +113,12 @@ class MariaDBConcurrencyTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.fixture_session.rollback()
+        self.fixture_session.query(Message).filter(
+            Message.msg_sender.in_((self.owner_id, self.interested_id, self.other_interested_id))
+        ).delete(synchronize_session=False)
+        self.fixture_session.query(UserSession).filter(
+            UserSession.user_id.in_((self.owner_id, self.interested_id, self.other_interested_id))
+        ).delete(synchronize_session=False)
         self.fixture_session.query(Proposal).filter(
             Proposal.negotiation_id.in_(
                 self.fixture_session.query(Negotiation.id).filter(
@@ -129,6 +141,74 @@ class MariaDBConcurrencyTestCase(unittest.TestCase):
         ).delete(synchronize_session=False)
         self.fixture_session.commit()
         self.fixture_session.close()
+
+    def test_message_waits_for_state_change_and_rejects_read_only_negotiation(self):
+        """A send waiting on the room lock must observe the committed terminal state."""
+        open_state = self.fixture_session.query(NegotiationState).filter_by(state_name="Open").one()
+        cancelled_state = self.fixture_session.query(NegotiationState).filter_by(state_name="Cancelled").one()
+        room = Negotiation(
+            listing_id=self.listing_id, interested_user_id=self.interested_id,
+            negotiation_state_id=open_state.id,
+        )
+        token = uuid4().hex
+        self.fixture_session.add_all([
+            room,
+            UserSession(
+                user_id=self.interested_id, token_hash=hash_session_token(token),
+                expires_at=utcnow() + timedelta(hours=1),
+            ),
+        ])
+        self.fixture_session.commit()
+        room_id, cancelled_id = room.id, cancelled_state.id
+        self.fixture_session.rollback()
+        initial = persist_message(
+            MessageSendEvent(type="message.send", content="  " + "😀" * 250 + "  "),
+            room_id, self.interested_id, token,
+        )
+        self.assertEqual(initial.msg, "😀" * 250)
+        self.assertIsNotNone(initial.id)
+        self.assertIsNotNone(initial.created_at)
+        reached_lock, finished = threading.Event(), threading.Event()
+        errors = []
+        results = []
+
+        def observe_lock(_conn, _cursor, statement, _parameters, _context, _many):
+            sql = " ".join(statement.lower().split())
+            if threading.current_thread() is worker and " from negotiations " in sql and " for update" in sql:
+                reached_lock.set()
+
+        def send():
+            try:
+                results.append(persist_message(
+                    MessageSendEvent(type="message.send", content="must not be saved"),
+                    room_id, self.interested_id, token,
+                ))
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                finished.set()
+
+        worker = threading.Thread(target=send, daemon=True)
+        with SessionLocal() as changing:
+            locked = changing.get(Negotiation, room_id, with_for_update=True)
+            locked.negotiation_state_id = cancelled_id
+            changing.flush()
+            event.listen(engine, "before_cursor_execute", observe_lock)
+            try:
+                worker.start()
+                self.assertTrue(reached_lock.wait(timeout=10), "send never reached room lock")
+                self.assertFalse(finished.wait(timeout=0.2), "send bypassed the room lock")
+                changing.commit()
+            finally:
+                changing.rollback()
+                worker.join(timeout=10)
+                event.remove(engine, "before_cursor_execute", observe_lock)
+        self.assertFalse(worker.is_alive(), "message processing deadlocked")
+        self.assertEqual(results, [])
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], MessageProcessingError)
+        self.assertEqual(errors[0].code, "negotiation_read_only")
+        self.assertEqual(self.fixture_session.query(Message).filter_by(negotiation_id=room_id).count(), 1)
 
     def test_listing_deletion_catches_negotiation_created_after_discovery(
         self,

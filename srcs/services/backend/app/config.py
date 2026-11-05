@@ -33,6 +33,25 @@ class Settings(BaseSettings):
     # Destination after the backend creates the local Daka session.
     frontend_url: str = "https://localhost:8443"
 
+    # Comma-separated exact origins allowed to open cookie-authenticated
+    # WebSockets. Set this per environment, for example:
+    #   development: https://localhost:8443
+    #   production:  https://daka.example.com
+    # The frontend URL is also included, which keeps the public application
+    # origin and the WebSocket policy aligned by default.
+    # Empty means only FRONTEND_URL is allowed, including in production.
+    websocket_allowed_origins: str = ""
+
+    @property
+    def allowed_websocket_origins(self) -> frozenset[str]:
+        configured = {
+            origin.strip().rstrip("/").lower()
+            for origin in self.websocket_allowed_origins.split(",")
+            if origin.strip()
+        }
+        configured.add(self.frontend_url.strip().rstrip("/").lower())
+        return frozenset(configured)
+
     # --- Uploaded images ---------------------------------------------------
     # Where uploaded files are written inside the backend container. This is a
     # Docker volume, deliberately OUTSIDE /app: /app is a bind mount of the

@@ -31,6 +31,7 @@ from app.dependencies import SESSION_COOKIE_NAME, get_current_user
 from app.media import delete_image, save_image
 from app.models import (
     Favorite,
+    Friendship,
     Listing,
     ListingState,
     Negotiation,
@@ -800,6 +801,14 @@ def delete_me(
                 Favorite.listing_id.in_(listing_ids),
             )
         ).delete(synchronize_session=False)
+        # Account deletion is permanent, so its friendship rows are removed
+        # rather than retained as reusable "removed" relationships.
+        db.query(Friendship).filter(
+            or_(
+                Friendship.user_id == user_id,
+                Friendship.friend_id == user_id,
+            )
+        ).delete(synchronize_session=False)
         current_user.deleted_at = deleted_at
         current_user.user_name = "Deleted user"
         current_user.email = f"deleted-{user_id}@deleted.daka"
@@ -807,6 +816,7 @@ def delete_me(
         current_user.google_sub = None
         current_user.avatar = None
         current_user.user_location = None
+        current_user.last_seen = None
         db.query(UserSession).filter(UserSession.user_id == user_id).delete(
             synchronize_session=False
         )
