@@ -16,6 +16,7 @@ def connection(room: int = 20, user=None):
     websocket.state = SimpleNamespace(
         negotiation_id=room, current_user=user or SimpleNamespace(id=1)
     )
+    websocket.cookies = {"daka_session": "token"}
     return websocket
 
 
@@ -48,6 +49,50 @@ class ConnectionManagerTestCase(unittest.IsolatedAsyncioTestCase):
         await self.manager.connect(20, websocket)
         websocket.accept.assert_awaited_once()
         self.assertEqual(self.manager.connection_count(20), 1)
+
+    async def test_concurrent_registration_accepts_once_without_blocking_other_sockets(self):
+        websocket, other = connection(), connection(21)
+        started, release = asyncio.Event(), asyncio.Event()
+
+        async def accept():
+            started.set()
+            await release.wait()
+
+        websocket.accept.side_effect = accept
+        first = asyncio.create_task(self.manager.connect(20, websocket))
+        await asyncio.wait_for(started.wait(), timeout=1)
+        second = asyncio.create_task(self.manager.connect(20, websocket))
+        try:
+            await asyncio.wait_for(self.manager.connect(21, other), timeout=1)
+            self.assertEqual(websocket.accept.await_count, 1)
+        finally:
+            release.set()
+            await asyncio.gather(first, second)
+        self.assertEqual(self.manager.connection_count(20), 1)
+        self.assertEqual(self.manager.connection_count(21), 1)
+        self.assertEqual(self.manager._connecting, {})
+
+    async def test_failed_concurrent_registration_and_cancellation_leave_no_pending_state(self):
+        for error in (RuntimeError("accept failed"), asyncio.CancelledError()):
+            websocket = connection()
+            started, release = asyncio.Event(), asyncio.Event()
+
+            async def accept():
+                started.set()
+                await release.wait()
+                raise error
+
+            websocket.accept.side_effect = accept
+            first = asyncio.create_task(self.manager.connect(20, websocket))
+            await asyncio.wait_for(started.wait(), timeout=1)
+            second = asyncio.create_task(self.manager.connect(20, websocket))
+            await asyncio.sleep(0)  # Let the second caller join the in-flight task.
+            release.set()
+            results = await asyncio.gather(first, second, return_exceptions=True)
+            self.assertTrue(all(isinstance(result, type(error)) for result in results))
+            websocket.accept.assert_awaited_once()
+            self.assertEqual(self.manager.room_count, 0)
+            self.assertEqual(self.manager._connecting, {})
 
     async def test_repeated_cleanup_preserves_new_connection(self):
         old, new = connection(), connection()
@@ -98,7 +143,7 @@ class EndpointCleanupTestCase(unittest.IsolatedAsyncioTestCase):
                     websocket.receive.return_value = outcome
                 with patch("app.routers.websockets.manager", manager), patch(
                     "app.routers.websockets.run_in_threadpool",
-                    AsyncMock(return_value=(SimpleNamespace(id=1), SimpleNamespace(id=20))),
+                    AsyncMock(return_value=SimpleNamespace(id=1)),
                 ), self.assertLogs("app", level="INFO") as logs:
                     if isinstance(outcome, (RuntimeError, asyncio.CancelledError)):
                         with self.assertRaises(type(outcome)):

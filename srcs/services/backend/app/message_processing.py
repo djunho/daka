@@ -11,8 +11,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import SessionLocal
 from app.models import Listing, Message, Negotiation, NegotiationState, User, UserSession
-from app.schemas import MessageSendEvent, PersistedMessage
+from app.schemas import MessageSendEvent, PersistedMessage, WebSocketErrorData, WebSocketErrorEvent
 from app.security import hash_session_token, utcnow
+from app.negotiation_access import is_participant
 
 logger = logging.getLogger(__name__)
 MAX_MESSAGE_PAYLOAD_BYTES = 4096
@@ -30,6 +31,7 @@ ERROR_MESSAGES = {
     "forbidden": "You can no longer send messages in this negotiation.",
     "negotiation_read_only": "Negotiation no longer accepts new messages.",
     "persistence_failed": "Message could not be saved.",
+    "delivery_failed": "Message was saved but live delivery could not be completed.",
 }
 
 
@@ -41,10 +43,11 @@ class MessageProcessingError(Exception):
         self.retry_after = retry_after
 
     def as_event(self) -> dict:
-        event = {"type": "error", "code": self.code, "message": ERROR_MESSAGES[self.code]}
-        if self.retry_after is not None:
-            event["retry_after"] = self.retry_after
-        return event
+        return WebSocketErrorEvent(error=WebSocketErrorData(
+            code=self.code,
+            message=ERROR_MESSAGES.get(self.code, "An error occurred."),
+            retry_after=self.retry_after,
+        )).model_dump(mode="json", exclude_none=True)
 
 
 class MessageRateLimiter:
@@ -137,9 +140,7 @@ def persist_message(
             if negotiation is None:
                 raise MessageProcessingError("negotiation_not_found", close_code=4404)
             listing = db.get(Listing, negotiation.listing_id, with_for_update=True)
-            if listing is None or sender_id not in (
-                negotiation.interested_user_id, listing.user_id
-            ):
+            if listing is None or not is_participant(negotiation, sender_id):
                 raise MessageProcessingError("forbidden", close_code=4403)
             # A lock wait can outlast the session's remaining lifetime.
             if session.expires_at <= utcnow():

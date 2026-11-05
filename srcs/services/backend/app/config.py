@@ -39,16 +39,17 @@ class Settings(BaseSettings):
     #   production:  https://daka.example.com
     # The frontend URL is also included, which keeps the public application
     # origin and the WebSocket policy aligned by default.
-    websocket_allowed_origins: str = "https://localhost:8443"
+    # Empty means only FRONTEND_URL is allowed, including in production.
+    websocket_allowed_origins: str = ""
 
     @property
     def allowed_websocket_origins(self) -> frozenset[str]:
         configured = {
-            origin.strip().rstrip("/")
+            origin.strip().rstrip("/").lower()
             for origin in self.websocket_allowed_origins.split(",")
             if origin.strip()
         }
-        configured.add(self.frontend_url.strip().rstrip("/"))
+        configured.add(self.frontend_url.strip().rstrip("/").lower())
         return frozenset(configured)
 
     # --- Uploaded images ---------------------------------------------------
