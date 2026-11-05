@@ -92,6 +92,12 @@ class FriendshipsTestCase(unittest.TestCase):
         self.assertEqual(active_friendships_query(self.db, bob.id).count(), 1)
         self.assertEqual(active_friendships_query(self.db, carol.id).count(), 1)
 
+    def test_remove_friendship_does_not_create_missing_relationship(self) -> None:
+        alice, bob = self.db.query(User).order_by(User.id).limit(2).all()
+
+        self.assertIsNone(remove_friendship(self.db, bob.id, alice.id))
+        self.assertEqual(self.db.query(Friendship).count(), 0)
+
     def test_deleting_user_removes_friendships_on_both_sides_and_last_seen(self) -> None:
         alice, bob, carol = self.db.query(User).order_by(User.id).all()
         save_friendship(self.db, alice.id, bob.id)

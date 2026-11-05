@@ -48,12 +48,11 @@ def save_friendship(
 
 def remove_friendship(
     db: Session, first_user_id: int, second_user_id: int
-) -> Friendship:
-    """Mark a friendship removed using its canonical pair."""
-    friendship = save_friendship(
-        db,
-        first_user_id,
-        second_user_id,
-        status="removed",
-    )
+) -> Friendship | None:
+    """Mark an existing friendship removed using its canonical pair."""
+    user_id, friend_id = normalize_pair(first_user_id, second_user_id)
+    friendship = db.get(Friendship, (user_id, friend_id))
+    if friendship is None:
+        return None
+    friendship.status = "removed"
     return friendship
