@@ -37,12 +37,25 @@ def get_current_user(
       2. cookie present but no matching session row -> 401
       3. row found but already expired -> 401 (and delete the dead row)
     """
-    if daka_session is None:
+    user = get_user_from_session_token(daka_session, db)
+    if user is None:
         raise _unauthorised()
+    return user
 
-    # We stored the SHA-256 of the token, never the token itself, so we hash the
-    # incoming cookie the same way and look the row up by that hash.
-    token_hash = hash_session_token(daka_session)
+
+def get_user_from_session_token(token: str | None, db: Session) -> User | None:
+    """Resolve an active user from a raw session token.
+
+    This transport-neutral function is shared by HTTP and WebSocket
+    authentication. All invalid cases intentionally collapse to ``None`` so
+    callers do not disclose whether a token, session, or account exists.
+    """
+    if not token:
+        return None
+
+    # We stored the SHA-256 of the token, never the token itself, so hash the
+    # incoming value before doing the indexed lookup.
+    token_hash = hash_session_token(token)
     session = (
         db.query(UserSession)
         .join(User)
@@ -54,7 +67,7 @@ def get_current_user(
     )
 
     if session is None:
-        raise _unauthorised()
+        return None
 
     # Expiry is enforced here, server-side. The cookie's own max-age is only a
     # hint to the browser; the row's expires_at is the real deadline. Comparing
@@ -64,7 +77,7 @@ def get_current_user(
         # keeps the table from filling with dead rows over time.
         db.delete(session)
         db.commit()
-        raise _unauthorised()
+        return None
 
     return session.user
 
