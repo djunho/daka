@@ -36,14 +36,15 @@ from app.models import (
 from app.message_processing import MessageProcessingError, persist_message
 from app.schemas import MessageSendEvent
 from app.security import hash_session_token, utcnow
-from app.routers.auth import delete_me
+from app.dependencies import get_current_user
+from app.routers.auth import delete_me, update_me
 from app.routers.listings import create_listing, delete_listing
 from app.routers.negotiations import (
     accept_proposal,
     complete_negotiation,
     create_negotiation,
 )
-from app.schemas import ListingCreateIn, NegotiationCreateIn
+from app.schemas import ListingCreateIn, NegotiationCreateIn, ProfileUpdate
 
 
 @unittest.skipUnless(
@@ -141,6 +142,28 @@ class MariaDBConcurrencyTestCase(unittest.TestCase):
         ).delete(synchronize_session=False)
         self.fixture_session.commit()
         self.fixture_session.close()
+
+    def test_profile_update_after_auth_presence_write_uses_fresh_snapshot(self) -> None:
+        token = uuid4().hex
+        self.fixture_session.add(
+            UserSession(
+                user_id=self.owner_id,
+                token_hash=hash_session_token(token),
+                expires_at=utcnow() + timedelta(hours=1),
+            )
+        )
+        self.fixture_session.commit()
+        self.fixture_session.rollback()
+
+        user = get_current_user(token, self.fixture_session)
+        updated = update_me(
+            ProfileUpdate(user_location="Lisboa"),
+            user,
+            self.fixture_session,
+        )
+
+        self.assertEqual(updated.user_location, "Lisboa")
+        self.assertIsNotNone(updated.last_seen)
 
     def test_message_waits_for_state_change_and_rejects_read_only_negotiation(self):
         """A send waiting on the room lock must observe the committed terminal state."""
