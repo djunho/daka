@@ -16,8 +16,10 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     CHAR,
+    CheckConstraint,
     Computed,
     DateTime,
+    Enum,
     ForeignKey,
     Index,
     String,
@@ -57,6 +59,7 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime)
     # Soft deletion keeps the row for reports and historical records while
     # preventing the account from authenticating or appearing as active.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -70,6 +73,20 @@ class User(Base):
     # sessions. Both sides are declared because either can do the delete.
     sessions: Mapped[list["UserSession"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+    # These collections include both accepted and removed rows. Callers that
+    # display the active friend list must filter by Friendship.status.
+    friendships_as_user: Mapped[list["Friendship"]] = relationship(
+        foreign_keys="Friendship.user_id",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    friendships_as_friend: Mapped[list["Friendship"]] = relationship(
+        foreign_keys="Friendship.friend_id",
+        back_populates="friend",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
 
@@ -92,6 +109,44 @@ class UserSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="sessions")
+
+
+class Friendship(Base):
+    """Symmetric friendship stored once with the lower user id first."""
+
+    __tablename__ = "friendships"
+    __table_args__ = (CheckConstraint("user_id < friend_id", name="chk_friendship_order"),)
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    friend_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    status: Mapped[str] = mapped_column(
+        Enum(
+            "accepted",
+            "removed",
+            name="friendship_status",
+            validate_strings=True,
+        ),
+        default="accepted",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped["User"] = relationship(
+        foreign_keys=[user_id],
+        back_populates="friendships_as_user",
+        passive_deletes=True,
+    )
+    friend: Mapped["User"] = relationship(
+        foreign_keys=[friend_id],
+        back_populates="friendships_as_friend",
+        passive_deletes=True,
+    )
 
 
 class Category(Base):

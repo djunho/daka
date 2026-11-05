@@ -88,13 +88,13 @@ ALTER TABLE users ADD COLUMN deleted_at DATETIME NULL AFTER updated_at;
 ```
 
 - Friend presence and symmetric contacts add `users.last_seen` and the
-  `friendships` table. For existing MariaDB volumes that have not yet applied
-  the friends schema, apply:
+  `friendships` table. Before deploying a branch that uses these models to an
+  existing MariaDB volume, apply:
 
 ```sql
-ALTER TABLE users ADD COLUMN last_seen DATETIME NULL DEFAULT NULL AFTER updated_at;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen DATETIME NULL DEFAULT NULL AFTER updated_at;
 
-CREATE TABLE friendships (
+CREATE TABLE IF NOT EXISTS friendships (
 	user_id INT NOT NULL,
 	friend_id INT NOT NULL,
 	status ENUM('accepted', 'removed') NOT NULL DEFAULT 'accepted',
@@ -108,11 +108,19 @@ CREATE TABLE friendships (
 );
 ```
 
+If `friendships` already exists, add the lifecycle timestamp separately:
+
+```sql
+ALTER TABLE friendships ADD COLUMN IF NOT EXISTS updated_at
+    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ON UPDATE CURRENT_TIMESTAMP AFTER created_at;
+```
+
 The pair must always be normalized before insert or lookup (`user_id <
 friend_id`). Adding a friendship creates or reactivates the row with
 `status = 'accepted'`; removing it sets `status = 'removed'` without deleting
-the row. `updated_at` records the latest friendship state change. Friend lists
-include only rows with `status = 'accepted'`.
+the row. Friend lists include only rows with `status = 'accepted'`. Account
+deactivation permanently removes that user's friendship rows.
 
 License
 - Follow the repository LICENSE in the project root.
