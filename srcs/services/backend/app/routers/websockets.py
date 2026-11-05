@@ -23,6 +23,9 @@ from app.connection_manager import manager
 from app.database import SessionLocal
 from app.dependencies import SESSION_COOKIE_NAME, get_user_from_session_token
 from app.models import Listing, Negotiation, User
+from app.message_processing import (
+    MessageProcessingError, MessageRateLimiter, parse_message_event, persist_message,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -120,15 +123,28 @@ async def negotiation_websocket(websocket: WebSocket, negotiation_id: str) -> No
     websocket.state.current_user = current_user
     websocket.state.negotiation = negotiation
     websocket.state.negotiation_id = validated_id
+    limiter = MessageRateLimiter()
     try:
         await manager.connect(validated_id, websocket)
-        # Transport only: payload validation and persistence belong to later
-        # tickets. receive() reports disconnects as events, not exceptions.
         while True:
             message = await websocket.receive()
             if message["type"] == "websocket.disconnect":
                 _log_disconnect(validated_id, message.get("code", 1006))
                 return
+            try:
+                limiter.check()
+                event = parse_message_event(message.get("text"))
+                _persisted_message = await run_in_threadpool(
+                    persist_message, event, validated_id, current_user.id,
+                    websocket.cookies.get(SESSION_COOKIE_NAME),
+                )
+                # The next ticket will pass this committed result to broadcast.
+                # No message.created event or success acknowledgement yet.
+            except MessageProcessingError as exc:
+                await websocket.send_json(exc.as_event())
+                if exc.close_code is not None:
+                    await websocket.close(code=exc.close_code)
+                    return
     except WebSocketDisconnect as exc:
         _log_disconnect(validated_id, exc.code)
     except Exception:
@@ -136,6 +152,7 @@ async def negotiation_websocket(websocket: WebSocket, negotiation_id: str) -> No
         logger.error("WebSocket loop failed negotiation_id=%s", validated_id)
         raise
     finally:
+        limiter.clear()
         manager.disconnect(validated_id, websocket)
 
 

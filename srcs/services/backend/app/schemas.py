@@ -29,6 +29,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 from app.security import MAX_PASSWORD_BYTES
 
@@ -42,6 +43,41 @@ MAX_LISTINGS_PAGE_SIZE = 100
 # Without a ceiling, a huge offset passes validation and makes the database
 # fail (500). One billion is far beyond any real list.
 MAX_PAGE_OFFSET = 1_000_000_000
+
+
+class MessageSendEvent(BaseModel):
+    """Only client-supplied chat fields; identities come from the handshake."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    type: Literal["message.send"]
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def normalise_content(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise PydanticCustomError("empty_content", "Content must not be empty")
+        if len(value) > 250:
+            raise PydanticCustomError("content_too_long", "Content exceeds 250 characters")
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            raise PydanticCustomError("invalid_payload", "Content must be valid Unicode")
+        return value
+
+
+class PersistedMessage(BaseModel):
+    """Detached message data returned only after a successful commit, not an event."""
+
+    model_config = ConfigDict(from_attributes=True, frozen=True)
+
+    id: int
+    negotiation_id: int
+    msg_sender: int
+    msg: str
+    created_at: datetime
 
 # ---------------------------------------------------------------------------
 # Shared pieces
