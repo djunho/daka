@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import Login from './Login'
 import { ApiError } from '../lib/api'
+import { AccountCreatedError } from '../lib/errors'
 import { useAuth } from '../context/AuthContext'
 
 vi.mock('../context/AuthContext', () => ({ useAuth: vi.fn() }))
@@ -54,6 +55,23 @@ describe('Login errors', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('Já existe uma conta com este email.')
     expect(alert).not.toHaveTextContent('already exists')
+  })
+
+  it('moves to the sign-in tab, keeping what was typed, when the account was created but the sign-in failed', async () => {
+    register.mockRejectedValue(new AccountCreatedError(new ApiError(401, 'Incorrect email or password.')))
+    renderLogin()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Criar conta' }))
+    await userEvent.type(screen.getByLabelText('Nome completo'), 'Ana')
+    await fillAndSubmit('Criar conta gratuita')
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'A tua conta foi criada, mas não foi possível iniciar sessão automaticamente.',
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Entrar no Daka' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Email')).toHaveValue('ana@example.com')
+    expect(screen.getByLabelText('Palavra-passe')).toHaveValue('correct-horse-battery')
   })
 
   it('explains a failed connection in Portuguese', async () => {

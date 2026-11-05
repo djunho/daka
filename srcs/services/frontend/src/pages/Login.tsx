@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
 import Button from '../components/Button'
-import { getPortugueseErrorMessage } from '../lib/errors'
+import { AccountCreatedError, getPortugueseErrorMessage } from '../lib/errors'
 
 // The authentication screen, now with real state and client-side validation.
 //
@@ -195,6 +195,18 @@ export default function Login() {
       // On success the context now holds the user; send them to the intended page.
       navigate(from, { replace: true })
     } catch (err) {
+      if (err instanceof AccountCreatedError) {
+        // The account was created; only the automatic sign-in failed. Move to
+        // the sign-in tab with the email and password still filled in, so one
+        // press of "Entrar no Daka" tries again.
+        switchTab('signin')
+        setBanner({
+          type: 'success',
+          message:
+            'A tua conta foi criada, mas não foi possível iniciar sessão automaticamente. Carrega em "Entrar no Daka" para tentares outra vez.',
+        })
+        return
+      }
       // The API answers in English, so the message shown is always ours.
       // On sign-in a 401 must not say whether the email or the password was
       // wrong: the backend answers both the same way so as not to reveal which

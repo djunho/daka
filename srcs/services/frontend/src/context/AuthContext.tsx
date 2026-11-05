@@ -19,6 +19,7 @@ import {
   type UpdateProfileData,
   type ApiUser,
 } from '../lib/api'
+import { AccountCreatedError } from '../lib/errors'
 
 // The single place that knows who is logged in. Any component that needs the
 // current user -- the header, the route guard, a profile page -- reads it from
@@ -153,7 +154,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // rather than being sent back to the sign-in tab. This is the "auto login
     // after register" behaviour we chose.
     await apiRegister(name, email, password)
-    const me = await apiLogin(email, password)
+    let me: ApiUser
+    try {
+      me = await apiLogin(email, password)
+    } catch (err) {
+      // The account exists from here on: say so, rather than let the sign-in
+      // error look like the sign-up failed.
+      throw new AccountCreatedError(err)
+    }
     setUser(me)
   }
 

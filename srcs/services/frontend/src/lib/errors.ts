@@ -1,6 +1,23 @@
 import { ApiError } from './api'
 
 /**
+ * Thrown by register() when the account was created but the automatic sign-in
+ * that follows failed. The account exists, so the sign-up form must not treat
+ * this as a failed sign-up: trying again would only get "email already taken".
+ * The original error is kept in `cause`.
+ */
+export class AccountCreatedError extends Error {
+  // Set by hand: the `cause` option of Error is ES2022, and the project targets ES2020.
+  readonly cause: unknown
+
+  constructor(cause: unknown) {
+    super('The account was created, but signing in afterwards failed.')
+    this.name = 'AccountCreatedError'
+    this.cause = cause
+  }
+}
+
+/**
  * Translates an API error or unexpected exception into a user-friendly European Portuguese (pt-PT) message.
  * Ensures backend English strings or low-level network errors are never displayed directly in the UI.
  *
