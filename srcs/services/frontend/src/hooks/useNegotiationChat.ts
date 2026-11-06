@@ -45,8 +45,15 @@ export function useNegotiationChat(
   negotiationId: number | null,
   options?: UseNegotiationChatOptions,
 ): UseNegotiationChatReturn {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const currentUserId = user?.id
+
+  // logout is recreated on every AuthProvider render; keep the latest one in a
+  // ref so the socket effect below does not reconnect because of it.
+  const logoutRef = useRef(logout)
+  useEffect(() => {
+    logoutRef.current = logout
+  }, [logout])
 
   const [messages, setMessages] = useState<ChatMessageItem[]>([])
   const [status, setStatus] = useState<ChatConnectionStatus>('disconnected')
@@ -196,12 +203,17 @@ export function useNegotiationChat(
           return
         }
 
-        // Terminal server codes: do not reconnect
-        if (
-          event.code === WS_CLOSE_CODES.UNAUTHORIZED ||
-          event.code === WS_CLOSE_CODES.FORBIDDEN ||
-          event.code === WS_CLOSE_CODES.NOT_FOUND
-        ) {
+        // Session expired or revoked: clear it like the pages do on a REST 401,
+        // so the header, dock and widget stop showing a signed-in state.
+        if (event.code === WS_CLOSE_CODES.UNAUTHORIZED) {
+          setError(getWebSocketErrorMessage(event.code))
+          setStatus('disconnected')
+          void logoutRef.current()
+          return
+        }
+
+        // Other terminal server codes: do not reconnect
+        if (event.code === WS_CLOSE_CODES.FORBIDDEN || event.code === WS_CLOSE_CODES.NOT_FOUND) {
           setError(getWebSocketErrorMessage(event.code))
           setStatus('disconnected')
           return

@@ -59,6 +59,7 @@ class MockWebSocket {
 
 describe('useNegotiationChat', () => {
   const originalWebSocket = window.WebSocket
+  const logout = vi.fn().mockResolvedValue(undefined)
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -67,7 +68,7 @@ describe('useNegotiationChat', () => {
     vi.mocked(useAuth).mockReturnValue({
       user: { id: 1, user_name: 'Daniel', email: 'd@daka.pt', avatar: null, user_location: null, created_at: '' },
       loading: false,
-      logout: vi.fn(),
+      logout,
     } as unknown as ReturnType<typeof useAuth>)
 
     vi.mocked(apiListNegotiationMessages).mockResolvedValue({
@@ -245,8 +246,9 @@ describe('useNegotiationChat', () => {
 
     expect(result.current.status).toBe('disconnected')
     expect(result.current.error).toContain('Não tens permissão')
-    // No new connection created
+    // No new connection created, and the session is kept: only 4401 signs out
     expect(MockWebSocket.instances).toHaveLength(1)
+    expect(logout).not.toHaveBeenCalled()
   })
 
   it('attempts reconnection with backoff on unexpected socket drop', async () => {
@@ -391,6 +393,8 @@ describe('useNegotiationChat', () => {
     })
     expect(res4401.current.status).toBe('disconnected')
     expect(res4401.current.error).toContain('A tua sessão expirou')
+    // Same as a REST 401 on the pages: clear the session so RequireAuth takes over
+    expect(logout).toHaveBeenCalledTimes(1)
 
     // Test 4404: Negotiation not found
     const { result: res4404 } = renderHook(() => useNegotiationChat(999))
@@ -400,6 +404,7 @@ describe('useNegotiationChat', () => {
     })
     expect(res4404.current.status).toBe('disconnected')
     expect(res4404.current.error).toContain('A negociação não foi encontrada')
+    expect(logout).toHaveBeenCalledTimes(1)
 
     // No reconnect attempts spawned
     expect(MockWebSocket.instances).toHaveLength(2)
