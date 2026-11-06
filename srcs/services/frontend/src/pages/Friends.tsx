@@ -157,12 +157,18 @@ export default function Friends() {
   async function confirmRemove() {
     if (!removing) return
     const friend = removing
+    // No refresh starts while the dialog is open, so the generation only
+    // changes meanwhile if the page is left (the effect cleanup bumps it).
+    // Then the answer must not touch the list, the URL or start a request.
+    const current = generation.current
     setRemoveBusy(true)
     setRemoveError(null)
     try {
       await apiRemoveFriend(friend.id)
+      if (generation.current !== current) return
       dropFriend(friend.id)
     } catch (err) {
+      if (generation.current !== current) return
       if (err instanceof ApiError && err.status === 401) {
         setRemoving(null)
         void logout()
@@ -173,7 +179,7 @@ export default function Friends() {
         setRemoveError(getPortugueseErrorMessage(err, 'Não foi possível remover o amigo. Tenta outra vez.'))
       }
     } finally {
-      setRemoveBusy(false)
+      if (generation.current === current) setRemoveBusy(false)
     }
   }
 

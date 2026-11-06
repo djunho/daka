@@ -149,6 +149,24 @@ describe('Friends', () => {
     expect(screen.queryByRole('link', { name: 'Bruno' })).not.toBeInTheDocument()
   })
 
+  it('does nothing with a removal that answers after leaving the page', async () => {
+    let answerRemove!: () => void
+    vi.mocked(apiRemoveFriend).mockReturnValue(new Promise<void>((resolve) => { answerRemove = resolve }))
+    const { unmount } = renderPage()
+    await screen.findByText('2 amigos')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remover Bruno dos amigos' }))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Sim, remover' }))
+    expect(apiRemoveFriend).toHaveBeenCalledWith(BRUNO.id)
+
+    // The person goes Back while the removal is still running.
+    unmount()
+    await act(async () => answerRemove())
+
+    // No refresh of a page that is gone.
+    expect(apiGetFriends).toHaveBeenCalledTimes(1)
+  })
+
   it('shows other removal errors in the dialog and keeps the friend', async () => {
     vi.mocked(apiRemoveFriend).mockRejectedValue(new ApiError(500, 'Server error'))
     renderPage()
