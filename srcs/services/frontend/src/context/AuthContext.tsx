@@ -7,13 +7,12 @@ import {
 } from 'react'
 
 import {
-  ApiError,
   apiDeleteAvatar,
   apiLogin,
   apiLogout,
-  apiMe,
   apiDeleteAccount,
   apiRegister,
+  apiSession,
   apiUpdateProfile,
   apiUploadAvatar,
   type UpdateProfileData,
@@ -59,19 +58,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   // On first mount, ask the backend who we are. If a valid session cookie is
-  // present, /auth/me returns the user; if not, it 401s and we stay logged
-  // out. This is what restores a session after a page refresh -- the cookie
-  // survives the reload, and this call reads it back.
+  // present, /auth/session returns the user; if not, it returns user null and
+  // we stay logged out. This is what restores a session after a page refresh
+  // -- the cookie survives the reload, and this call reads it back. It is not
+  // /auth/me because that answers 401 without a session, and the browser
+  // prints every 401 in red in the console, on every visit.
   useEffect(() => {
-    apiMe()
-      .then((me) => setUser(me))
-      .catch((err) => {
-        // A 401 here is normal: it just means nobody is logged in. Anything
-        // else (server down) also leaves us logged out, which is the safe
-        // default. Either way, swallow it -- there is nothing to show.
-        if (!(err instanceof ApiError)) {
-          // Unexpected non-API error; leave user null but don't crash.
-        }
+    apiSession()
+      .then(({ user: current }) => setUser(current))
+      .catch(() => {
+        // The server could not be reached or failed: staying logged out is
+        // the safe default, and there is nothing to show.
         setUser(null)
       })
       .finally(() => setLoading(false))
@@ -96,18 +93,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const runHeartbeat = async () => {
       lastHeartbeatAt = Date.now()
       try {
-        const me = await apiMe()
+        // /auth/session rather than /auth/me: when the session ends with the
+        // site open (it expires, or another tab logs out), the answer is
+        // user null instead of a 401 printed in red in the console.
+        const { user: current } = await apiSession()
+        if (!active) return
+        if (current === null) {
+          stopHeartbeat()
+          setUser(null)
+          return
+        }
         // Keep the same object while the session still belongs to the same
         // account. A new object on every beat would re-run every effect that
         // depends on `user` (the profile form would reset what is being
         // typed). Only a different account (a login in another tab) replaces it.
-        if (active) setUser((prev) => (prev?.id === me.id ? prev : me))
-      } catch (err) {
-        if (!active) return
-        if (err instanceof ApiError && err.status === 401) {
-          stopHeartbeat()
-          setUser(null)
-        }
+        setUser((prev) => (prev?.id === current.id ? prev : current))
+      } catch {
+        // A server or network failure keeps the session: the next beat tries again.
       }
     }
 
