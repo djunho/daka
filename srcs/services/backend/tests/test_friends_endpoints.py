@@ -92,14 +92,37 @@ class FriendsEndpointsTestCase(unittest.TestCase):
         self.assertEqual(deleted.json(), {"detail": "User not found."})
 
     def test_integrity_error_during_add_returns_409(self) -> None:
-        with patch(
-            "app.routers.friends.Session.commit",
-            side_effect=IntegrityError("insert friendship", {}, Exception("duplicate")),
+        existing = Friendship(
+            user_id=self.alice.id,
+            friend_id=self.bob.id,
+            status="accepted",
+        )
+        with (
+            patch.object(
+                self.db,
+                "get",
+                side_effect=[None, existing],
+            ),
+            patch(
+                "app.routers.friends.Session.commit",
+                side_effect=IntegrityError("insert friendship", {}, Exception("duplicate")),
+            ),
         ):
             response = self.add_friend(self.bob.id)
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json(), {"detail": "User is already in your friends list."})
+
+    def test_unrelated_integrity_error_is_not_mapped_to_friend_conflict(self) -> None:
+        with (
+            patch.object(self.db, "get", side_effect=[None, None]),
+            patch(
+                "app.routers.friends.Session.commit",
+                side_effect=IntegrityError("insert friendship", {}, Exception("constraint")),
+            ),
+            self.assertRaises(IntegrityError),
+        ):
+            self.add_friend(self.bob.id)
 
     def test_remove_is_logical_and_reactivation_reuses_the_same_row(self) -> None:
         self.assertEqual(self.add_friend(self.bob.id).status_code, 201)
