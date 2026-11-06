@@ -1,7 +1,9 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -35,6 +37,12 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  // Re-reads the session from the current cookie, like a heartbeat beat:
+  // 'same' account, another account ('changed', e.g. signed in from another
+  // tab), 'signedOut' (cleared locally, no POST /auth/logout), or 'unknown'
+  // when the check itself failed. Unlike logout(), it never revokes the
+  // session in the current cookie, which may belong to another account.
+  syncUser: () => Promise<'same' | 'changed' | 'signedOut' | 'unknown'>
   updateProfile: (data: UpdateProfileData) => Promise<void>
   deleteAccount: () => Promise<void>
   uploadAvatar: (file: File) => Promise<void>
@@ -55,6 +63,10 @@ const HEARTBEAT_MIN_GAP_MS = 30_000
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<ApiUser | null>(null)
+  const userRef = useRef<ApiUser | null>(null)
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
   const [loading, setLoading] = useState(true)
 
   // On first mount, ask the backend who we are. If a valid session cookie is
@@ -210,6 +222,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const syncUser = useCallback(async () => {
+    try {
+      const { user: current } = await apiSession()
+      if (current === null) {
+        setUser(null)
+        return 'signedOut' as const
+      }
+      const same = userRef.current?.id === current.id
+      // Same object for the same account, as the heartbeat does
+      setUser((prev) => (prev?.id === current.id ? prev : current))
+      return same ? ('same' as const) : ('changed' as const)
+    } catch {
+      return 'unknown' as const
+    }
+  }, [])
+
   return (
     <AuthContext.Provider
       value={{
@@ -218,6 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         logout,
+        syncUser,
         updateProfile,
         deleteAccount,
         uploadAvatar,

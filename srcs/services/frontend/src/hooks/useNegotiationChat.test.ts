@@ -64,6 +64,7 @@ class MockWebSocket {
 describe('useNegotiationChat', () => {
   const originalWebSocket = window.WebSocket
   const logout = vi.fn().mockResolvedValue(undefined)
+  const syncUser = vi.fn().mockResolvedValue('signedOut')
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -73,6 +74,7 @@ describe('useNegotiationChat', () => {
       user: { id: 1, user_name: 'Daniel', email: 'd@daka.pt', avatar: null, user_location: null, is_online: false, created_at: '' },
       loading: false,
       logout,
+      syncUser,
     } as unknown as ReturnType<typeof useAuth>)
 
     vi.mocked(apiGetNegotiation).mockResolvedValue({ id: 42, state: { id: 1, state_name: 'Open' } } as ApiNegotiationDetail)
@@ -231,6 +233,7 @@ describe('useNegotiationChat', () => {
       user: { id: 9, user_name: 'Outra', email: 'o@daka.pt', avatar: null, user_location: null, created_at: '' },
       loading: false,
       logout,
+      syncUser,
     } as unknown as ReturnType<typeof useAuth>)
     rerender()
     act(() => {
@@ -1225,17 +1228,74 @@ describe('useNegotiationChat', () => {
     vi.useRealTimers()
   })
 
-  it('handles terminal close codes 4401 and 4404 with appropriate copy and no reconnect', () => {
+  it.each(['same', 'unknown'] as const)(
+    'after a 4401 answered %s, stays quiet and reconnects with the current cookie',
+    async (outcome) => {
+      vi.useFakeTimers()
+      let resolveSync!: (value: typeof outcome) => void
+      syncUser.mockReturnValueOnce(new Promise((r) => { resolveSync = r }))
+      const { result } = renderHook(() => useNegotiationChat(42))
+      act(() => {
+        MockWebSocket.instances[0].simulateClose(WS_CLOSE_CODES.UNAUTHORIZED, 'Unauthorized')
+      })
+      // No alarming message while the session is being checked
+      expect(result.current.status).toBe('connecting')
+      expect(result.current.error).toBeNull()
+      expect(result.current.connectionRefused).toBe(false)
+
+      await act(async () => {
+        resolveSync(outcome)
+        await Promise.resolve()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+      expect(MockWebSocket.instances).toHaveLength(2)
+      expect(result.current.error).toBeNull()
+      expect(logout).not.toHaveBeenCalled()
+      vi.useRealTimers()
+    },
+  )
+
+  it.each(['signedOut', 'changed'] as const)(
+    'after a 4401 answered %s, explains and stays disconnected',
+    async (outcome) => {
+      vi.useFakeTimers()
+      syncUser.mockResolvedValueOnce(outcome)
+      const { result } = renderHook(() => useNegotiationChat(42))
+      act(() => {
+        MockWebSocket.instances[0].simulateClose(WS_CLOSE_CODES.UNAUTHORIZED, 'Unauthorized')
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000)
+      })
+      expect(result.current.status).toBe('disconnected')
+      expect(result.current.error).toContain('A tua sessão expirou')
+      expect(result.current.connectionRefused).toBe(true)
+      expect(MockWebSocket.instances).toHaveLength(1)
+      expect(logout).not.toHaveBeenCalled()
+      vi.useRealTimers()
+    },
+  )
+
+  it('handles terminal close codes 4401 and 4404 with appropriate copy and no reconnect', async () => {
     // Test 4401: Session expired
     const { result: res4401 } = renderHook(() => useNegotiationChat(42))
     const ws4401 = MockWebSocket.instances[0]
     act(() => {
       ws4401.simulateClose(WS_CLOSE_CODES.UNAUTHORIZED, 'Unauthorized')
     })
+    await act(async () => {
+      await Promise.resolve()
+    })
     expect(res4401.current.status).toBe('disconnected')
     expect(res4401.current.error).toContain('A tua sessão expirou')
-    // Same as a REST 401 on the pages: clear the session so RequireAuth takes over
-    expect(logout).toHaveBeenCalledTimes(1)
+    // The socket's session may not be the cookie's: re-read it, never POST /auth/logout
+    expect(syncUser).toHaveBeenCalledTimes(1)
+    expect(logout).not.toHaveBeenCalled()
 
     // Test 4404: Negotiation not found
     const { result: res4404 } = renderHook(() => useNegotiationChat(999))
@@ -1245,7 +1305,8 @@ describe('useNegotiationChat', () => {
     })
     expect(res4404.current.status).toBe('disconnected')
     expect(res4404.current.error).toContain('A negociação não foi encontrada')
-    expect(logout).toHaveBeenCalledTimes(1)
+    expect(syncUser).toHaveBeenCalledTimes(1)
+    expect(logout).not.toHaveBeenCalled()
 
     // No reconnect attempts spawned
     expect(MockWebSocket.instances).toHaveLength(2)
