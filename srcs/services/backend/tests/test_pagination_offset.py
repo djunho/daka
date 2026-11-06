@@ -9,7 +9,12 @@ from app.dependencies import get_current_user
 from app.main import app
 from app.schemas import MAX_PAGE_OFFSET
 
-PAGINATED_PATHS = ["/listings", "/listings/favorites", "/negotiations"]
+PAGINATED_PATHS = [
+    "/listings",
+    "/listings/favorites",
+    "/negotiations",
+    "/friends",
+]
 
 
 class PaginationOffsetTestCase(unittest.TestCase):
