@@ -139,10 +139,13 @@ def add_friend(
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User is already in your friends list.",
-        ) from exc
+        existing = db.get(Friendship, (normalized_user_id, normalized_friend_id))
+        if existing is not None and existing.status == "accepted":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User is already in your friends list.",
+            ) from exc
+        raise
     return friend
 
 
