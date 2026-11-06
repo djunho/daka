@@ -71,6 +71,7 @@ export default function NegotiationsDock() {
 
   // Count active negotiations (not in read-only mode)
   const activeCount = negotiations.filter((n) => !isNegotiationReadOnly(n.state)).length
+  const activeLabel = activeCount === 1 ? '1 negociação ativa' : `${activeCount} negociações ativas`
 
   return (
     <aside
@@ -85,14 +86,16 @@ export default function NegotiationsDock() {
             setIsOpen(true)
             void loadNegotiations()
           }}
-          aria-label="Abrir gaveta de negociações"
+          aria-label={activeCount > 0 ? `Abrir gaveta de negociações, ${activeLabel}` : 'Abrir gaveta de negociações'}
           title="Ver negociações"
           className="relative mb-3 w-12 h-12 flex items-center justify-center bg-brand hover:opacity-90 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 select-none hover:scale-105 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
         >
           <span className="text-2xl" aria-hidden="true">🤝</span>
           {activeCount > 0 && (
+            // The count is read as part of the button's label: an aria-label on a
+            // plain span is ignored by screen readers.
             <span
-              aria-label={`${activeCount} negociações ativas`}
+              aria-hidden="true"
               className="absolute -top-1.5 -right-1.5 bg-accent text-white text-[10px] font-bold min-w-5 h-5 px-1 flex items-center justify-center rounded-full border-2 border-surface shadow-sm"
             >
               {activeCount}
@@ -212,7 +215,7 @@ export default function NegotiationsDock() {
                       }`}
                     >
                       <span aria-hidden="true">💬</span>
-                      <span>{isCurrentChat ? 'Conversando' : 'Chat'}</span>
+                      <span>{isCurrentChat ? 'A conversar' : 'Chat'}</span>
                     </button>
                     <Link
                       to={`/negotiations/${neg.id}`}
