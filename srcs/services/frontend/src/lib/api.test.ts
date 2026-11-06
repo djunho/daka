@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apiCreateNegotiation, apiCreateProposal, apiListNegotiations } from './api'
+import {
+  apiCreateNegotiation,
+  apiCreateProposal,
+  apiListNegotiationMessages,
+  apiListNegotiations,
+} from './api'
 
 describe('apiCreateProposal', () => {
   afterEach(() => {
@@ -79,5 +84,49 @@ describe('apiCreateNegotiation', () => {
     expect(init.method).toBe('POST')
     expect(init.credentials).toBe('include')
     expect(JSON.parse(init.body)).toEqual({ listing_id: 5 })
+  })
+})
+
+describe('apiListNegotiationMessages', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function stubFetch() {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], limit: 50, next_before_id: null, has_more: false }), { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('sends only the parameters given, including limit or before_id of 0', async () => {
+    const fetchMock = stubFetch()
+
+    await apiListNegotiationMessages(42, { limit: 0, before_id: 0 })
+
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/negotiations\/42\/messages\?limit=0&before_id=0$/)
+  })
+
+  it('has no query string without parameters', async () => {
+    const fetchMock = stubFetch()
+
+    await apiListNegotiationMessages(42)
+
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/negotiations\/42\/messages$/)
+  })
+
+  it('passes the signal to fetch, and a cancelled request is not reported as a network failure', async () => {
+    const fetchMock = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+
+    const pending = apiListNegotiationMessages(42, { signal: controller.signal })
+    controller.abort()
+
+    expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal)
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
   })
 })

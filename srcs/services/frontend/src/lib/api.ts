@@ -493,15 +493,15 @@ export function apiCreateNegotiation(listingId: number) {
  */
 export function apiListNegotiationMessages(
   negotiationId: number,
-  options: { limit?: number; before_id?: number | null } = {},
+  options: { limit?: number; before_id?: number | null; signal?: AbortSignal } = {},
 ) {
   const params = new URLSearchParams()
-  if (options.limit)
-      params.set('limit', String(options.limit))
-  if (options.before_id)
-      params.set('before_id', String(options.before_id))
+  if (options.limit !== undefined)
+    params.set('limit', String(options.limit))
+  if (options.before_id != null)
+    params.set('before_id', String(options.before_id))
 
   const query = params.toString()
   const path = `/negotiations/${negotiationId}/messages${query ? `?${query}` : ''}`
-  return request<ApiChatMessagePage>(path)
+  return request<ApiChatMessagePage>(path, { signal: options.signal })
 }
