@@ -100,6 +100,34 @@ describe('NegotiationsDock', () => {
     expect(screen.getByRole('button', { name: /Abrir gaveta de negociações/ })).toBeInTheDocument()
   })
 
+  it('announces the active count on the trigger, with the singular form', async () => {
+    renderDock()
+    await flush()
+    // 7 is Open and 8 is Completed, so one negotiation is active
+    expect(screen.getByRole('button', { name: 'Abrir gaveta de negociações, 1 negociação ativa' })).toBeInTheDocument()
+
+    vi.mocked(apiListNegotiations).mockResolvedValue(pageOf([negotiation(7), negotiation(9)]))
+    openDrawer()
+    await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Minimizar negociações' }))
+    expect(screen.getByRole('button', { name: 'Abrir gaveta de negociações, 2 negociações ativas' })).toBeInTheDocument()
+  })
+
+  it('marks the card of the open chat in European Portuguese', async () => {
+    vi.mocked(useChat).mockReturnValue({
+      activeChat: { negotiationId: 7, interlocutorName: 'Bruno' },
+      openChat,
+      closeChat: vi.fn(),
+      isChatOpen: (id) => id === 7,
+    })
+    renderDock()
+    await flush()
+    openDrawer()
+
+    expect(screen.getByRole('button', { name: 'A conversar' })).toBeInTheDocument()
+    expect(screen.queryByText('Conversando')).not.toBeInTheDocument()
+  })
+
   it('aborts the request in flight when unmounted', () => {
     vi.mocked(apiListNegotiations).mockReturnValueOnce(new Promise(() => {}))
     const { unmount } = renderDock()
