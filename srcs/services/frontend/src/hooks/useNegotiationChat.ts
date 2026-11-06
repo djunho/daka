@@ -336,6 +336,21 @@ export function useNegotiationChat(
     let isCancelled = false
     let socket: WebSocket | null = null
 
+    // Fetch the newest page while the chat is live (after a reconnect, or for a
+    // message stored without delivery): announce what is new, recover from a
+    // failed first page, report refusals, and offer a retry if it fails, since
+    // messages may then be missing.
+    const syncNewest = () => {
+      void syncHistory(negotiationId, currentUserId, () => isCancelled, undefined, true).then((result) => {
+        if (isCancelled) return
+        // A refusal is reported by reportRefusal (and the socket), so an old
+        // retry notice would only offer a retry that cannot work.
+        if (result === 'merged' || isRefusal(result)) setHistoryFailed(false)
+        else if (result === 'failed') setHistoryFailed(true)
+        if (isRefusal(result)) reportRefusal(result)
+      })
+    }
+
     const connect = () => {
       if (isCancelled) return
 
@@ -355,16 +370,7 @@ export function useNegotiationChat(
         // If this was a reconnection after a disconnect, backfill any messages missed
         // while offline (syncHistory replaces the thread when more than a page was missed)
         if (reconnectAttemptsRef.current > 0) {
-          void syncHistory(negotiationId, currentUserId, () => isCancelled, undefined, true).then((result) => {
-            if (isCancelled) return
-            // A successful backfill also recovers from a failed first page; a failed
-            // one may have missed messages, which only a retry can bring back
-            // A refusal is reported by the socket's own close (and `error`), so
-            // an old retry notice would only offer a retry that cannot work.
-            if (result === 'merged' || isRefusal(result)) setHistoryFailed(false)
-            else if (result === 'failed') setHistoryFailed(true)
-            if (isRefusal(result)) reportRefusal(result)
-          })
+          syncNewest()
         }
         reconnectAttemptsRef.current = 0
       }
@@ -407,11 +413,16 @@ export function useNegotiationChat(
             }
             // Errors answer our own send. delivery_failed means it was stored
             // but not broadcast: confirm it (resending would duplicate it) and
-            // let the next backfill show it; anything else rejected it.
+            // fetch the newest page so it appears in the thread now, since the
+            // socket may never reconnect to backfill it; anything else
+            // rejected it.
             if (pendingContentRef.current !== null) {
               pendingContentRef.current = null
               setIsSending(false)
               if (data.error.code === 'delivery_failed') setConfirmedSends((count) => count + 1)
+            }
+            if (data.error.code === 'delivery_failed') {
+              syncNewest()
             }
             showError(
               getWebSocketErrorMessage(data.error.code, data.error.retry_after),
