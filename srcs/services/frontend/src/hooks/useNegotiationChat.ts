@@ -89,10 +89,8 @@ export function useNegotiationChat(
           const realtimeOnly = prev.filter((m) => !existingIds.has(m.id))
           return [...historicalItems, ...realtimeOnly].sort((a, b) => a.id - b.id)
         })
-      } catch (err) {
-        if (!isCancelled()) {
-          console.warn('Could not sync negotiation history:', err)
-        }
+      } catch {
+        // Silently catch history fetch failures; WebSocket connection will still proceed
       }
     },
     [],
@@ -179,14 +177,13 @@ export function useNegotiationChat(
             }
             setError(getWebSocketErrorMessage(data.error.code, data.error.retry_after))
           }
-        } catch (err) {
-          console.error('Failed to parse WebSocket message frame:', err)
+        } catch {
+          // Ignore invalid frames to prevent crashing the socket listener
         }
       }
 
-      socket.onerror = (e) => {
+      socket.onerror = () => {
         if (isCancelled) return
-        console.error('WebSocket error:', e)
         setStatus('error')
       }
 

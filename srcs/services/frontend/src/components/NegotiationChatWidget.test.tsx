@@ -331,4 +331,20 @@ describe('NegotiationChatWidget', () => {
 
     expect(sendMessage).not.toHaveBeenCalled()
   })
+
+  it('renders messages thread with accessibility role="log" and aria-live="polite"', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+
+    render(
+      <NegotiationChatWidget
+        negotiationId={42}
+        interlocutorName="Beatriz"
+      />,
+    )
+
+    const logRegion = screen.getByRole('log', { name: 'Mensagens da negociação #42' })
+    expect(logRegion).toBeInTheDocument()
+    expect(logRegion).toHaveAttribute('aria-live', 'polite')
+    expect(logRegion).toHaveAttribute('aria-relevant', 'additions text')
+  })
 })

@@ -71,6 +71,7 @@ export default function Layout() {
         {activeChat && (
           <div className="pointer-events-auto">
             <NegotiationChatWidget
+              key={activeChat.negotiationId}
               negotiationId={activeChat.negotiationId}
               interlocutorName={activeChat.interlocutorName}
               isReadOnly={activeChat.isReadOnly}

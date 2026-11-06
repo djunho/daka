@@ -108,7 +108,13 @@ export default function NegotiationChatWidget({
       {!isMinimized && (
         <div className="flex flex-col h-80 bg-paper">
           {/* Scrollable message thread area */}
-          <div className="flex-1 p-3 overflow-y-auto space-y-3 flex flex-col">
+          <div
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions text"
+            aria-label={`Mensagens da negociação #${negotiationId}`}
+            className="flex-1 p-3 overflow-y-auto space-y-3 flex flex-col"
+          >
             {isLoadingHistory && messages.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-muted text-xs select-none">
                 <div className="w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin mb-2" />
