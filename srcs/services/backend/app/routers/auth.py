@@ -876,7 +876,14 @@ def logout(
             .first()
         )
         if session is not None:
+            user = db.get(User, session.user_id, with_for_update=True)
             db.delete(session)
+            db.flush()
+            if user is not None and not db.query(UserSession).filter(
+                UserSession.user_id == user.id,
+                UserSession.expires_at > utcnow(),
+            ).first():
+                user.last_seen = None
             db.commit()
 
     # Clearing the cookie must use the SAME attributes it was set with (path,
