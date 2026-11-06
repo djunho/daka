@@ -643,7 +643,7 @@ describe('Negotiation actions', () => {
     const TABLE = { ...LISTING, id: 8, title: 'Mesa', owner: INTERESTED }
 
     async function openFormWith(proposals: ApiProposal[]) {
-      vi.mocked(apiGetPublicProfile).mockResolvedValue({ ...INTERESTED, created_at: '', listings: [BOOK, TABLE] } as ApiPublicProfile)
+      vi.mocked(apiGetPublicProfile).mockResolvedValue({ ...INTERESTED, is_online: false, last_seen: null, created_at: '', listings: [BOOK, TABLE] } as ApiPublicProfile)
       await open(INTERESTED, negotiation('Open', proposals))
       await userEvent.click(await button('Criar proposta'))
     }
