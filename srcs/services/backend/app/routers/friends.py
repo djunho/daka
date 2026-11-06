@@ -1,7 +1,7 @@
 """Authenticated friendship routes."""
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from sqlalchemy import case, or_
+from sqlalchemy import and_, case, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,13 +20,6 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/friends", tags=["friends"])
-
-
-def _friend_user_id(user_id: int):
-    return case(
-        (Friendship.user_id == user_id, Friendship.friend_id),
-        else_=Friendship.user_id,
-    )
 
 
 def _user_not_found() -> HTTPException:
@@ -48,10 +41,21 @@ def list_friends(
     db: Session = Depends(get_db),
 ) -> FriendPageOut:
     """Return active friends, online first and then alphabetically."""
-    friend_id = _friend_user_id(current_user.id)
     friends = (
         db.query(User)
-        .join(Friendship, User.id == friend_id)
+        .join(
+            Friendship,
+            or_(
+                and_(
+                    Friendship.user_id == current_user.id,
+                    User.id == Friendship.friend_id,
+                ),
+                and_(
+                    Friendship.friend_id == current_user.id,
+                    User.id == Friendship.user_id,
+                ),
+            ),
+        )
         .filter(
             Friendship.status == "accepted",
             or_(
@@ -90,12 +94,26 @@ def add_friend(
             detail="You cannot add yourself as a friend.",
         )
 
-    friend = (
+    # End the authentication snapshot before taking the same user-row locks
+    # used by account deletion. Locking both rows in ID order prevents a
+    # concurrent delete from committing after the active-user check.
+    db.rollback()
+    participant_ids = sorted({current_user.id, user_id})
+    participants = (
         db.query(User)
-        .filter(User.id == user_id, User.deleted_at.is_(None))
-        .first()
+        .filter(User.id.in_(participant_ids))
+        .order_by(User.id)
+        .populate_existing()
+        .with_for_update()
+        .all()
     )
-    if friend is None:
+    participants_by_id = {participant.id: participant for participant in participants}
+    friend = participants_by_id.get(user_id)
+    if (
+        len(participants) != len(participant_ids)
+        or current_user.id not in participants_by_id
+        or any(participant.deleted_at is not None for participant in participants)
+    ):
         raise _user_not_found()
 
     normalized_user_id, normalized_friend_id = normalize_pair(
