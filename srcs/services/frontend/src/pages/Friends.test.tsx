@@ -57,7 +57,16 @@ function card(name: string) {
 
 let visibility: DocumentVisibilityState
 
+// jsdom has no native dialog methods. The stand-ins are put back as they were
+// after each test, so nothing leaks into other tests.
+const { showModal, close } = HTMLDialogElement.prototype
+
 describe('Friends', () => {
+  afterEach(() => {
+    HTMLDialogElement.prototype.showModal = showModal
+    HTMLDialogElement.prototype.close = close
+  })
+
   beforeEach(() => {
     HTMLDialogElement.prototype.showModal = function showModal() { this.open = true }
     HTMLDialogElement.prototype.close = function close() { this.open = false }
@@ -260,6 +269,26 @@ describe('Friends', () => {
       visibility = 'visible'
       await advance(FRIENDS_REFRESH_MS)
       expect(apiGetFriends).toHaveBeenCalledTimes(2)
+    })
+
+    it('cancels a refresh already running when the removal dialog opens', async () => {
+      renderPage()
+      await advance(0)
+
+      // The refresh starts and has not answered yet.
+      let answerRefresh!: (value: ApiFriendPage) => void
+      vi.mocked(apiGetFriends).mockReturnValueOnce(new Promise((resolve) => { answerRefresh = resolve }))
+      await advance(FRIENDS_REFRESH_MS)
+      const refresh = vi.mocked(apiGetFriends).mock.calls[1][1]!
+      expect(refresh.aborted).toBe(false)
+
+      act(() => screen.getByRole('button', { name: 'Remover Bruno dos amigos' }).click())
+      expect(refresh.aborted).toBe(true)
+
+      // Its late answer, without Carla, does not change the list under the dialog.
+      await act(async () => answerRefresh(page([BRUNO])))
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Carla' })).toBeInTheDocument()
     })
 
     it('drops a refresh that still lists a friend removed meanwhile', async () => {

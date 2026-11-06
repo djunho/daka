@@ -215,13 +215,20 @@ describe('UserProfile friend button', () => {
   })
 
   it('scrolls to the listings when opened from "Ver anúncios"', async () => {
+    // jsdom has no scrollIntoView. The stand-in is put back afterwards, so it
+    // does not leak into other tests.
+    const original = Element.prototype.scrollIntoView
     const scrollIntoView = vi.fn()
     Element.prototype.scrollIntoView = scrollIntoView
-    renderPage('/users/2#anuncios')
+    try {
+      renderPage('/users/2#anuncios')
 
-    // The scroll runs in an effect after the profile renders.
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
-    expect(scrollIntoView.mock.contexts[0]).toHaveAttribute('id', 'anuncios')
+      // The scroll runs in an effect after the profile renders.
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+      expect(scrollIntoView.mock.contexts[0]).toHaveAttribute('id', 'anuncios')
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
   })
 
   it('cancels the friendship request when moving to another profile', async () => {

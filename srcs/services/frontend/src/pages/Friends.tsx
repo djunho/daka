@@ -127,6 +127,11 @@ export default function Friends() {
   }
 
   function openRemove(friend: ApiFriend) {
+    // The timer does not start a refresh while the dialog is open, but one may
+    // already be running: cancel it, so the list does not change under the
+    // dialog. With the list on screen, a running request is always a silent
+    // refresh; the next one comes from the timer after the dialog closes.
+    if (!loading) cancelRequest()
     setRemoveError(null)
     setRemoving(friend)
   }
