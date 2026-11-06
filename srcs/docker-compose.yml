@@ -109,7 +109,10 @@ services:
       # Same volume as the backend, read-only: nginx only serves the files.
       - media:/data/media:ro
     healthcheck:
-      test: "wget -q -O /dev/null --no-check-certificate https://localhost/healthz || exit 1"
+      # 127.0.0.1, not localhost: inside the container localhost resolves to
+      # ::1 first, and nginx listens on IPv4 only (listen 443 ssl), so the
+      # check was refused and the container stayed unhealthy (#169).
+      test: "wget -q -O /dev/null --no-check-certificate https://127.0.0.1/healthz || exit 1"
       interval: 10s
       timeout: 5s
       retries: 5
