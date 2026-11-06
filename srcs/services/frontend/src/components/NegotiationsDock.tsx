@@ -65,7 +65,7 @@ export default function NegotiationsDock() {
           }}
           aria-label="Abrir gaveta de negociações"
           title="Ver negociações"
-          className="relative mb-3 w-12 h-12 flex items-center justify-center bg-brand hover:bg-brand-hover text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 select-none hover:scale-105 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
+          className="relative mb-3 w-12 h-12 flex items-center justify-center bg-brand hover:opacity-90 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 select-none hover:scale-105 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
         >
           <span className="text-2xl" aria-hidden="true">🤝</span>
           {activeCount > 0 && (
@@ -79,7 +79,7 @@ export default function NegotiationsDock() {
         </button>
       ) : (
         /* 2. Expanded mode: card drawer with avatar, user name, listing title and action buttons */
-        <div className="w-80 sm:w-88 bg-surface border border-line rounded-t-2xl shadow-2xl overflow-hidden flex flex-col transition-all duration-200 select-none">
+        <div className="w-80 sm:w-88 bg-surface border border-line rounded-t-2xl shadow-2xl overflow-hidden flex flex-col transition-all duration-200">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-brand text-white">
             <div className="flex items-center gap-2 min-w-0">
@@ -146,7 +146,7 @@ export default function NegotiationsDock() {
               return (
                 <article
                   key={neg.id}
-                  className="bg-surface border border-line rounded-xl p-3 shadow-xs hover:border-line-strong transition-all flex flex-col gap-2.5"
+                  className="bg-surface border border-line rounded-xl p-3 shadow-xs hover:border-brand transition-all flex flex-col gap-2.5"
                 >
                   {/* Card top row: avatar + user name + listing title */}
                   <div className="flex items-center gap-3 min-w-0">
@@ -181,7 +181,7 @@ export default function NegotiationsDock() {
                       className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
                         isCurrentChat
                           ? 'bg-brand/15 text-brand border border-brand/30'
-                          : 'bg-brand hover:bg-brand-hover text-white'
+                          : 'bg-brand hover:opacity-90 text-white'
                       }`}
                     >
                       <span aria-hidden="true">💬</span>
