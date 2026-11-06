@@ -54,6 +54,13 @@ export default function NegotiationChatWidget({
   const isConnected = status === 'connected'
   const trimmed = inputText.trim()
   const canSend = trimmed.length > 0 && !isOverLimit && isConnected && !isReadOnly
+  const placeholder = isReadOnly
+    ? 'Negociação encerrada (modo de leitura)'
+    : status === 'connecting'
+      ? 'A ligar ao chat...'
+      : status === 'connected'
+        ? 'Escreve uma mensagem...'
+        : 'Chat desconectado'
 
   const handleSendMessage = (e: FormEvent) => {
     e.preventDefault()
@@ -166,7 +173,9 @@ export default function NegotiationChatWidget({
               </div>
             )}
             <div className="flex gap-2 items-center">
-              {/* Allow typing/pasting beyond 250 chars so users see the overflow in red (X/250) instead of silent truncation */}
+              {/* No maxLength on purpose: the browser counts UTF-16 units (an emoji is 2)
+                  and truncates pastes silently. The counter below turns red past 250
+                  code points and the send button is disabled, which is the real limit. */}
               <input
                 type="text"
                 value={inputText}
@@ -174,16 +183,7 @@ export default function NegotiationChatWidget({
                   setInputText(e.target.value)
                   if (error) clearError()
                 }}
-                placeholder={
-                  isReadOnly
-                    ? 'Negociação encerrada (modo de leitura)'
-                    : status === 'connecting'
-                      ? 'A ligar ao chat...'
-                      : status === 'disconnected'
-                        ? 'Chat desconectado'
-                        : 'Escreve uma mensagem...'
-                }
-                maxLength={MAX_MESSAGE_LENGTH + 50}
+                placeholder={placeholder}
                 disabled={!isConnected || isReadOnly}
                 className="flex-1 px-3 py-1.5 bg-paper border border-line focus:border-brand focus:outline-none rounded-xl text-xs text-ink placeholder:text-muted transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               />

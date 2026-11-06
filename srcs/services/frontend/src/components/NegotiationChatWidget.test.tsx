@@ -218,6 +218,38 @@ describe('NegotiationChatWidget', () => {
     expect(screen.getByRole('button', { name: 'Enviar' })).toBeDisabled()
   })
 
+  it('treats a socket error like a disconnect', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ status: 'error' }))
+
+    render(
+      <NegotiationChatWidget
+        negotiationId={42}
+        interlocutorName="Beatriz"
+      />,
+    )
+
+    expect(screen.getByPlaceholderText('Chat desconectado')).toBeDisabled()
+  })
+
+  it('lets text exceed the limit and flags it instead of truncating with maxLength', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+
+    render(
+      <NegotiationChatWidget
+        negotiationId={42}
+        interlocutorName="Beatriz"
+      />,
+    )
+
+    const input = screen.getByPlaceholderText('Escreve uma mensagem...')
+    // maxLength counts UTF-16 units, so 150 emojis (150 code points) would be blocked
+    expect(input).not.toHaveAttribute('maxlength')
+
+    fireEvent.change(input, { target: { value: '😀'.repeat(251) } })
+    expect(screen.getByText('251/250')).toHaveClass('text-accent')
+    expect(screen.getByRole('button', { name: 'Enviar' })).toBeDisabled()
+  })
+
   it('displays error banner and clears it manually or when typing', () => {
     const clearError = vi.fn()
     vi.mocked(useNegotiationChat).mockReturnValue(
