@@ -347,4 +347,20 @@ describe('NegotiationChatWidget', () => {
     expect(logRegion).toHaveAttribute('aria-live', 'polite')
     expect(logRegion).toHaveAttribute('aria-relevant', 'additions text')
   })
+
+  it('keeps the message thread selectable so users can copy text', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+
+    render(
+      <NegotiationChatWidget
+        negotiationId={42}
+        interlocutorName="Beatriz"
+      />,
+    )
+
+    // user-select is inherited: a select-none on the root would block copying messages
+    const widget = screen.getByRole('complementary', { name: 'Chat da negociação #42' })
+    expect(widget).not.toHaveClass('select-none')
+    expect(screen.getByRole('log')).not.toHaveClass('select-none')
+  })
 })

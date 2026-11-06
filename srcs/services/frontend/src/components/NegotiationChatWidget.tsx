@@ -67,7 +67,7 @@ export default function NegotiationChatWidget({
   return (
     <aside
       aria-label={`Chat da negociação #${negotiationId}`}
-      className="w-80 bg-surface border border-line rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-200 select-none"
+      className="w-80 bg-surface border border-line rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-200"
     >
       {/* Widget header bar */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-brand text-white select-none">
@@ -155,7 +155,7 @@ export default function NegotiationChatWidget({
                   type="button"
                   onClick={clearError}
                   aria-label="Dispensar aviso de erro"
-                  className="text-accent hover:text-accent-hover font-bold px-1 rounded transition-colors shrink-0 -mr-0.5"
+                  className="text-accent hover:opacity-80 font-bold px-1 rounded transition-colors shrink-0 -mr-0.5"
                 >
                   ✕
                 </button>
@@ -186,7 +186,7 @@ export default function NegotiationChatWidget({
               <button
                 type="submit"
                 disabled={!canSend}
-                className="px-3 py-1.5 bg-brand hover:bg-brand-hover text-white text-xs font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                className="px-3 py-1.5 bg-brand not-disabled:hover:opacity-90 text-white text-xs font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
               >
                 Enviar
               </button>
