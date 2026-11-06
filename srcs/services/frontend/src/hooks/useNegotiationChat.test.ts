@@ -1068,6 +1068,119 @@ describe('useNegotiationChat', () => {
     vi.useRealTimers()
   })
 
+  it('shows a message stored without delivery by fetching the newest page', async () => {
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.messages.map((m) => m.id)).toEqual([10])
+
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [
+        { id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Mensagem antiga', created_at: '2026-10-28T10:00:00Z' },
+        { id: 11, negotiation_id: 42, sender: { id: 1, user_name: 'Daniel', avatar: null }, content: 'Guardada', created_at: '2026-10-28T10:05:00Z' },
+      ],
+      limit: 50,
+      next_before_id: null,
+      has_more: false,
+    })
+    act(() => {
+      result.current.sendMessage('Guardada')
+    })
+    await act(async () => {
+      MockWebSocket.instances[0].simulateMessage({ type: 'error', error: { code: 'delivery_failed', message: 'Stored' } })
+      await Promise.resolve()
+    })
+
+    expect(result.current.confirmedSends).toBe(1)
+    expect(result.current.messages.map((m) => m.id)).toEqual([10, 11])
+    expect(result.current.messages[1].isOwn).toBe(true)
+  })
+
+  it('treats the delivery_failed fetch like a backfill: clears a failed first page', async () => {
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new Error('Blip'))
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(true)
+
+    // A live message lands, then our send is stored without delivery
+    act(() => {
+      MockWebSocket.instances[0].simulateMessage({
+        type: 'message.created',
+        message: { id: 10, negotiation_id: 42, sender_id: 2, content: 'Ao vivo', created_at: '2026-10-28T10:00:00Z' },
+      })
+    })
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [
+        { id: 9, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Antiga', created_at: '2026-10-28T09:00:00Z' },
+        { id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Ao vivo', created_at: '2026-10-28T10:00:00Z' },
+        { id: 11, negotiation_id: 42, sender: { id: 1, user_name: 'Daniel', avatar: null }, content: 'Guardada', created_at: '2026-10-28T10:05:00Z' },
+      ],
+      limit: 50,
+      next_before_id: null,
+      has_more: false,
+    })
+    act(() => {
+      result.current.sendMessage('Guardada')
+    })
+    await act(async () => {
+      MockWebSocket.instances[0].simulateMessage({ type: 'error', error: { code: 'delivery_failed', message: 'Stored' } })
+      await Promise.resolve()
+    })
+
+    expect(result.current.messages.map((m) => m.id)).toEqual([9, 10, 11])
+    expect(result.current.historyFailed).toBe(false)
+  })
+
+  it('announces another participant\'s message that the delivery_failed fetch brings before its live frame', async () => {
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    // First page merged ([10]): a baseline exists
+    expect(result.current.incoming.seq).toBe(0)
+
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [
+        { id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Mensagem antiga', created_at: '2026-10-28T10:00:00Z' },
+        { id: 11, negotiation_id: 42, sender: { id: 1, user_name: 'Daniel', avatar: null }, content: 'Guardada', created_at: '2026-10-28T10:05:00Z' },
+        { id: 12, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Ainda não chegou ao vivo', created_at: '2026-10-28T10:06:00Z' },
+      ],
+      limit: 50,
+      next_before_id: null,
+      has_more: false,
+    })
+    act(() => {
+      result.current.sendMessage('Guardada')
+    })
+    await act(async () => {
+      MockWebSocket.instances[0].simulateMessage({ type: 'error', error: { code: 'delivery_failed', message: 'Stored' } })
+      await Promise.resolve()
+    })
+    expect(result.current.incoming.seq).toBe(1)
+    expect(result.current.incoming.messages.map((m) => m.id)).toEqual([12])
+
+    // Its live frame arrives later: not announced twice
+    act(() => {
+      MockWebSocket.instances[0].simulateMessage({
+        type: 'message.created',
+        message: { id: 12, negotiation_id: 42, sender_id: 2, content: 'Ainda não chegou ao vivo', created_at: '2026-10-28T10:06:00Z' },
+      })
+    })
+    expect(result.current.incoming.seq).toBe(1)
+  })
+
   it('counts every error, identical ones too, and marks notices', () => {
     const { result } = renderHook(() => useNegotiationChat(42))
     // Not connected yet: two identical failures
