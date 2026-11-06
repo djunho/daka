@@ -1,6 +1,7 @@
 """HTTP tests for POST /auth/login: one answer for every failure, never a 500."""
 
 import unittest
+from datetime import timedelta
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -9,7 +10,7 @@ from app.database import get_db
 from app.dependencies import SESSION_COOKIE_NAME
 from app.main import app
 from app.models import User, UserSession
-from app.security import hash_password, utcnow, verify_password
+from app.security import hash_password, hash_session_token, utcnow, verify_password
 from tests.helpers import make_memory_session
 
 PASSWORD = "correct-horse-battery"
@@ -106,6 +107,41 @@ class LoginTestCase(unittest.TestCase):
         self.assertEqual(response.json()["email"], self.user.email)
         self.assertIn(SESSION_COOKIE_NAME, response.cookies)
         self.assertEqual(self.session_count(), 1)
+
+    def test_logout_clears_last_seen_when_no_sessions_remain(self) -> None:
+        self.user.last_seen = utcnow()
+        self.db.commit()
+        login_response = self.login(self.user.email, PASSWORD)
+        self.client.cookies.set(
+            SESSION_COOKIE_NAME,
+            login_response.cookies[SESSION_COOKIE_NAME],
+        )
+
+        response = self.client.post("/auth/logout")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertIsNone(self.db.get(User, self.user.id).last_seen)
+
+    def test_logout_preserves_last_seen_when_another_session_remains(self) -> None:
+        self.user.last_seen = utcnow()
+        self.db.add(
+            UserSession(
+                user_id=self.user.id,
+                token_hash=hash_session_token("other-device"),
+                expires_at=utcnow() + timedelta(hours=1),
+            )
+        )
+        self.db.commit()
+        login_response = self.login(self.user.email, PASSWORD)
+        self.client.cookies.set(
+            SESSION_COOKIE_NAME,
+            login_response.cookies[SESSION_COOKIE_NAME],
+        )
+
+        response = self.client.post("/auth/logout")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertIsNotNone(self.db.get(User, self.user.id).last_seen)
 
 
 if __name__ == "__main__":
