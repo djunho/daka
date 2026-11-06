@@ -48,18 +48,28 @@ export default function UserProfile() {
   // one remembers the visit it belongs to and drops its answer if the user
   // has moved to another profile meanwhile.
   const visit = useRef(0)
+  // The friendship request in flight. A new one, or leaving the profile,
+  // cancels it, so only the latest answer can reach the screen.
+  const statusRequest = useRef<AbortController | null>(null)
+
+  function cancelFriendStatus() {
+    statusRequest.current?.abort()
+    statusRequest.current = null
+  }
 
   function loadFriendStatus() {
-    const current = visit.current
+    cancelFriendStatus()
+    const request = new AbortController()
+    statusRequest.current = request
     setIsFriend(null)
     setFriendStatusFailed(false)
-    apiGetFriendStatus(userId)
+    apiGetFriendStatus(userId, request.signal)
       .then((data) => {
-        if (visit.current !== current) return
+        if (request.signal.aborted) return
         setIsFriend(data.is_friend)
       })
       .catch((err) => {
-        if (visit.current !== current) return
+        if (request.signal.aborted) return
         if (err instanceof ApiError && err.status === 401) {
           // The session expired. Clearing it lets RequireAuth send them to login.
           void logout()
@@ -159,9 +169,10 @@ export default function UserProfile() {
     return () => {
       ignore = true
       visit.current += 1
+      cancelFriendStatus()
     }
-    // loadFriendStatus and logout are left out on purpose: the first only
-    // reads userId (listed), refs and setters, and the second just ends the
+    // loadFriendStatus, cancelFriendStatus and logout are left out on purpose:
+    // the first two only read userId (listed), refs and setters, and the last just ends the
     // session, whichever render it comes from.
   }, [userId, validId, isOwnProfile])
 
