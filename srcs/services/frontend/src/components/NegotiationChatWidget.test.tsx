@@ -26,6 +26,8 @@ function mockChat(overrides: Partial<UseNegotiationChatReturn> = {}): UseNegotia
     confirmedSends: 0,
     historyFailed: false,
     retryHistory: vi.fn(),
+    connectionRefused: false,
+    olderFailed: false,
     hasOlder: false,
     isLoadingOlder: false,
     loadOlder: vi.fn().mockResolvedValue(undefined),
@@ -164,7 +166,7 @@ describe('NegotiationChatWidget', () => {
 
   it('shows neither the empty state nor a retry when the socket was refused', () => {
     vi.mocked(useNegotiationChat).mockReturnValue(
-      mockChat({ status: 'disconnected', error: 'Não tens permissão para participar nesta conversa ou a origem não é permitida.' }),
+      mockChat({ status: 'disconnected', connectionRefused: true, error: 'Não tens permissão para participar nesta conversa ou a origem não é permitida.' }),
     )
 
     render(
@@ -178,6 +180,36 @@ describe('NegotiationChatWidget', () => {
     expect(screen.queryByText('Sem mensagens ainda')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument()
     expect(screen.getByText(/Não tens permissão/)).toBeInTheDocument()
+  })
+
+  it('keeps the invitation on an empty thread when a send error is shown', () => {
+    // Disconnected without a refusal (e.g. a normal close) and a send attempt failed
+    vi.mocked(useNegotiationChat).mockReturnValue(
+      mockChat({ status: 'disconnected', error: 'O chat não está ligado. Aguarda a reconexão e tenta novamente.' }),
+    )
+    render(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
+
+    expect(screen.getByText('Sem mensagens ainda')).toBeInTheDocument()
+  })
+
+  it('reports a failed older page and offers to try again', () => {
+    const loadOlder = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(useNegotiationChat).mockReturnValue(
+      mockChat({
+        hasOlder: true,
+        olderFailed: true,
+        loadOlder,
+        messages: [{ id: 30, negotiationId: 42, senderId: 10, content: 'Mais antiga carregada', createdAt: '2026-10-28T14:30:00Z', isOwn: false }],
+      }),
+    )
+    render(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
+
+    // Announced from the status region, outside the live log
+    const notice = screen.getByRole('status')
+    expect(notice).toHaveTextContent('Não foi possível carregar as mensagens anteriores. Tenta novamente.')
+    expect(screen.getByRole('log')).not.toContainElement(notice)
+    fireEvent.click(screen.getByRole('button', { name: 'Ver mensagens anteriores' }))
+    expect(loadOlder).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the status region mounted and empty while the history is fine', () => {

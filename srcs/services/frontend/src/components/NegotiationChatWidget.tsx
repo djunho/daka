@@ -47,6 +47,8 @@ export default function NegotiationChatWidget({
     confirmedSends,
     historyFailed,
     retryHistory,
+    connectionRefused,
+    olderFailed,
     hasOlder,
     isLoadingOlder,
     loadOlder,
@@ -179,11 +181,15 @@ export default function NegotiationChatWidget({
           <div
             role="status"
             className={
-              historyFailed
+              historyFailed || olderFailed
                 ? 'm-3 mb-0 flex flex-col items-center gap-1 text-center text-[11px] text-accent bg-accent/10 rounded-lg px-3 py-2'
                 : 'sr-only'
             }
           >
+            {/* The older-messages button in the thread stays the way to retry */}
+            {olderFailed && !historyFailed && (
+              <span>Não foi possível carregar as mensagens anteriores. Tenta novamente.</span>
+            )}
             {historyFailed && (
               <>
                 <span>Não foi possível carregar as mensagens.</span>
@@ -216,7 +222,7 @@ export default function NegotiationChatWidget({
             ) : messages.length === 0 ? (
               // No invitation to start the conversation when the history failed
               // or the socket was refused (the notice or the error banner explain)
-              historyFailed || (status === 'disconnected' && error) ? null : (
+              historyFailed || connectionRefused ? null : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-muted text-xs select-none">
                   <span className="text-2xl mb-1">💬</span>
                   <p className="font-medium text-ink">Sem mensagens ainda</p>
@@ -226,14 +232,16 @@ export default function NegotiationChatWidget({
             ) : (
               <>
                 {hasOlder && (
-                  <button
-                    type="button"
-                    onClick={handleLoadOlder}
-                    disabled={isLoadingOlder}
-                    className="self-center text-[11px] font-medium text-brand hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isLoadingOlder ? 'A carregar…' : 'Ver mensagens anteriores'}
-                  </button>
+                  <div className="self-center flex flex-col items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={handleLoadOlder}
+                      disabled={isLoadingOlder}
+                      className="text-[11px] font-medium text-brand hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isLoadingOlder ? 'A carregar…' : 'Ver mensagens anteriores'}
+                    </button>
+                  </div>
                 )}
                 {messages.map((msg, index) => {
                   const previous = messages[index - 1]
