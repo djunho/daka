@@ -33,12 +33,12 @@ This document defines the visual identity of the project.
 | Preview | CSS Variable | HEX | Usage |
 | --- | --- | --- | --- |
 | ![](https://dummyimage.com/40x24/15231F/FFFFFF&text=+) | `TBA` | `#15231F` | Primary text |
-| ![](https://dummyimage.com/40x24/598E86/FFFFFF&text=+) | `TBA` | `#598E86` | Secondary text |
+| ![](https://dummyimage.com/40x24/4B7871/FFFFFF&text=+) | `--color-muted` | `#4B7871` | Secondary text |
 | ![](https://dummyimage.com/40x24/314A46/FFFFFF&text=+) | `TBA` | `#314A46` | Category labels |
 | ![](https://dummyimage.com/40x24/314A46/FFFFFF&text=+) | `TBA` | `#314A46` | Unselected button text |
 | ![](https://dummyimage.com/40x24/FFFFFF/FFFFFF&text=+) | `TBA` | `#FFFFFF` | Selected button text |
 | ![](https://dummyimage.com/40x24/246C5E/FFFFFF&text=+) | `TBA` | `#246C5E` | "Has" text |
-| ![](https://dummyimage.com/40x24/DF3D31/FFFFFF&text=+) | `TBA` | `#DF3D31` | "Wants" text |
+| ![](https://dummyimage.com/40x24/D52E21/FFFFFF&text=+) | `--color-accent` | `#D52E21` | "Wants" text |
 
 ---
 
@@ -66,10 +66,10 @@ Example:
 :root {
     --color-primary: #246C5E;
     --color-secondary: #15231F;
-    --color-accent: #DF3D31;
+    --color-accent: #D52E21;
 
     --text-primary: #15231F;
-    --text-secondary: #598E86;
+    --text-secondary: #4B7871;
 
     --background-primary: #F2F9F7;
     --border-primary: #BCD7D1;
@@ -97,7 +97,10 @@ Semantic names allow the visual identity to change without affecting component c
 
 # Accessibility
 
-- Maintain sufficient contrast between text and background.
+- Maintain sufficient contrast between text and background: at least 4.5:1 for normal text and 3:1 for large text (WCAG 2.1 AA).
+  - `--color-muted` (`#4B7871`) and `--color-accent` (`#D52E21`) were darkened from `#598E86` and `#DF3D31` to reach 4.5:1 on `--color-paper` (`#F2F9F7`) and `--color-surface` (`#FFFFFF`).
+  - Avoid `text-muted` on `--color-brand-soft` (`#DCEBE8`), where it only reaches about 4.0:1; use `text-label` there.
+  - The logo arrow keeps the original `#DF3D31`: it is a graphic, not text, so the text contrast rule does not apply.
 - Do not rely exclusively on color to convey information.
 - Ensure interactive elements have visible hover and focus states.
 - Prefer semantic design tokens over hardcoded hexadecimal values.
