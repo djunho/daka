@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useAuth } from './AuthContext'
 
 export interface ActiveChat {
@@ -41,21 +41,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [user])
 
-  const openChat = (negotiationId: number, interlocutorName: string, isReadOnly?: boolean) => {
+  const openChat = useCallback((negotiationId: number, interlocutorName: string, isReadOnly?: boolean) => {
     setActiveChat({
       negotiationId,
       interlocutorName,
       isReadOnly,
     })
-  }
+  }, [])
 
-  const closeChat = () => {
+  const closeChat = useCallback(() => {
     setActiveChat(null)
-  }
+  }, [])
 
-  const isChatOpen = (negotiationId: number) => {
+  const isChatOpen = useCallback((negotiationId: number) => {
     return activeChat?.negotiationId === negotiationId
-  }
+  }, [activeChat])
 
   return (
     <ChatContext.Provider

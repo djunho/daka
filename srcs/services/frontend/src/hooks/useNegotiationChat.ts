@@ -6,6 +6,7 @@ import type {
   IncomingWebSocketEvent,
   MessageSendEvent,
 } from '../types/chat'
+import { WS_CLOSE_CODES } from '../types/chat'
 
 export type ChatConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -192,14 +193,18 @@ export function useNegotiationChat(
       socket.onclose = (event: CloseEvent) => {
         if (isCancelled) return
 
-        // Normal closure (code 1000, e.g. unmount or switching chat): do not reconnect
-        if (event.code === 1000) {
+        // Normal closure (RFC 6455 code 1000, e.g. unmount or switching chat): do not reconnect
+        if (event.code === WS_CLOSE_CODES.NORMAL_CLOSURE) {
           setStatus('disconnected')
           return
         }
 
         // Terminal server codes: do not reconnect
-        if (event.code === 4401 || event.code === 4403 || event.code === 4404) {
+        if (
+          event.code === WS_CLOSE_CODES.UNAUTHORIZED ||
+          event.code === WS_CLOSE_CODES.FORBIDDEN ||
+          event.code === WS_CLOSE_CODES.NOT_FOUND
+        ) {
           setError(getWebSocketErrorMessage(event.code))
           setStatus('disconnected')
           return
@@ -229,7 +234,16 @@ export function useNegotiationChat(
         reconnectTimerRef.current = null
       }
       if (socket) {
-        socket.close(1000, 'Chat closed or switched')
+        const s = socket
+        // Close with RFC 6455 code 1000 (NORMAL_CLOSURE) so server and client
+        // recognise this as an intentional disconnect rather than a network drop.
+        if (s.readyState === WebSocket.CONNECTING) {
+          s.onopen = () => {
+            s.close(WS_CLOSE_CODES.NORMAL_CLOSURE, 'Chat closed or switched')
+          }
+        } else if (s.readyState === WebSocket.OPEN) {
+          s.close(WS_CLOSE_CODES.NORMAL_CLOSURE, 'Chat closed or switched')
+        }
       }
       socketRef.current = null
       reconnectAttemptsRef.current = 0
