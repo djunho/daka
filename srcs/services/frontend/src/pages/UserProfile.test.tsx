@@ -83,7 +83,7 @@ describe('UserProfile friend button', () => {
     renderPage()
 
     expect(apiGetPublicProfile).toHaveBeenCalledWith(2)
-    expect(apiGetFriendStatus).toHaveBeenCalledWith(2)
+    expect(apiGetFriendStatus).toHaveBeenCalledWith(2, expect.any(AbortSignal))
     expect(await screen.findByRole('button', { name: 'Adicionar amigo' })).toBeEnabled()
   })
 
@@ -214,6 +214,33 @@ describe('UserProfile friend button', () => {
     expect(logout).toHaveBeenCalledTimes(1)
   })
 
+  it('cancels the friendship request when moving to another profile', async () => {
+    vi.mocked(apiGetFriendStatus).mockReturnValueOnce(deferred<ApiFriendStatus>().promise)
+    renderPage()
+    await screen.findByRole('heading', { level: 1, name: 'Bruno' })
+    const first = vi.mocked(apiGetFriendStatus).mock.calls[0][1] as AbortSignal
+    expect(first.aborted).toBe(false)
+
+    await userEvent.click(screen.getByRole('link', { name: 'Outro perfil' }))
+
+    expect(first.aborted).toBe(true)
+    expect(await screen.findByRole('button', { name: 'Adicionar amigo' })).toBeEnabled()
+  })
+
+  it('cancels the failed request before trying again', async () => {
+    vi.mocked(apiGetFriendStatus)
+      .mockRejectedValueOnce(new ApiError(500, 'Server error'))
+      .mockResolvedValueOnce({ is_friend: true })
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Tentar outra vez' }))
+
+    expect(await screen.findByRole('button', { name: 'Remover amigo' })).toBeInTheDocument()
+    const [first, second] = vi.mocked(apiGetFriendStatus).mock.calls.map((call) => call[1] as AbortSignal)
+    expect(first.aborted).toBe(true)
+    expect(second.aborted).toBe(false)
+  })
+
   it('ignores answers that arrive after moving to another profile', async () => {
     const add = deferred<ApiFriend>()
     vi.mocked(apiAddFriend).mockReturnValue(add.promise)
@@ -223,7 +250,7 @@ describe('UserProfile friend button', () => {
     await userEvent.click(screen.getByRole('link', { name: 'Outro perfil' }))
     await screen.findByRole('heading', { level: 1, name: 'Bruno' })
     expect(await screen.findByRole('button', { name: 'Adicionar amigo' })).toBeEnabled()
-    expect(apiGetFriendStatus).toHaveBeenLastCalledWith(3)
+    expect(apiGetFriendStatus).toHaveBeenLastCalledWith(3, expect.any(AbortSignal))
 
     // The add for user 2 finishes late: user 3 must still show "Adicionar".
     await act(async () => add.resolve(FRIEND))
