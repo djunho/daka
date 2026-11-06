@@ -6,7 +6,7 @@ import type {
   IncomingWebSocketEvent,
   MessageSendEvent,
 } from '../types/chat'
-import { WS_CLOSE_CODES } from '../types/chat'
+import { MESSAGE_MAX_LENGTH, WS_CLOSE_CODES, normaliseMessageContent } from '../types/chat'
 
 export type ChatConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -35,7 +35,14 @@ export interface UseNegotiationChatReturn {
   isReadOnly: boolean
   error: string | null
   clearError: () => void
+  // Buffers one message; false when it cannot be sent now (see the guards).
   sendMessage: (content: string) => boolean
+  // A sent message awaits the server's answer (message.created or an error);
+  // only one is in flight at a time.
+  isSending: boolean
+  // Incremented each time the server confirms our in-flight message, so the
+  // composer clears only text the server actually stored.
+  confirmedSends: number
   // The newest page could not be loaded (first load or a reconnect backfill);
   // retryHistory() asks for it again. Not set for 401/403/404: the socket
   // closes with the matching code and `error` reports that instead.
@@ -78,6 +85,13 @@ export function useNegotiationChat(
   const [hasOlder, setHasOlder] = useState<boolean>(false)
   const [isLoadingOlder, setIsLoadingOlder] = useState<boolean>(false)
   const [historyFailed, setHistoryFailed] = useState<boolean>(false)
+  const [isSending, setIsSending] = useState<boolean>(false)
+  const [confirmedSends, setConfirmedSends] = useState<number>(0)
+  // Content of the message in flight, matched against our own message.created.
+  // The protocol has no acknowledgement id, so our own other tab sending the
+  // same text at the same moment is indistinguishable; one send at a time and
+  // the server-equal trimming keep every other case exact.
+  const pendingContentRef = useRef<string | null>(null)
   // Incremented by retryHistory() to run the first-page effect again
   const [historyAttempt, setHistoryAttempt] = useState<number>(0)
 
@@ -108,6 +122,8 @@ export function useNegotiationChat(
   useEffect(() => {
     negotiationIdRef.current = negotiationId
     messagesRef.current = []
+    pendingContentRef.current = null
+    setIsSending(false)
     newestPageCountRef.current = 0
     setMessages([])
     setError(null)
@@ -259,6 +275,15 @@ export function useNegotiationChat(
 
           if (data.type === 'message.created') {
             const incoming = data.message
+            if (
+              incoming.sender_id === currentUserId &&
+              pendingContentRef.current !== null &&
+              incoming.content === pendingContentRef.current
+            ) {
+              pendingContentRef.current = null
+              setIsSending(false)
+              setConfirmedSends((count) => count + 1)
+            }
             setMessages((prev) => {
               // Deduplicate incoming messages by unique database ID
               if (prev.some((m) => m.id === incoming.id)) {
@@ -278,6 +303,14 @@ export function useNegotiationChat(
             if (data.error.code === 'negotiation_read_only') {
               setServerReadOnly(true)
             }
+            // Errors answer our own send. delivery_failed means it was stored
+            // but not broadcast: confirm it (resending would duplicate it) and
+            // let the next backfill show it; anything else rejected it.
+            if (pendingContentRef.current !== null) {
+              pendingContentRef.current = null
+              setIsSending(false)
+              if (data.error.code === 'delivery_failed') setConfirmedSends((count) => count + 1)
+            }
             setError(getWebSocketErrorMessage(data.error.code, data.error.retry_after))
           }
         } catch {
@@ -292,6 +325,9 @@ export function useNegotiationChat(
 
       socket.onclose = (event: CloseEvent) => {
         if (isCancelled) return
+        // An unanswered send is unknown; the text stays in the composer
+        pendingContentRef.current = null
+        setIsSending(false)
 
         // Normal closure (RFC 6455 code 1000, e.g. unmount or switching chat): do not reconnect
         if (event.code === WS_CLOSE_CODES.NORMAL_CLOSURE) {
@@ -352,6 +388,9 @@ export function useNegotiationChat(
       }
       socketRef.current = null
       reconnectAttemptsRef.current = 0
+      // The cancelled socket's onclose is ignored, so free the send here
+      pendingContentRef.current = null
+      setIsSending(false)
     }
   }, [negotiationId, currentUserId, syncHistory])
 
@@ -392,15 +431,19 @@ export function useNegotiationChat(
         return false
       }
 
-      const trimmed = content.trim()
+      const trimmed = normaliseMessageContent(content)
       const length = [...trimmed].length
 
-      if (length < 1 || length > 250) {
+      if (length < 1 || length > MESSAGE_MAX_LENGTH) {
         return false
       }
 
       if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
         setError(getWebSocketErrorMessage('not_connected'))
+        return false
+      }
+
+      if (pendingContentRef.current !== null) {
         return false
       }
 
@@ -410,6 +453,8 @@ export function useNegotiationChat(
       }
 
       socketRef.current.send(JSON.stringify(payload))
+      pendingContentRef.current = trimmed
+      setIsSending(true)
       return true
     },
     [effectiveReadOnly],
@@ -423,6 +468,8 @@ export function useNegotiationChat(
     error,
     clearError,
     sendMessage,
+    isSending,
+    confirmedSends,
     historyFailed,
     retryHistory,
     hasOlder,

@@ -22,6 +22,8 @@ function mockChat(overrides: Partial<UseNegotiationChatReturn> = {}): UseNegotia
     error: null,
     clearError: vi.fn(),
     sendMessage: vi.fn().mockReturnValue(true),
+    isSending: false,
+    confirmedSends: 0,
     historyFailed: false,
     retryHistory: vi.fn(),
     hasOlder: false,
@@ -308,11 +310,11 @@ describe('NegotiationChatWidget', () => {
     expect(screen.queryByRole('button', { name: 'Ver mensagens anteriores' })).not.toBeInTheDocument()
   })
 
-  it('submits text and resets input on send', () => {
+  it('submits text and clears the composer only once the server confirms it', () => {
     const sendMessage = vi.fn().mockReturnValue(true)
     vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage }))
 
-    render(
+    const { rerender } = render(
       <NegotiationChatWidget
         negotiationId={42}
         interlocutorId={10}
@@ -331,10 +333,53 @@ describe('NegotiationChatWidget', () => {
     expect(screen.getByText('10/250')).toBeInTheDocument()
     expect(submitBtn).not.toBeDisabled()
 
-    // Submit message
+    // Submit message: the text stays while the server has not answered
     fireEvent.click(submitBtn)
     expect(sendMessage).toHaveBeenCalledWith('Boa tarde!')
+    expect(input).toHaveValue('Boa tarde!')
+
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage, isSending: true }))
+    rerender(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
+    expect(screen.getByRole('button', { name: 'A enviar…' })).toBeDisabled()
+
+    // Confirmed by message.created
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage, confirmedSends: 1 }))
+    rerender(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
     expect(input).toHaveValue('')
+  })
+
+  it('keeps the text when the server rejects the send, and keeps a draft edited meanwhile', () => {
+    const sendMessage = vi.fn().mockReturnValue(true)
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage }))
+    const { rerender } = render(
+      <NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />,
+    )
+    const input = screen.getByPlaceholderText('Escreve uma mensagem...')
+
+    // Rejected (e.g. rate_limited): no confirmation, the text stays for a retry
+    fireEvent.change(input, { target: { value: 'Posso passar amanhã?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage, error: 'Demasiadas mensagens enviadas.' }))
+    rerender(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
+    expect(input).toHaveValue('Posso passar amanhã?')
+
+    // Sent again, then edited before the confirmation: the new draft is kept
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage }))
+    rerender(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+    fireEvent.change(input, { target: { value: 'Outra coisa' } })
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage, confirmedSends: 1 }))
+    rerender(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
+    expect(input).toHaveValue('Outra coisa')
+  })
+
+  it('counts the limit on the trimmed text, like the backend', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+    render(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
+
+    fireEvent.change(screen.getByPlaceholderText('Escreve uma mensagem...'), { target: { value: `${'a'.repeat(250)} ` } })
+    expect(screen.getByText('250/250')).not.toHaveClass('text-accent')
+    expect(screen.getByRole('button', { name: 'Enviar' })).not.toBeDisabled()
   })
 
   it('keeps send button disabled when input contains only whitespace', () => {
@@ -368,7 +413,7 @@ describe('NegotiationChatWidget', () => {
       />,
     )
 
-    const input = screen.getByPlaceholderText('Chat desconectado')
+    const input = screen.getByPlaceholderText('Chat desligado')
     expect(input).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Enviar' })).toBeDisabled()
   })
@@ -384,7 +429,7 @@ describe('NegotiationChatWidget', () => {
       />,
     )
 
-    expect(screen.getByPlaceholderText('Chat desconectado')).toBeDisabled()
+    expect(screen.getByPlaceholderText('Chat desligado')).toBeDisabled()
   })
 
   it('lets text exceed the limit and flags it instead of truncating with maxLength', () => {
@@ -399,7 +444,7 @@ describe('NegotiationChatWidget', () => {
     )
 
     const input = screen.getByPlaceholderText('Escreve uma mensagem...')
-    // maxLength counts UTF-16 units, so 150 emojis (150 code points) would be blocked
+    // maxLength counts UTF-16 units (an emoji is 2), so it would block or truncate this
     expect(input).not.toHaveAttribute('maxlength')
 
     fireEvent.change(input, { target: { value: '😀'.repeat(251) } })

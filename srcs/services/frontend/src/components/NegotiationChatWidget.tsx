@@ -4,8 +4,7 @@ import ChatMessageBubble from './ChatMessageBubble'
 import { useNegotiationChat } from '../hooks/useNegotiationChat'
 import { useUserPresence } from '../hooks/useUserPresence'
 import { formatDate } from '../types/negotiation'
-
-const MAX_MESSAGE_LENGTH = 250
+import { MESSAGE_MAX_LENGTH, normaliseMessageContent } from '../types/chat'
 
 // Calendar day in the viewer's timezone: a separator goes where it changes.
 function dayKey(iso: string): string {
@@ -44,6 +43,8 @@ export default function NegotiationChatWidget({
     error,
     clearError,
     sendMessage,
+    isSending,
+    confirmedSends,
     historyFailed,
     retryHistory,
     hasOlder,
@@ -91,28 +92,38 @@ export default function NegotiationChatWidget({
     void loadOlder()
   }
 
-  // Measure code-point length safely for UTF-16 code units (e.g. emojis)
-  const charCount = [...inputText].length
-  const isOverLimit = charCount > MAX_MESSAGE_LENGTH
+  // Code points after trimming, exactly as the backend counts (an emoji is 1)
+  const trimmed = normaliseMessageContent(inputText)
+  const charCount = [...trimmed].length
+  const isOverLimit = charCount > MESSAGE_MAX_LENGTH
   const isConnected = status === 'connected'
-  const trimmed = inputText.trim()
-  const canSend = trimmed.length > 0 && !isOverLimit && isConnected && !isReadOnly
+  const canSend = trimmed.length > 0 && !isOverLimit && isConnected && !isReadOnly && !isSending
+
+  // The composer keeps the text until the server stores it: a rejection
+  // (rate limit, read-only, persistence failure) leaves it there to retry.
+  // Text edited meanwhile is the person's new draft and is kept too.
+  const sentTextRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (confirmedSends === 0 || sentTextRef.current === null) return
+    const sent = sentTextRef.current
+    sentTextRef.current = null
+    setInputText((current) => (normaliseMessageContent(current) === sent ? '' : current))
+  }, [confirmedSends])
   const placeholder = isReadOnly
     ? 'Negociação encerrada (modo de leitura)'
     : status === 'connecting'
       ? 'A ligar ao chat...'
       : status === 'connected'
         ? 'Escreve uma mensagem...'
-        : 'Chat desconectado'
+        : 'Chat desligado'
 
   const handleSendMessage = (e: FormEvent) => {
     e.preventDefault()
     if (isReadOnly) return
-    if (!trimmed || [...trimmed].length > MAX_MESSAGE_LENGTH) return
+    if (!trimmed || [...trimmed].length > MESSAGE_MAX_LENGTH) return
 
-    const sent = sendMessage(trimmed)
-    if (sent) {
-      setInputText('')
+    if (sendMessage(trimmed)) {
+      sentTextRef.current = trimmed
     }
   }
 
@@ -271,8 +282,8 @@ export default function NegotiationChatWidget({
             )}
             <div className="flex gap-2 items-center">
               {/* No maxLength on purpose: the browser counts UTF-16 units (an emoji is 2)
-                  and truncates pastes silently. The counter below turns red past 250
-                  code points and the send button is disabled, which is the real limit. */}
+                  and truncates pastes silently. The counter below turns red past the
+                  code-point limit and the send button is disabled, which is the real guard. */}
               <input
                 type="text"
                 value={inputText}
@@ -289,18 +300,18 @@ export default function NegotiationChatWidget({
                 disabled={!canSend}
                 className="px-3 py-1.5 bg-brand not-disabled:hover:opacity-90 text-white text-xs font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
               >
-                Enviar
+                {isSending ? 'A enviar…' : 'Enviar'}
               </button>
             </div>
 
             {/* Helper text and character counter */}
             <div className="flex justify-between items-center text-[10px] text-muted px-0.5 select-none">
               <span>
-                {isReadOnly ? 'Chat em modo de leitura' : 'Pressiona Enter para enviar'}
+                {isReadOnly ? 'Chat em modo de leitura' : 'Carrega em Enter para enviar'}
               </span>
               {!isReadOnly && (
                 <span className={isOverLimit ? 'text-accent font-semibold' : ''}>
-                  {charCount}/{MAX_MESSAGE_LENGTH}
+                  {charCount}/{MESSAGE_MAX_LENGTH}
                 </span>
               )}
             </div>
