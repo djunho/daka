@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type FormEvent } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, type FormEvent } from 'react'
 import OnlineBadge from './OnlineBadge'
 import ChatMessageBubble from './ChatMessageBubble'
 import { useNegotiationChat } from '../hooks/useNegotiationChat'
@@ -38,15 +38,42 @@ export default function NegotiationChatWidget({
     error,
     clearError,
     sendMessage,
+    hasOlder,
+    isLoadingOlder,
+    loadOlder,
   } = useNegotiationChat(negotiationId, { isReadOnly: initialReadOnly })
 
+  const logRef = useRef<HTMLDivElement | null>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
-  // Auto-scroll to the bottom whenever a new message is added.
+  // Auto-scroll to the bottom when a newer message appears (first history load,
+  // a live message) and when the body is expanded again. Prepending older
+  // messages leaves the newest id unchanged, so it does not scroll.
   // Reference: https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollIntoView
+  const newestId = messages[messages.length - 1]?.id
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [newestId, isMinimized])
+
+  // Keep the viewport on the same message when an older page is inserted above:
+  // snapshot the scroll metrics on click and compensate once the first id changes.
+  const prependRef = useRef<{ firstId: number; scrollHeight: number; scrollTop: number } | null>(null)
+  useLayoutEffect(() => {
+    const el = logRef.current
+    const snap = prependRef.current
+    if (!el || !snap || messages[0]?.id === snap.firstId) return
+    el.scrollTop = el.scrollHeight - snap.scrollHeight + snap.scrollTop
+    prependRef.current = null
   }, [messages])
+
+  const handleLoadOlder = () => {
+    const el = logRef.current
+    const firstId = messages[0]?.id
+    if (el && firstId !== undefined) {
+      prependRef.current = { firstId, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop }
+    }
+    void loadOlder()
+  }
 
   // Measure code-point length safely for UTF-16 code units (e.g. emojis)
   const charCount = [...inputText].length
@@ -120,6 +147,7 @@ export default function NegotiationChatWidget({
         <div className="flex flex-col h-80 bg-paper">
           {/* Scrollable message thread area */}
           <div
+            ref={logRef}
             role="log"
             aria-live="polite"
             aria-relevant="additions text"
@@ -138,15 +166,27 @@ export default function NegotiationChatWidget({
                 <p className="text-[11px] mt-0.5">Inicia a conversa com {interlocutorName}!</p>
               </div>
             ) : (
-              messages.map((msg) => (
-                <ChatMessageBubble
-                  key={msg.id}
-                  content={msg.content}
-                  createdAt={msg.createdAt}
-                  isOwn={msg.isOwn}
-                  senderName={msg.isOwn ? undefined : interlocutorName}
-                />
-              ))
+              <>
+                {hasOlder && (
+                  <button
+                    type="button"
+                    onClick={handleLoadOlder}
+                    disabled={isLoadingOlder}
+                    className="self-center text-[11px] font-medium text-brand hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isLoadingOlder ? 'A carregar…' : 'Ver mensagens anteriores'}
+                  </button>
+                )}
+                {messages.map((msg) => (
+                  <ChatMessageBubble
+                    key={msg.id}
+                    content={msg.content}
+                    createdAt={msg.createdAt}
+                    isOwn={msg.isOwn}
+                    senderName={msg.isOwn ? undefined : interlocutorName}
+                  />
+                ))}
+              </>
             )}
             <div ref={messagesEndRef} />
           </div>

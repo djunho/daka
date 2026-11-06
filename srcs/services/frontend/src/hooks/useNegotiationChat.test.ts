@@ -346,6 +346,87 @@ describe('useNegotiationChat', () => {
     expect(result.current.error).toBe('O chat não está ligado. Aguarda a reconexão e tenta novamente.')
   })
 
+  it('loads the page before the oldest message on demand until nothing older is left', async () => {
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [
+        { id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Mensagem antiga', created_at: '2026-10-28T10:00:00Z' },
+      ],
+      limit: 50,
+      next_before_id: 10,
+      has_more: true,
+    })
+    const { result } = renderHook(() => useNegotiationChat(42))
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.hasOlder).toBe(true)
+    expect(apiListNegotiationMessages).toHaveBeenLastCalledWith(42, { limit: 50, before_id: undefined })
+
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [
+        { id: 5, negotiation_id: 42, sender: { id: 1, user_name: 'Daniel', avatar: null }, content: 'Ainda mais antiga', created_at: '2026-10-27T10:00:00Z' },
+      ],
+      limit: 50,
+      next_before_id: null,
+      has_more: false,
+    })
+    await act(async () => {
+      await result.current.loadOlder()
+    })
+
+    expect(apiListNegotiationMessages).toHaveBeenLastCalledWith(42, { limit: 50, before_id: 10 })
+    expect(result.current.messages.map((m) => m.id)).toEqual([5, 10])
+    expect(result.current.messages[0].isOwn).toBe(true)
+    expect(result.current.hasOlder).toBe(false)
+    expect(result.current.isLoadingOlder).toBe(false)
+
+    // Nothing older: a further call does not hit the API
+    await act(async () => {
+      await result.current.loadOlder()
+    })
+    expect(apiListNegotiationMessages).toHaveBeenCalledTimes(2)
+  })
+
+  it('drops an older page that arrives after switching to another negotiation', async () => {
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [
+        { id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Mensagem antiga', created_at: '2026-10-28T10:00:00Z' },
+      ],
+      limit: 50,
+      next_before_id: 10,
+      has_more: true,
+    })
+    const { result, rerender } = renderHook(({ id }: { id: number }) => useNegotiationChat(id), { initialProps: { id: 42 } })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    let resolveOlder!: (page: Awaited<ReturnType<typeof apiListNegotiationMessages>>) => void
+    vi.mocked(apiListNegotiationMessages).mockReturnValueOnce(new Promise((r) => { resolveOlder = r }))
+    act(() => {
+      void result.current.loadOlder()
+    })
+    expect(result.current.isLoadingOlder).toBe(true)
+
+    // Switch chats while the older page of 42 is still in flight
+    rerender({ id: 43 })
+    await act(async () => {
+      resolveOlder({
+        items: [
+          { id: 5, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Pertence à 42', created_at: '2026-10-27T10:00:00Z' },
+        ],
+        limit: 50,
+        next_before_id: null,
+        has_more: false,
+      })
+      await Promise.resolve()
+    })
+
+    expect(result.current.messages.some((m) => m.content === 'Pertence à 42')).toBe(false)
+    expect(result.current.isLoadingOlder).toBe(false)
+  })
+
   it('clears error with clearError callback', () => {
     const { result } = renderHook(() => useNegotiationChat(42, { isReadOnly: true }))
 
