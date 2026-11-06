@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { apiListNegotiationMessages } from '../lib/api'
+import { ApiError, apiListNegotiationMessages } from '../lib/api'
 import { getWebSocketErrorMessage } from '../lib/errors'
 import type {
   IncomingWebSocketEvent,
@@ -9,6 +9,11 @@ import type {
 import { WS_CLOSE_CODES } from '../types/chat'
 
 export type ChatConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
+
+// Outcome of one history page: merged into the thread, dropped as stale, a
+// transient failure worth retrying, or a terminal refusal (401/403/404) that
+// the socket reports on its own and a retry could not fix.
+type SyncResult = 'merged' | 'dropped' | 'failed' | 'terminal'
 
 export interface ChatMessageItem {
   id: number
@@ -31,6 +36,11 @@ export interface UseNegotiationChatReturn {
   error: string | null
   clearError: () => void
   sendMessage: (content: string) => boolean
+  // The newest page could not be loaded (first load or a reconnect backfill);
+  // retryHistory() asks for it again. Not set for 401/403/404: the socket
+  // closes with the matching code and `error` reports that instead.
+  historyFailed: boolean
+  retryHistory: () => void
   // Older history is paged on demand: the first load brings the newest 50.
   hasOlder: boolean
   isLoadingOlder: boolean
@@ -67,6 +77,9 @@ export function useNegotiationChat(
   const [error, setError] = useState<string | null>(null)
   const [hasOlder, setHasOlder] = useState<boolean>(false)
   const [isLoadingOlder, setIsLoadingOlder] = useState<boolean>(false)
+  const [historyFailed, setHistoryFailed] = useState<boolean>(false)
+  // Incremented by retryHistory() to run the first-page effect again
+  const [historyAttempt, setHistoryAttempt] = useState<number>(0)
 
   const socketRef = useRef<WebSocket | null>(null)
   const reconnectAttemptsRef = useRef<number>(0)
@@ -74,32 +87,63 @@ export function useNegotiationChat(
   // The negotiation currently shown: a page that arrives after a switch must
   // not be merged into the new thread.
   const negotiationIdRef = useRef<number | null>(negotiationId)
+  // Mirror of `messages` for decisions made outside render (gap detection).
+  const messagesRef = useRef<ChatMessageItem[]>([])
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+  // Bumped whenever the thread is replaced, so an older page that was requested
+  // for the previous thread is dropped instead of merged into the new one.
+  const threadGenerationRef = useRef<number>(0)
+  // Counts newest pages merged (first load or reconnect backfill). An attempt
+  // that fails after a newer one landed is moot; a failed backfill after a
+  // merged first page is not, since the thread may have missed messages.
+  const newestPageCountRef = useRef<number>(0)
 
   const effectiveReadOnly = Boolean(options?.isReadOnly || serverReadOnly)
 
-  // Clear messages and reset state when negotiationId changes
+  // Clear messages and reset state when negotiationId changes. The mirror is
+  // cleared here too: the first page of the new negotiation is requested in
+  // this same commit, before the mirror effect has seen the empty thread.
   useEffect(() => {
     negotiationIdRef.current = negotiationId
+    messagesRef.current = []
+    newestPageCountRef.current = 0
     setMessages([])
     setError(null)
     setServerReadOnly(false)
     setHasOlder(false)
     setIsLoadingOlder(false)
+    setHistoryFailed(false)
   }, [negotiationId])
 
   // Fetch one page of history via REST (the newest 50, or the 50 before
-  // `beforeId`) and merge it, deduplicated by id. Resolves with the page's
-  // has_more flag, or null when the page was dropped or the request failed.
+  // `beforeId`) and merge it, deduplicated by id. A dropped (cancelled) page
+  // or a failed request changes nothing; see SyncResult.
+  //
+  // A newest page that does not overlap what was on screen means more than a
+  // page arrived while offline: merging would leave a silent hole that paging
+  // backwards (from the oldest shown id) could never fill. The page then
+  // replaces the thread, keeping only live messages newer than it, and the
+  // older messages can be paged back in. hasOlder follows the page whenever
+  // the page reaches at least as far back as the thread does.
   const syncHistory = useCallback(
     async (
       negId: number,
       userId: number,
       isCancelled: () => boolean,
       beforeId?: number,
-    ): Promise<boolean | null> => {
+    ): Promise<SyncResult> => {
+      // Compare against the thread as it was when the page was requested: at a
+      // reconnect nothing can have arrived on the new socket yet, and a live
+      // message landing while the request is in flight must not hide a gap.
+      const shown = messagesRef.current
+      const shownOldest = shown[0]?.id ?? Infinity
+      const shownNewest = shown[shown.length - 1]?.id ?? 0
+
       try {
         const page = await apiListNegotiationMessages(negId, { limit: 50, before_id: beforeId })
-        if (isCancelled()) return null
+        if (isCancelled()) return 'dropped'
 
         const historicalItems: ChatMessageItem[] = page.items.map((item) => ({
           id: item.id,
@@ -110,16 +154,34 @@ export function useNegotiationChat(
           isOwn: item.sender.id === userId,
         }))
 
+        const pageOldest = historicalItems[0]?.id
+        const pageNewest = historicalItems[historicalItems.length - 1]?.id ?? 0
+        // Ids are one global sequence, so adjacency cannot be told from a hole:
+        // a page starting right after the newest shown id also replaces the
+        // thread, and the message it hides is one page back.
+        const gap = beforeId === undefined && page.has_more && pageOldest !== undefined && pageOldest > shownNewest
+        if (gap) threadGenerationRef.current += 1
+
         setMessages((prev) => {
+          if (gap) {
+            return [...historicalItems, ...prev.filter((m) => m.id > pageNewest)]
+          }
           // Deduplicate by database message ID
           const existingIds = new Set(historicalItems.map((m) => m.id))
           const realtimeOnly = prev.filter((m) => !existingIds.has(m.id))
           return [...historicalItems, ...realtimeOnly].sort((a, b) => a.id - b.id)
         })
-        return page.has_more
-      } catch {
-        // Silently catch history fetch failures; WebSocket connection will still proceed
-        return null
+        if (gap || pageOldest === undefined || pageOldest <= shownOldest) {
+          setHasOlder(page.has_more)
+        }
+        if (beforeId === undefined) newestPageCountRef.current += 1
+        return 'merged'
+      } catch (err) {
+        // The WebSocket connection still proceeds; callers decide what to show
+        if (err instanceof ApiError && (err.status === 401 || err.status === 403 || err.status === 404)) {
+          return 'terminal'
+        }
+        return 'failed'
       }
     },
     [],
@@ -133,18 +195,23 @@ export function useNegotiationChat(
     }
 
     let isCancelled = false
+    // historyFailed is left as is while the attempt runs, so the retry notice
+    // stays on screen (with its button disabled) instead of flashing away.
     setIsLoadingHistory(true)
+    const newestPagesBefore = newestPageCountRef.current
 
-    syncHistory(negotiationId, currentUserId, () => isCancelled).then((hasMore) => {
+    syncHistory(negotiationId, currentUserId, () => isCancelled).then((result) => {
       if (isCancelled) return
-      if (hasMore !== null) setHasOlder(hasMore)
+      // A newest page that landed meanwhile (reconnect backfill) makes a late failure moot
+      const supersededByBackfill = newestPageCountRef.current !== newestPagesBefore
+      setHistoryFailed(result === 'failed' && !supersededByBackfill)
       setIsLoadingHistory(false)
     })
 
     return () => {
       isCancelled = true
     }
-  }, [negotiationId, currentUserId, syncHistory])
+  }, [negotiationId, currentUserId, historyAttempt, syncHistory])
 
   // Establish and manage the WebSocket lifecycle for the active negotiation
   useEffect(() => {
@@ -171,9 +238,16 @@ export function useNegotiationChat(
         setStatus('connected')
         setError(null)
 
-        // If this was a reconnection after a disconnect, backfill any messages missed while offline
+        // If this was a reconnection after a disconnect, backfill any messages missed
+        // while offline (syncHistory replaces the thread when more than a page was missed)
         if (reconnectAttemptsRef.current > 0) {
-          void syncHistory(negotiationId, currentUserId, () => isCancelled)
+          void syncHistory(negotiationId, currentUserId, () => isCancelled).then((result) => {
+            if (isCancelled) return
+            // A successful backfill also recovers from a failed first page; a failed
+            // one may have missed messages, which only a retry can bring back
+            if (result === 'merged') setHistoryFailed(false)
+            else if (result === 'failed') setHistoryFailed(true)
+          })
         }
         reconnectAttemptsRef.current = 0
       }
@@ -285,6 +359,10 @@ export function useNegotiationChat(
     setError(null)
   }, [])
 
+  const retryHistory = useCallback(() => {
+    setHistoryAttempt((attempt) => attempt + 1)
+  }, [])
+
   /**
    * Load the page of history before the oldest message shown. No-op while a
    * page is loading, before the first page arrived, or once there is nothing older.
@@ -295,9 +373,11 @@ export function useNegotiationChat(
 
     setIsLoadingOlder(true)
     const switched = () => negotiationIdRef.current !== negotiationId
-    const hasMore = await syncHistory(negotiationId, currentUserId, switched, oldestId)
+    // The page belongs to the thread as shown now; drop it if that thread is replaced meanwhile
+    const generation = threadGenerationRef.current
+    const stale = () => switched() || threadGenerationRef.current !== generation
+    await syncHistory(negotiationId, currentUserId, stale, oldestId)
     if (switched()) return
-    if (hasMore !== null) setHasOlder(hasMore)
     setIsLoadingOlder(false)
   }, [negotiationId, currentUserId, hasOlder, isLoadingOlder, oldestId, syncHistory])
 
@@ -343,6 +423,8 @@ export function useNegotiationChat(
     error,
     clearError,
     sendMessage,
+    historyFailed,
+    retryHistory,
     hasOlder,
     isLoadingOlder,
     loadOlder,

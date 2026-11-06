@@ -44,6 +44,8 @@ export default function NegotiationChatWidget({
     error,
     clearError,
     sendMessage,
+    historyFailed,
+    retryHistory,
     hasOlder,
     isLoadingOlder,
     loadOlder,
@@ -65,13 +67,18 @@ export default function NegotiationChatWidget({
   }, [newestId, isMinimized])
 
   // Keep the viewport on the same message when an older page is inserted above:
-  // snapshot the scroll metrics on click and compensate once the first id changes.
+  // snapshot the scroll metrics on click and compensate once an older first id
+  // appears. A thread replaced after a reconnect changes the first id upwards;
+  // that is not a prepend, so the snapshot is discarded instead.
   const prependRef = useRef<{ firstId: number; scrollHeight: number; scrollTop: number } | null>(null)
   useLayoutEffect(() => {
     const el = logRef.current
     const snap = prependRef.current
-    if (!el || !snap || messages[0]?.id === snap.firstId) return
-    el.scrollTop = el.scrollHeight - snap.scrollHeight + snap.scrollTop
+    const firstId = messages[0]?.id
+    if (!el || !snap || firstId === snap.firstId) return
+    if (firstId !== undefined && firstId < snap.firstId) {
+      el.scrollTop = el.scrollHeight - snap.scrollHeight + snap.scrollTop
+    }
     prependRef.current = null
   }, [messages])
 
@@ -154,6 +161,33 @@ export default function NegotiationChatWidget({
       {/* Chat body (visible only when not minimized) */}
       {!isMinimized && (
         <div className="flex flex-col h-80 bg-paper">
+          {/* History failure notice: outside the live log region (it holds a
+              control and must not be announced as a log addition). The status
+              region is always mounted, empty when all is well, because a live
+              region inserted together with its text is often not announced. */}
+          <div
+            role="status"
+            className={
+              historyFailed
+                ? 'm-3 mb-0 flex flex-col items-center gap-1 text-center text-[11px] text-accent bg-accent/10 rounded-lg px-3 py-2'
+                : 'sr-only'
+            }
+          >
+            {historyFailed && (
+              <>
+                <span>Não foi possível carregar as mensagens.</span>
+                <button
+                  type="button"
+                  onClick={retryHistory}
+                  disabled={isLoadingHistory}
+                  className="font-semibold underline hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Tentar novamente
+                </button>
+              </>
+            )}
+          </div>
+
           {/* Scrollable message thread area */}
           <div
             ref={logRef}
@@ -169,11 +203,15 @@ export default function NegotiationChatWidget({
                 <p className="font-medium text-ink">A carregar mensagens...</p>
               </div>
             ) : messages.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-muted text-xs select-none">
-                <span className="text-2xl mb-1">💬</span>
-                <p className="font-medium text-ink">Sem mensagens ainda</p>
-                <p className="text-[11px] mt-0.5">Inicia a conversa com {interlocutorName}!</p>
-              </div>
+              // No invitation to start the conversation when the history failed
+              // or the socket was refused (the notice or the error banner explain)
+              historyFailed || (status === 'disconnected' && error) ? null : (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-muted text-xs select-none">
+                  <span className="text-2xl mb-1">💬</span>
+                  <p className="font-medium text-ink">Sem mensagens ainda</p>
+                  <p className="text-[11px] mt-0.5">Inicia a conversa com {interlocutorName}!</p>
+                </div>
+              )
             ) : (
               <>
                 {hasOlder && (

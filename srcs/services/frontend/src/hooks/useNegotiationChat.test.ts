@@ -1,13 +1,16 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useNegotiationChat } from './useNegotiationChat'
-import { apiListNegotiationMessages } from '../lib/api'
+import { ApiError, apiListNegotiationMessages } from '../lib/api'
 import { WS_CLOSE_CODES } from '../types/chat'
 import { useAuth } from '../context/AuthContext'
 
-vi.mock('../lib/api', () => ({
+vi.mock('../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/api')>()),
   apiListNegotiationMessages: vi.fn(),
 }))
+
+type MessagePage = Awaited<ReturnType<typeof apiListNegotiationMessages>>
 
 vi.mock('../context/AuthContext', () => ({
   useAuth: vi.fn(),
@@ -288,6 +291,238 @@ describe('useNegotiationChat', () => {
     vi.useRealTimers()
   })
 
+  it('replaces the thread when more than a page arrived while offline, so nothing is silently missing', async () => {
+    vi.useFakeTimers()
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.messages.map((m) => m.id)).toEqual([10])
+    expect(result.current.hasOlder).toBe(false)
+
+    // Drop, then the backfill page does not reach id 10: a hole would be left by merging
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [60, 61].map((id) => ({
+        id, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: `Perdida ${id}`, created_at: '2026-10-28T12:00:00Z',
+      })),
+      limit: 50,
+      next_before_id: 60,
+      has_more: true,
+    })
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(result.current.messages.map((m) => m.id)).toEqual([60, 61])
+    expect(result.current.hasOlder).toBe(true)
+
+    // Paging backwards now continues from the page, not from the stale thread
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({ items: [], limit: 50, next_before_id: null, has_more: false })
+    await act(async () => {
+      await result.current.loadOlder()
+    })
+    expect(apiListNegotiationMessages).toHaveBeenLastCalledWith(42, { limit: 50, before_id: 60 })
+    vi.useRealTimers()
+  })
+
+  it('merges an overlapping backfill and keeps paging state consistent with it', async () => {
+    vi.useFakeTimers()
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [{ id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Antiga', created_at: '2026-10-28T10:00:00Z' }],
+      limit: 50,
+      next_before_id: 10,
+      has_more: true,
+    })
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.hasOlder).toBe(true)
+
+    // The backfill still reaches id 10: nothing was missed, so it merges
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [10, 11].map((id) => ({
+        id, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: `Mensagem ${id}`, created_at: '2026-10-28T12:00:00Z',
+      })),
+      limit: 50,
+      next_before_id: 10,
+      has_more: true,
+    })
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(result.current.messages.map((m) => m.id)).toEqual([10, 11])
+    expect(result.current.hasOlder).toBe(true)
+    vi.useRealTimers()
+  })
+
+  it('still detects the gap when a live message lands during the backfill, and keeps that message', async () => {
+    vi.useFakeTimers()
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.messages.map((m) => m.id)).toEqual([10])
+
+    let resolveBackfill!: (page: Awaited<ReturnType<typeof apiListNegotiationMessages>>) => void
+    vi.mocked(apiListNegotiationMessages).mockReturnValueOnce(new Promise((r) => { resolveBackfill = r }))
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    // The other side writes on the new socket before the backfill answers
+    act(() => {
+      MockWebSocket.instances[1].simulateMessage({
+        type: 'message.created',
+        message: { id: 111, negotiation_id: 42, sender_id: 2, content: 'Ao vivo', created_at: '2026-10-28T13:00:00Z' },
+      })
+    })
+    await act(async () => {
+      resolveBackfill({
+        items: [60, 61].map((id) => ({
+          id, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: `Perdida ${id}`, created_at: '2026-10-28T12:00:00Z',
+        })),
+        limit: 50,
+        next_before_id: 60,
+        has_more: true,
+      })
+      await Promise.resolve()
+    })
+
+    expect(result.current.messages.map((m) => m.id)).toEqual([60, 61, 111])
+    expect(result.current.hasOlder).toBe(true)
+    vi.useRealTimers()
+  })
+
+  it('judges the first page of a switched negotiation against an empty thread, not the previous one', async () => {
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [10, 60].map((id) => ({
+        id, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: `Mensagem ${id}`, created_at: '2026-10-28T10:00:00Z',
+      })),
+      limit: 50,
+      next_before_id: null,
+      has_more: false,
+    })
+    const { result, rerender } = renderHook(({ id }: { id: number }) => useNegotiationChat(id), { initialProps: { id: 42 } })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.messages.map((m) => m.id)).toEqual([10, 60])
+
+    // Ids are global: negotiation 43's newest page sits inside 42's id range
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [30, 31].map((id) => ({
+        id, negotiation_id: 43, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: `Outra ${id}`, created_at: '2026-10-28T11:00:00Z',
+      })),
+      limit: 50,
+      next_before_id: 30,
+      has_more: true,
+    })
+    rerender({ id: 43 })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(result.current.messages.map((m) => m.id)).toEqual([30, 31])
+    expect(result.current.hasOlder).toBe(true)
+  })
+
+  it('drops an older page that was requested before the thread was replaced', async () => {
+    vi.useFakeTimers()
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [{ id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Antiga', created_at: '2026-10-28T10:00:00Z' }],
+      limit: 50,
+      next_before_id: 10,
+      has_more: true,
+    })
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    // "Ver mensagens anteriores" hangs on a slow network
+    let resolveOlder!: (page: Awaited<ReturnType<typeof apiListNegotiationMessages>>) => void
+    vi.mocked(apiListNegotiationMessages).mockReturnValueOnce(new Promise((r) => { resolveOlder = r }))
+    act(() => {
+      void result.current.loadOlder()
+    })
+    expect(result.current.isLoadingOlder).toBe(true)
+
+    // Meanwhile a reconnect finds a gap and replaces the thread
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [120, 121].map((id) => ({
+        id, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: `Nova ${id}`, created_at: '2026-10-28T12:00:00Z',
+      })),
+      limit: 50,
+      next_before_id: 120,
+      has_more: true,
+    })
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.messages.map((m) => m.id)).toEqual([120, 121])
+
+    // The stale older page lands: it belongs to the old thread and would open a hole
+    await act(async () => {
+      resolveOlder({
+        items: [{ id: 5, negotiation_id: 42, sender: { id: 1, user_name: 'Daniel', avatar: null }, content: 'Muito antiga', created_at: '2026-10-27T10:00:00Z' }],
+        limit: 50,
+        next_before_id: null,
+        has_more: false,
+      })
+      await Promise.resolve()
+    })
+    expect(result.current.messages.map((m) => m.id)).toEqual([120, 121])
+    expect(result.current.hasOlder).toBe(true)
+    expect(result.current.isLoadingOlder).toBe(false)
+    vi.useRealTimers()
+  })
+
   it('rejects empty or whitespace-only message submissions without sending', () => {
     const { result } = renderHook(() => useNegotiationChat(42))
     const ws = MockWebSocket.instances[0]
@@ -453,8 +688,9 @@ describe('useNegotiationChat', () => {
       await Promise.resolve()
     })
 
-    // History loading ends gracefully and messages default to empty
+    // History loading ends, the failure is reported and messages default to empty
     expect(result.current.isLoadingHistory).toBe(false)
+    expect(result.current.historyFailed).toBe(true)
     expect(result.current.messages).toEqual([])
 
     // WebSocket can still connect normally
@@ -462,7 +698,202 @@ describe('useNegotiationChat', () => {
       MockWebSocket.instances[0].simulateOpen()
     })
     expect(result.current.status).toBe('connected')
+
+    // Retrying asks for the first page again
+    act(() => {
+      result.current.retryHistory()
+    })
+    expect(result.current.isLoadingHistory).toBe(true)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(apiListNegotiationMessages).toHaveBeenCalledTimes(2)
+    expect(result.current.historyFailed).toBe(false)
+    expect(result.current.messages.map((m) => m.id)).toEqual([10])
     warnSpy.mockRestore()
+  })
+
+  it('ignores a first page that fails after a reconnect backfill already loaded the thread', async () => {
+    vi.useFakeTimers()
+    let rejectFirst!: (err: Error) => void
+    vi.mocked(apiListNegotiationMessages).mockReturnValueOnce(new Promise((_resolve, reject) => { rejectFirst = reject }))
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+
+    // The first GET hangs on a dying connection; the socket drops and comes back
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.messages.map((m) => m.id)).toEqual([10])
+
+    await act(async () => {
+      rejectFirst(new Error('Connection reset'))
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(false)
+    expect(result.current.isLoadingHistory).toBe(false)
+    vi.useRealTimers()
+  })
+
+  it('ignores the outcome of an attempt that a retry replaced', async () => {
+    let rejectFirst!: (err: Error) => void
+    vi.mocked(apiListNegotiationMessages).mockReturnValueOnce(new Promise((_resolve, reject) => { rejectFirst = reject }))
+    const { result } = renderHook(() => useNegotiationChat(42))
+    expect(result.current.isLoadingHistory).toBe(true)
+
+    act(() => {
+      result.current.retryHistory()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.messages.map((m) => m.id)).toEqual([10])
+    expect(result.current.historyFailed).toBe(false)
+
+    await act(async () => {
+      rejectFirst(new Error('Too late'))
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(false)
+  })
+
+  it('does not offer a retry when the history is refused (the socket reports 403/404)', async () => {
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new ApiError(403, 'Not a participant'))
+    const { result } = renderHook(() => useNegotiationChat(42))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.isLoadingHistory).toBe(false)
+    expect(result.current.historyFailed).toBe(false)
+    expect(result.current.messages).toEqual([])
+  })
+
+  it('reports a failed reconnect backfill, and a retry recovers from it', async () => {
+    vi.useFakeTimers()
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(false)
+
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new Error('Blip'))
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(true)
+
+    const page: MessagePage = {
+      items: [10, 11].map((id) => ({
+        id, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: `Mensagem ${id}`, created_at: '2026-10-28T12:00:00Z',
+      })),
+      limit: 50,
+      next_before_id: null,
+      has_more: false,
+    }
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce(page)
+    act(() => {
+      result.current.retryHistory()
+    })
+    // The notice stays while the retry runs; the widget disables its button
+    expect(result.current.historyFailed).toBe(true)
+    expect(result.current.isLoadingHistory).toBe(true)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(false)
+    expect(result.current.messages.map((m) => m.id)).toEqual([10, 11])
+    vi.useRealTimers()
+  })
+
+  it('keeps reporting a failed backfill when the retry fails too', async () => {
+    vi.useFakeTimers()
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new Error('Blip'))
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(true)
+
+    // Still flaky: the thread may still be missing messages, so the notice must stay
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new Error('Still down'))
+    act(() => {
+      result.current.retryHistory()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(true)
+    expect(result.current.isLoadingHistory).toBe(false)
+    vi.useRealTimers()
+  })
+
+  it('clears a failed first page when the backfill after a reconnect succeeds', async () => {
+    vi.useFakeTimers()
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new Error('Network failure loading history'))
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(true)
+
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(result.current.historyFailed).toBe(false)
+    expect(result.current.messages.map((m) => m.id)).toEqual([10])
+    vi.useRealTimers()
   })
 
   it('handles terminal close codes 4401 and 4404 with appropriate copy and no reconnect', () => {
