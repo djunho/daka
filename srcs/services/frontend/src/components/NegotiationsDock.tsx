@@ -177,7 +177,12 @@ export default function NegotiationsDock() {
                   <div className="flex items-center gap-2 pt-1 border-t border-line/60">
                     <button
                       type="button"
-                      onClick={() => openChat(neg.id, otherUser.user_name, isNegotiationReadOnly(neg.state))}
+                      onClick={() => {
+                        openChat(neg.id, otherUser.user_name, isNegotiationReadOnly(neg.state))
+                        // Picking a conversation collapses the drawer so the chat gets the
+                        // space; on phones both panels would not fit side by side.
+                        setIsOpen(false)
+                      }}
                       className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
                         isCurrentChat
                           ? 'bg-brand/15 text-brand border border-brand/30'
