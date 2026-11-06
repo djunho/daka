@@ -17,7 +17,7 @@ const ME: ApiUser = {
   id: 1,
   user_name: 'Ana',
   avatar: null,
-  user_location: null,
+  user_location: null, is_online: false,
   email: 'ana@example.com',
   created_at: '2026-01-01T00:00:00',
 }

@@ -2,6 +2,7 @@ import { Fragment, useState, useRef, useEffect, useLayoutEffect, type FormEvent 
 import OnlineBadge from './OnlineBadge'
 import ChatMessageBubble from './ChatMessageBubble'
 import { useNegotiationChat } from '../hooks/useNegotiationChat'
+import { useUserPresence } from '../hooks/useUserPresence'
 import { formatDate } from '../types/negotiation'
 
 const MAX_MESSAGE_LENGTH = 250
@@ -14,10 +15,8 @@ function dayKey(iso: string): string {
 
 export interface NegotiationChatWidgetProps {
   negotiationId: number
+  interlocutorId: number
   interlocutorName: string
-  // Presence of the other participant. Leave it undefined while the API exposes
-  // no presence data: an always-offline dot would be misleading.
-  interlocutorOnline?: boolean
   isReadOnly?: boolean
   onClose?: () => void
 }
@@ -28,8 +27,8 @@ export interface NegotiationChatWidgetProps {
  */
 export default function NegotiationChatWidget({
   negotiationId,
+  interlocutorId,
   interlocutorName,
-  interlocutorOnline,
   isReadOnly: initialReadOnly = false,
   onClose,
 }: NegotiationChatWidgetProps) {
@@ -49,6 +48,9 @@ export default function NegotiationChatWidget({
     isLoadingOlder,
     loadOlder,
   } = useNegotiationChat(negotiationId, { isReadOnly: initialReadOnly })
+
+  // Polled while the widget is open; undefined until known, so no wrong dot is shown.
+  const interlocutorOnline = useUserPresence(interlocutorId)
 
   const logRef = useRef<HTMLDivElement | null>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)

@@ -66,7 +66,7 @@ describe('useNegotiationChat', () => {
     MockWebSocket.instances = []
     window.WebSocket = MockWebSocket as unknown as typeof WebSocket
     vi.mocked(useAuth).mockReturnValue({
-      user: { id: 1, user_name: 'Daniel', email: 'd@daka.pt', avatar: null, user_location: null, created_at: '' },
+      user: { id: 1, user_name: 'Daniel', email: 'd@daka.pt', avatar: null, user_location: null, is_online: false, created_at: '' },
       loading: false,
       logout,
     } as unknown as ReturnType<typeof useAuth>)

@@ -14,8 +14,8 @@ vi.mock('../lib/api', async (importOriginal) => ({
 vi.mock('../context/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('../context/ChatContext', () => ({ useChat: vi.fn() }))
 
-const OWNER = { id: 1, user_name: 'Ana', avatar: null, user_location: null }
-const INTERESTED = { id: 2, user_name: 'Bruno', avatar: null, user_location: null }
+const OWNER = { id: 1, user_name: 'Ana', avatar: null, user_location: null, is_online: false }
+const INTERESTED = { id: 2, user_name: 'Bruno', avatar: null, user_location: null, is_online: true }
 
 function negotiation(state: ApiNegotiationState['state_name']): ApiNegotiationDetail {
   return {
@@ -50,7 +50,7 @@ const closeChat = vi.fn()
 
 function chat(activeId: number | null) {
   vi.mocked(useChat).mockReturnValue({
-    activeChat: activeId === null ? null : { negotiationId: activeId, interlocutorName: 'Ana', isReadOnly: false },
+    activeChat: activeId === null ? null : { negotiationId: activeId, interlocutorId: 1, interlocutorName: 'Ana', isReadOnly: false },
     openChat,
     closeChat,
     isChatOpen: (id) => id === activeId,
@@ -84,7 +84,7 @@ describe('Negotiation chat button', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Conversar' }))
 
-    expect(openChat).toHaveBeenCalledWith(20, 'Ana', false)
+    expect(openChat).toHaveBeenCalledWith(20, expect.objectContaining({ id: 1, user_name: 'Ana' }), false)
   })
 
   it('still offers the conversation, read-only, once the negotiation is closed', async () => {
@@ -93,7 +93,7 @@ describe('Negotiation chat button', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Conversar' }))
 
-    expect(openChat).toHaveBeenCalledWith(20, 'Ana', true)
+    expect(openChat).toHaveBeenCalledWith(20, expect.objectContaining({ id: 1, user_name: 'Ana' }), true)
     expect(screen.queryByRole('button', { name: 'Cancelar negociação' })).not.toBeInTheDocument()
   })
 
@@ -104,7 +104,7 @@ describe('Negotiation chat button', () => {
 
     // The chat was opened while the negotiation was active; the page re-opens it read-only
     const close = await screen.findByRole('button', { name: 'Fechar conversa' })
-    expect(openChat).toHaveBeenCalledWith(20, 'Ana', true)
+    expect(openChat).toHaveBeenCalledWith(20, { id: 1, user_name: 'Ana' }, true)
 
     await userEvent.click(close)
     expect(closeChat).toHaveBeenCalledTimes(1)
