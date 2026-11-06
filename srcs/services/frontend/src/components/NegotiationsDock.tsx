@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import Avatar from './Avatar'
-import { apiListNegotiations, type ApiNegotiationSummary } from '../lib/api'
+import { ApiError, apiListNegotiations, type ApiNegotiationSummary } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 import { isNegotiationReadOnly } from '../types/negotiation'
@@ -14,34 +14,56 @@ import { isNegotiationReadOnly } from '../types/negotiation'
  * allowing instant 1-click access to open the chat or navigate to the full negotiation page.
  */
 export default function NegotiationsDock() {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const { activeChat, openChat } = useChat()
   const [isOpen, setIsOpen] = useState(false)
   const [negotiations, setNegotiations] = useState<ApiNegotiationSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // One request in flight at a time: a refresh, a logout or an unmount cancels
+  // the previous one, so a slow response cannot repopulate the list afterwards
+  // (e.g. with the previous account's negotiations after signing out).
+  const controllerRef = useRef<AbortController | null>(null)
+  // logout is recreated on every AuthProvider render; the ref keeps
+  // loadNegotiations stable so the effect below only follows `user`.
+  const logoutRef = useRef(logout)
+  useEffect(() => {
+    logoutRef.current = logout
+  }, [logout])
+
   const loadNegotiations = useCallback(async () => {
-    if (!user) return
+    controllerRef.current?.abort()
+    const controller = new AbortController()
+    controllerRef.current = controller
     setLoading(true)
     setError(null)
     try {
-      const page = await apiListNegotiations({ limit: 15 })
+      const page = await apiListNegotiations({ limit: 15 }, controller.signal)
+      if (controller.signal.aborted) return
       setNegotiations(page.items)
-    } catch {
+    } catch (err) {
+      if (controller.signal.aborted) return
+      if (err instanceof ApiError && err.status === 401) {
+        // The session expired. Clearing it lets RequireAuth send them to login.
+        void logoutRef.current()
+        return
+      }
       setError('Não foi possível carregar as negociações.')
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
-  }, [user])
+  }, [])
 
   useEffect(() => {
     if (user) {
-      loadNegotiations()
+      void loadNegotiations()
     } else {
       setNegotiations([])
+      setLoading(false)
       setIsOpen(false)
     }
+    return () => controllerRef.current?.abort()
   }, [user, loadNegotiations])
 
   // Don't render anything for unauthenticated visitors
@@ -61,7 +83,7 @@ export default function NegotiationsDock() {
           type="button"
           onClick={() => {
             setIsOpen(true)
-            loadNegotiations()
+            void loadNegotiations()
           }}
           aria-label="Abrir gaveta de negociações"
           title="Ver negociações"
@@ -95,7 +117,7 @@ export default function NegotiationsDock() {
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={loadNegotiations}
+                onClick={() => void loadNegotiations()}
                 disabled={loading}
                 aria-label="Atualizar negociações"
                 title="Atualizar lista"
