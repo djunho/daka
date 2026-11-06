@@ -186,6 +186,14 @@ function UserMenu({
           >
             Negociações
           </Link>
+          <Link
+            to="/friends"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2.5 text-sm text-ink hover:bg-paper transition-colors"
+          >
+            Amigos
+          </Link>
           <button
             type="button"
             role="menuitem"

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import UserProfile from './UserProfile'
@@ -212,6 +212,23 @@ describe('UserProfile friend button', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Adicionar amigo' }))
     await flush()
     expect(logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('scrolls to the listings when opened from "Ver anúncios"', async () => {
+    // jsdom has no scrollIntoView. The stand-in is put back afterwards, so it
+    // does not leak into other tests.
+    const original = Element.prototype.scrollIntoView
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    try {
+      renderPage('/users/2#anuncios')
+
+      // The scroll runs in an effect after the profile renders.
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+      expect(scrollIntoView.mock.contexts[0]).toHaveAttribute('id', 'anuncios')
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
   })
 
   it('cancels the friendship request when moving to another profile', async () => {
