@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import { AuthProvider, useAuth } from './AuthContext'
@@ -201,6 +201,81 @@ describe('AuthContext heartbeat', () => {
 
     await advance(60_000)
     expect(apiSession).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('AuthContext syncUser', () => {
+  beforeEach(() => {
+    vi.useRealTimers()
+    vi.mocked(apiSession).mockReset()
+    vi.mocked(apiLogout).mockReset()
+  })
+
+  // Calls syncUser once on demand and shows its outcome and the current user
+  function SyncProbe() {
+    const { user, syncUser } = useAuth()
+    const outcome = useRef<string>('')
+    const [, rerender] = useState(0)
+    return (
+      <div>
+        <p>{user ? user.user_name : 'Sem sessão'}</p>
+        <p data-testid="outcome">{outcome.current}</p>
+        <button
+          onClick={async () => {
+            outcome.current = await syncUser()
+            rerender((n) => n + 1)
+          }}
+        >
+          sync
+        </button>
+      </div>
+    )
+  }
+
+  async function sync() {
+    await act(async () => {
+      screen.getByText('sync').click()
+    })
+  }
+
+  it.each([
+    ['same', ME, 'Ana'],
+    ['changed', { ...ME, id: 2, user_name: 'Rita' }, 'Rita'],
+  ] as const)('reports %s and keeps the matching user', async (outcome, me, shown) => {
+    vi.mocked(apiSession)
+      .mockResolvedValueOnce({ user: ME })
+      .mockResolvedValueOnce({ user: me })
+    render(<AuthProvider><SyncProbe /></AuthProvider>)
+    expect(await screen.findByText('Ana')).toBeInTheDocument()
+
+    await sync()
+    expect(screen.getByTestId('outcome')).toHaveTextContent(outcome)
+    expect(screen.getByText(shown)).toBeInTheDocument()
+  })
+
+  it('signs out locally on user null without revoking the cookie\'s session', async () => {
+    vi.mocked(apiSession)
+      .mockResolvedValueOnce({ user: ME })
+      .mockResolvedValueOnce({ user: null })
+    render(<AuthProvider><SyncProbe /></AuthProvider>)
+    expect(await screen.findByText('Ana')).toBeInTheDocument()
+
+    await sync()
+    expect(screen.getByTestId('outcome')).toHaveTextContent('signedOut')
+    expect(screen.getByText('Sem sessão')).toBeInTheDocument()
+    expect(apiLogout).not.toHaveBeenCalled()
+  })
+
+  it('keeps the session when the check itself fails', async () => {
+    vi.mocked(apiSession)
+      .mockResolvedValueOnce({ user: ME })
+      .mockRejectedValueOnce(new ApiError(0, 'offline'))
+    render(<AuthProvider><SyncProbe /></AuthProvider>)
+    expect(await screen.findByText('Ana')).toBeInTheDocument()
+
+    await sync()
+    expect(screen.getByTestId('outcome')).toHaveTextContent('unknown')
+    expect(screen.getByText('Ana')).toBeInTheDocument()
   })
 })
 

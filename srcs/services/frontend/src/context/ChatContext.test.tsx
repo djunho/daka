@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { ChatProvider, useChat } from './ChatContext'
@@ -80,6 +80,49 @@ describe('ChatProvider', () => {
     // Another negotiation starts from its own state
     fireEvent.click(screen.getByText('abrir-outra'))
     expect(screen.getByTestId('active')).toHaveTextContent('8:3:Carla:false')
+  })
+
+  it('dismisses the active chat when another account takes over without a logout', () => {
+    const { rerender } = render(<App />)
+    fireEvent.click(screen.getByText('abrir'))
+    expect(screen.getByTestId('active')).toHaveTextContent('7:2:Bruno:true')
+
+    // A profile update keeps the account: the chat stays
+    setUser({ ...USER, user_name: 'Ana Maria' })
+    rerender(<App />)
+    expect(screen.getByTestId('active')).toHaveTextContent('7:2:Bruno:true')
+
+    // Another account signed in from another tab, picked up by the heartbeat
+    setUser({ ...USER, id: 2, user_name: 'Bruno', email: 'b@x.io' })
+    rerender(<App />)
+    expect(screen.getByTestId('active')).toHaveTextContent('none')
+  })
+
+  it('never renders the previous account\'s chat, not even for one commit', () => {
+    // Records what each committed render saw
+    const seen: string[] = []
+    function Probe() {
+      const { activeChat } = useChat()
+      const { user } = useAuth()
+      useEffect(() => {
+        seen.push(`${user?.id}:${activeChat?.negotiationId ?? 'none'}`)
+      })
+      return null
+    }
+    const tree = () => (
+      <ChatProvider>
+        <Consumer />
+        <Probe />
+      </ChatProvider>
+    )
+    const { rerender } = render(tree())
+    fireEvent.click(screen.getByText('abrir'))
+    seen.length = 0
+
+    setUser({ ...USER, id: 2, user_name: 'Bruno', email: 'b@x.io' })
+    rerender(tree())
+    expect(seen).not.toContain('2:7')
+    expect(seen).toContain('2:none')
   })
 
   it('dismisses the active chat on logout', () => {

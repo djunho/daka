@@ -83,7 +83,7 @@ export function useNegotiationChat(
   negotiationId: number | null,
   options?: UseNegotiationChatOptions,
 ): UseNegotiationChatReturn {
-  const { user, logout } = useAuth()
+  const { user, logout, syncUser } = useAuth()
   const currentUserId = user?.id
 
   // logout is recreated on every AuthProvider render; keep the latest one in a
@@ -92,6 +92,10 @@ export function useNegotiationChat(
   useEffect(() => {
     logoutRef.current = logout
   }, [logout])
+  const syncUserRef = useRef(syncUser)
+  useEffect(() => {
+    syncUserRef.current = syncUser
+  }, [syncUser])
 
   const [messages, setMessages] = useState<ChatMessageItem[]>([])
   const [status, setStatus] = useState<ChatConnectionStatus>('disconnected')
@@ -391,13 +395,30 @@ export function useNegotiationChat(
           return
         }
 
-        // Session expired or revoked: clear it like the pages do on a REST 401,
-        // so the header, dock and widget stop showing a signed-in state.
+        // The session this socket registered with is no longer valid. That
+        // need not be the session in the current cookie (another tab may have
+        // signed in since), so never POST /auth/logout here: re-read the
+        // session first and say nothing until it answers. Signed out or
+        // another account: the auth state updates, the chat closes and the
+        // message explains. Same account (a newer session) or no answer: try
+        // again with backoff using the current cookie; a session that really
+        // ended answers 401 on the next round.
         if (event.code === WS_CLOSE_CODES.UNAUTHORIZED) {
-          setError(getWebSocketErrorMessage(event.code))
-          setStatus('disconnected')
-          setConnectionRefused(true)
-          void logoutRef.current()
+          setStatus('connecting')
+          void syncUserRef.current().then((outcome) => {
+            if (isCancelled) return
+            if (outcome === 'signedOut' || outcome === 'changed') {
+              setError(getWebSocketErrorMessage(event.code))
+              setStatus('disconnected')
+              setConnectionRefused(true)
+              return
+            }
+            const attempt = reconnectAttemptsRef.current
+            reconnectAttemptsRef.current = attempt + 1
+            reconnectTimerRef.current = setTimeout(() => {
+              if (!isCancelled) connect()
+            }, Math.min(1000 * Math.pow(2, attempt), 30000))
+          })
           return
         }
 

@@ -39,29 +39,42 @@ const ChatContext = createContext<ChatContextType>(defaultContext)
  */
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
-  const [activeChat, setActiveChat] = useState<ActiveChat | null>(null)
+  const userId = user?.id ?? null
+  // The chat remembers which account opened it. It is shown only while that
+  // account is the current one, decided during render: the AuthContext
+  // heartbeat can swap in another account (signed in from another tab)
+  // without a null in between, and an effect would clear the chat one commit
+  // too late, after the widget had already rendered and refetched as the new
+  // account. Profile updates keep the id, so they do not close it.
+  const [state, setState] = useState<{ chat: ActiveChat; ownerId: number | null } | null>(null)
+  const activeChat = state && state.ownerId === userId ? state.chat : null
 
-  // Whenever the user logs out, dismiss any active chat
+  // Drop a chat that belongs to a previous account, so it cannot come back
+  // if that account signs in again later.
   useEffect(() => {
-    if (!user) {
-      setActiveChat(null)
-    }
-  }, [user])
+    if (state && state.ownerId !== userId) setState(null)
+  }, [state, userId])
 
   // A read-only lock is one-way: re-opening the same negotiation from an
   // older list (the dock, a stale page) never makes it writable again, since
   // closed negotiations never reopen.
   const openChat = useCallback((negotiationId: number, interlocutor: ChatInterlocutor, isReadOnly?: boolean) => {
-    setActiveChat((previous) => ({
-      negotiationId,
-      interlocutorId: interlocutor.id,
-      interlocutorName: interlocutor.user_name,
-      isReadOnly: Boolean(isReadOnly) || (previous?.negotiationId === negotiationId && Boolean(previous.isReadOnly)),
-    }))
-  }, [])
+    setState((previous) => {
+      const sameChat = previous?.ownerId === userId && previous.chat.negotiationId === negotiationId
+      return {
+        ownerId: userId,
+        chat: {
+          negotiationId,
+          interlocutorId: interlocutor.id,
+          interlocutorName: interlocutor.user_name,
+          isReadOnly: Boolean(isReadOnly) || (sameChat && Boolean(previous.chat.isReadOnly)),
+        },
+      }
+    })
+  }, [userId])
 
   const closeChat = useCallback(() => {
-    setActiveChat(null)
+    setState(null)
   }, [])
 
   const isChatOpen = useCallback((negotiationId: number) => {
