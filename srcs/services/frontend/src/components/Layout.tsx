@@ -65,8 +65,10 @@ export default function Layout() {
         <Link to="/terms" className="inline-flex items-center min-h-11 px-3 hover:text-brand transition-colors no-underline">Termos</Link>
       </footer>
 
-      {/* Floating dock container pinned to the bottom-right */}
-      <div className="fixed bottom-0 right-6 z-50 flex items-end gap-3 pointer-events-none max-w-[calc(100vw-3rem)]">
+      {/* Floating dock container pinned to the bottom-right. The chat widget and
+          the dock sit side by side; when they do not fit (phones) the row wraps
+          and the dock drops below the chat instead of overflowing off-screen. */}
+      <div className="fixed bottom-0 right-2 sm:right-6 z-50 flex flex-wrap justify-end items-end gap-3 pointer-events-none max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-3rem)]">
         {/* 1. Chat Widget (positioned to the left of the dock) */}
         {activeChat && (
           <div className="pointer-events-auto">
