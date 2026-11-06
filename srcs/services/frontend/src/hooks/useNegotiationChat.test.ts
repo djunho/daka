@@ -1527,6 +1527,72 @@ describe('useNegotiationChat', () => {
     },
   )
 
+  it('stays quiet on the error frame the server sends before a 4401, and shows a 4403 once', async () => {
+    let resolveSync!: (value: 'same') => void
+    syncUser.mockReturnValueOnce(new Promise((r) => { resolveSync = r }))
+    const { result } = renderHook(() => useNegotiationChat(42))
+    const ws = MockWebSocket.instances[0]
+    act(() => {
+      ws.simulateOpen()
+    })
+    const before = result.current.errorSeq
+    act(() => {
+      ws.simulateMessage({ type: 'error', error: { code: 'unauthenticated', message: 'Session expired' } })
+      ws.simulateClose(WS_CLOSE_CODES.UNAUTHORIZED, 'Unauthorized')
+    })
+    expect(result.current.error).toBeNull()
+    expect(result.current.errorSeq).toBe(before)
+    await act(async () => {
+      resolveSync('same')
+      await Promise.resolve()
+    })
+
+    const other = renderHook(() => useNegotiationChat(43))
+    const ws2 = MockWebSocket.instances[MockWebSocket.instances.length - 1]
+    act(() => {
+      ws2.simulateOpen()
+    })
+    const start = other.result.current.errorSeq
+    act(() => {
+      ws2.simulateMessage({ type: 'error', error: { code: 'forbidden', message: 'Not a participant' } })
+      ws2.simulateClose(WS_CLOSE_CODES.FORBIDDEN, 'Forbidden')
+    })
+    expect(other.result.current.error).toContain('Não tens permissão')
+    expect(other.result.current.errorSeq).toBe(start + 1)
+  })
+
+  it('grows the backoff when the server accepts and then refuses each socket', async () => {
+    vi.useFakeTimers()
+    syncUser.mockResolvedValue('unknown')
+    renderHook(() => useNegotiationChat(42))
+    const delays: number[] = []
+    for (let round = 0; round < 4; round++) {
+      const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1]
+      act(() => {
+        ws.simulateOpen()
+      })
+      act(() => {
+        ws.simulateClose(WS_CLOSE_CODES.UNAUTHORIZED, 'Unauthorized')
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+      const count = MockWebSocket.instances.length
+      let waited = 0
+      while (MockWebSocket.instances.length === count && waited < 60_000) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(500)
+        })
+        waited += 500
+      }
+      delays.push(waited)
+    }
+    // 1s, 2s, 4s, 8s: an open that is refused at once does not reset the backoff
+    expect(delays).toEqual([1000, 2000, 4000, 8000])
+    syncUser.mockReset().mockResolvedValue('signedOut')
+    vi.useRealTimers()
+  })
+
   it('handles terminal close codes 4401 and 4404 with appropriate copy and no reconnect', async () => {
     // Test 4401: Session expired
     const { result: res4401 } = renderHook(() => useNegotiationChat(42))

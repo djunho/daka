@@ -418,7 +418,7 @@ describe('NegotiationChatWidget', () => {
 
     vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage, isSending: true }))
     rerender(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
-    expect(screen.getByRole('button', { name: 'A enviar…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'A enviar…' })).toHaveAttribute('aria-disabled', 'true')
 
     // Confirmed by message.created
     vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage, confirmedSends: 1 }))
@@ -491,9 +491,49 @@ describe('NegotiationChatWidget', () => {
       />,
     )
 
+    // Read-only rather than disabled, so a focused input keeps the focus
     const input = screen.getByPlaceholderText('Chat desligado')
-    expect(input).toBeDisabled()
+    expect(input).toHaveAttribute('readonly')
+    expect(input).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByRole('button', { name: 'Enviar' })).toBeDisabled()
+  })
+
+  it('keeps the keyboard focus in the composer while the chat reconnects', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+    const view = () => <NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />
+    const { rerender } = render(view())
+    const input = screen.getByRole('textbox', { name: 'Mensagem' })
+    input.focus()
+
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ status: 'connecting' }))
+    rerender(view())
+    // A disabled control would drop the focus in a browser (jsdom does not), so
+    // the guarantee is that it is read-only, not disabled
+    expect(input).not.toBeDisabled()
+    expect(input).toHaveAttribute('readonly')
+    expect(input).toHaveAttribute('aria-disabled', 'true')
+    expect(document.activeElement).toBe(input)
+  })
+
+  it('keeps the focus on "Enviar" while the send is in flight', () => {
+    const sendMessage = vi.fn().mockReturnValue(true)
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage }))
+    const view = () => <NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />
+    const { rerender } = render(view())
+    fireEvent.change(screen.getByRole('textbox', { name: 'Mensagem' }), { target: { value: 'Olá' } })
+    const button = screen.getByRole('button', { name: 'Enviar' })
+    button.focus()
+    fireEvent.click(button)
+
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage, isSending: true }))
+    rerender(view())
+    // aria-disabled, not disabled: a disabled button would drop the focus in a browser
+    expect(button).not.toBeDisabled()
+    expect(button).toHaveAttribute('aria-disabled', 'true')
+    expect(document.activeElement).toBe(button)
+    // Pressing it again while in flight does nothing
+    fireEvent.click(button)
+    expect(sendMessage).toHaveBeenCalledTimes(1)
   })
 
   it('treats a socket error like a disconnect', () => {
@@ -507,7 +547,7 @@ describe('NegotiationChatWidget', () => {
       />,
     )
 
-    expect(screen.getByPlaceholderText('Chat desligado')).toBeDisabled()
+    expect(screen.getByPlaceholderText('Chat desligado')).toHaveAttribute('readonly')
   })
 
   it('lets text exceed the limit and flags it instead of truncating with maxLength', () => {
