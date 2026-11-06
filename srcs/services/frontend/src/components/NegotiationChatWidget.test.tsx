@@ -22,6 +22,8 @@ function mockChat(overrides: Partial<UseNegotiationChatReturn> = {}): UseNegotia
     error: null,
     clearError: vi.fn(),
     sendMessage: vi.fn().mockReturnValue(true),
+    historyFailed: false,
+    retryHistory: vi.fn(),
     hasOlder: false,
     isLoadingOlder: false,
     loadOlder: vi.fn().mockResolvedValue(undefined),
@@ -134,6 +136,88 @@ describe('NegotiationChatWidget', () => {
 
     expect(screen.getByText('Sem mensagens ainda')).toBeInTheDocument()
     expect(screen.getByText('Inicia a conversa com Beatriz!')).toBeInTheDocument()
+  })
+
+  it('shows a retry notice instead of the empty state when the history could not be loaded', () => {
+    const retryHistory = vi.fn()
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ historyFailed: true, retryHistory }))
+
+    render(
+      <NegotiationChatWidget
+        negotiationId={42}
+        interlocutorId={10}
+        interlocutorName="Beatriz"
+      />,
+    )
+
+    const notice = screen.getByRole('status')
+    expect(notice).toHaveTextContent('Não foi possível carregar as mensagens.')
+    // Outside the live log: it holds a control and must not be read as a log addition
+    expect(screen.getByRole('log')).not.toContainElement(notice)
+    expect(notice).not.toHaveClass('sr-only')
+    expect(screen.queryByText('Sem mensagens ainda')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+    expect(retryHistory).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows neither the empty state nor a retry when the socket was refused', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(
+      mockChat({ status: 'disconnected', error: 'Não tens permissão para participar nesta conversa ou a origem não é permitida.' }),
+    )
+
+    render(
+      <NegotiationChatWidget
+        negotiationId={42}
+        interlocutorId={10}
+        interlocutorName="Beatriz"
+      />,
+    )
+
+    expect(screen.queryByText('Sem mensagens ainda')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument()
+    expect(screen.getByText(/Não tens permissão/)).toBeInTheDocument()
+  })
+
+  it('keeps the status region mounted and empty while the history is fine', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+
+    render(
+      <NegotiationChatWidget
+        negotiationId={42}
+        interlocutorId={10}
+        interlocutorName="Beatriz"
+      />,
+    )
+
+    // Announced on change only if it already exists in the accessibility tree
+    const region = screen.getByRole('status')
+    expect(region).toBeEmptyDOMElement()
+    expect(region).toHaveClass('sr-only')
+  })
+
+  it('keeps the retry notice above live messages that arrived without history', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(
+      mockChat({
+        historyFailed: true,
+        isLoadingHistory: true,
+        messages: [
+          { id: 7, negotiationId: 42, senderId: 10, content: 'Chegou ao vivo', createdAt: '2026-10-28T14:30:00Z', isOwn: false },
+        ],
+      }),
+    )
+
+    render(
+      <NegotiationChatWidget
+        negotiationId={42}
+        interlocutorId={10}
+        interlocutorName="Beatriz"
+      />,
+    )
+
+    expect(screen.getByText('Chegou ao vivo')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+    // The hook keeps historyFailed during a retry, so the notice stays and the button locks
+    expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeDisabled()
   })
 
   it('renders messages thread correctly', () => {
