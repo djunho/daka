@@ -100,6 +100,7 @@ export default function NegotiationChatWidget({
   }, [messages])
 
   const handleLoadOlder = () => {
+    if (isLoadingOlder) return
     const el = logRef.current
     const firstId = messages[0]?.id
     if (el && firstId !== undefined) {
@@ -135,7 +136,7 @@ export default function NegotiationChatWidget({
 
   const handleSendMessage = (e: FormEvent) => {
     e.preventDefault()
-    if (isReadOnly || isSending) return
+    if (!canSend) return
     if (!trimmed || [...trimmed].length > MESSAGE_MAX_LENGTH) return
 
     if (sendMessage(trimmed)) {
@@ -247,11 +248,15 @@ export default function NegotiationChatWidget({
             {historyFailed && (
               <>
                 <span>Não foi possível carregar as mensagens.</span>
+                {/* aria-disabled while it runs, not disabled: a disabled control
+                    drops the keyboard focus to <body> */}
                 <button
                   type="button"
-                  onClick={retryHistory}
-                  disabled={isLoadingHistory}
-                  className="font-semibold underline hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => {
+                    if (!isLoadingHistory) retryHistory()
+                  }}
+                  aria-disabled={isLoadingHistory || undefined}
+                  className="font-semibold underline not-aria-disabled:hover:opacity-80 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
                 >
                   Tentar novamente
                 </button>
@@ -296,8 +301,9 @@ export default function NegotiationChatWidget({
                     <button
                       type="button"
                       onClick={handleLoadOlder}
-                      disabled={isLoadingOlder}
-                      className="text-[11px] font-medium text-brand hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                      // aria-disabled while the page loads, so the focus stays here
+                      aria-disabled={isLoadingOlder || undefined}
+                      className="text-[11px] font-medium text-brand not-aria-disabled:hover:underline aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
                     >
                       {isLoadingOlder ? 'A carregar…' : 'Ver mensagens anteriores'}
                     </button>
@@ -351,7 +357,8 @@ export default function NegotiationChatWidget({
             <div className="flex gap-2 items-center">
               {/* No maxLength on purpose: the browser counts UTF-16 units (an emoji is 2)
                   and truncates pastes silently. The counter below turns red past the
-                  code-point limit and the send button is disabled, which is the real guard. */}
+                  code-point limit, the send button is aria-disabled, and the canSend
+                  check in handleSendMessage is the real guard. */}
               <input
                 type="text"
                 value={inputText}
@@ -369,12 +376,14 @@ export default function NegotiationChatWidget({
                 aria-disabled={!isConnected || undefined}
                 className="flex-1 px-3 py-1.5 bg-paper border border-line focus:border-brand focus:outline-none rounded-xl text-xs text-ink placeholder:text-muted transition-colors disabled:opacity-60 disabled:cursor-not-allowed aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"
               />
-              {/* Likewise, a send in flight marks the button aria-disabled rather
-                  than disabled, so pressing it does not lose the focus. */}
+              {/* Likewise the button is aria-disabled, not disabled, whenever it
+                  cannot send (empty, over the limit, reconnecting, in flight,
+                  just confirmed), so pressing it never loses the focus; only a
+                  closed negotiation disables it. */}
               <button
                 type="submit"
-                disabled={!canSend && !isSending}
-                aria-disabled={isSending || undefined}
+                disabled={isReadOnly}
+                aria-disabled={!canSend || undefined}
                 className="px-3 py-1.5 bg-brand not-disabled:not-aria-disabled:hover:opacity-90 text-white text-xs font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed shrink-0"
               >
                 {isSending ? 'A enviar…' : 'Enviar'}

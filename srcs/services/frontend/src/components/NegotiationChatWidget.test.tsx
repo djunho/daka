@@ -297,7 +297,7 @@ describe('NegotiationChatWidget', () => {
     expect(screen.getByText('Chegou ao vivo')).toBeInTheDocument()
     expect(screen.getByRole('status')).toBeInTheDocument()
     // The hook keeps historyFailed during a retry, so the notice stays and the button locks
-    expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Tentar novamente' })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('renders messages thread correctly', () => {
@@ -381,7 +381,7 @@ describe('NegotiationChatWidget', () => {
 
     vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ messages: thread, hasOlder: true, isLoadingOlder: true, loadOlder }))
     rerender(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
-    expect(screen.getByRole('button', { name: 'A carregar…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'A carregar…' })).toHaveAttribute('aria-disabled', 'true')
 
     vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ messages: thread, hasOlder: false, loadOlder }))
     rerender(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
@@ -404,12 +404,12 @@ describe('NegotiationChatWidget', () => {
     const submitBtn = screen.getByRole('button', { name: 'Enviar' })
 
     // Initially empty -> send button is disabled
-    expect(submitBtn).toBeDisabled()
+    expect(submitBtn).toHaveAttribute('aria-disabled', 'true')
 
     // Type a message
     fireEvent.change(input, { target: { value: 'Boa tarde!' } })
     expect(screen.getByText('10/250')).toBeInTheDocument()
-    expect(submitBtn).not.toBeDisabled()
+    expect(submitBtn).not.toHaveAttribute('aria-disabled')
 
     // Submit message: the text stays while the server has not answered
     fireEvent.click(submitBtn)
@@ -457,7 +457,7 @@ describe('NegotiationChatWidget', () => {
 
     fireEvent.change(screen.getByPlaceholderText('Escreve uma mensagem...'), { target: { value: `${'a'.repeat(250)} ` } })
     expect(screen.getByText('250/250')).not.toHaveClass('text-accent')
-    expect(screen.getByRole('button', { name: 'Enviar' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Enviar' })).not.toHaveAttribute('aria-disabled')
   })
 
   it('keeps send button disabled when input contains only whitespace', () => {
@@ -475,7 +475,7 @@ describe('NegotiationChatWidget', () => {
     const submitBtn = screen.getByRole('button', { name: 'Enviar' })
 
     fireEvent.change(input, { target: { value: '    \t   ' } })
-    expect(submitBtn).toBeDisabled()
+    expect(submitBtn).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('disables input and send button when chat is disconnected', () => {
@@ -495,7 +495,7 @@ describe('NegotiationChatWidget', () => {
     const input = screen.getByPlaceholderText('Chat desligado')
     expect(input).toHaveAttribute('readonly')
     expect(input).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.getByRole('button', { name: 'Enviar' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Enviar' })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('keeps the keyboard focus in the composer while the chat reconnects', () => {
@@ -514,6 +514,74 @@ describe('NegotiationChatWidget', () => {
     expect(input).toHaveAttribute('aria-disabled', 'true')
     expect(document.activeElement).toBe(input)
   })
+
+  it('keeps "Enviar" focusable after the send is confirmed and the composer empties', () => {
+    const sendMessage = vi.fn().mockReturnValue(true)
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage }))
+    const view = () => <NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />
+    const { rerender } = render(view())
+    fireEvent.change(screen.getByRole('textbox', { name: 'Mensagem' }), { target: { value: 'Olá' } })
+    const button = screen.getByRole('button', { name: 'Enviar' })
+    button.focus()
+    fireEvent.click(button)
+
+    // Confirmed: the composer clears and nothing can be sent
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage, confirmedSends: 1 }))
+    rerender(view())
+    expect(screen.getByRole('textbox', { name: 'Mensagem' })).toHaveValue('')
+    // A disabled button would drop the focus in a browser (jsdom does not)
+    expect(button).not.toBeDisabled()
+    expect(button).toHaveAttribute('aria-disabled', 'true')
+    // Pressing it now does nothing
+    fireEvent.click(button)
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the older-messages and retry buttons focusable while they load, and ignores presses', () => {
+    const loadOlder = vi.fn().mockResolvedValue(undefined)
+    const retryHistory = vi.fn()
+    vi.mocked(useNegotiationChat).mockReturnValue(
+      mockChat({
+        hasOlder: true,
+        isLoadingOlder: true,
+        loadOlder,
+        historyFailed: true,
+        isLoadingHistory: true,
+        retryHistory,
+        messages: [{ id: 30, negotiationId: 42, senderId: 10, content: 'Uma', createdAt: '2026-10-28T14:30:00Z', isOwn: false }],
+      }),
+    )
+    render(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
+
+    const older = screen.getByRole('button', { name: 'A carregar…' })
+    const retry = screen.getByRole('button', { name: 'Tentar novamente' })
+    for (const button of [older, retry]) {
+      expect(button).not.toBeDisabled()
+      expect(button).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.click(button)
+    }
+    expect(loadOlder).not.toHaveBeenCalled()
+    expect(retryHistory).not.toHaveBeenCalled()
+  })
+
+  it.each(['connecting', 'disconnected', 'error'] as const)(
+    'does not send valid text while the chat is %s, by Enter or by the button',
+    (status) => {
+      const sendMessage = vi.fn().mockReturnValue(true)
+      vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage }))
+      const view = () => <NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />
+      const { container, rerender } = render(view())
+      fireEvent.change(screen.getByRole('textbox', { name: 'Mensagem' }), { target: { value: 'Olá' } })
+
+      vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ sendMessage, status }))
+      rerender(view())
+      // The button is only aria-disabled, so the canSend check is what stops it
+      fireEvent.submit(container.querySelector('form') as HTMLFormElement)
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+      expect(sendMessage).not.toHaveBeenCalled()
+      expect(screen.getByRole('textbox', { name: 'Mensagem' })).toHaveValue('Olá')
+    },
+  )
 
   it('keeps the focus on "Enviar" while the send is in flight', () => {
     const sendMessage = vi.fn().mockReturnValue(true)
@@ -567,7 +635,7 @@ describe('NegotiationChatWidget', () => {
 
     fireEvent.change(input, { target: { value: '😀'.repeat(251) } })
     expect(screen.getByText('251/250')).toHaveClass('text-accent')
-    expect(screen.getByRole('button', { name: 'Enviar' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Enviar' })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('displays error banner and clears it manually or when typing', () => {
