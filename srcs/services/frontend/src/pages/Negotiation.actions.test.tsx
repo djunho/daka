@@ -208,7 +208,9 @@ describe('Negotiation actions', () => {
       await open(person, negotiation(state, [proposal(1, 'Accepted', 'Livro'), proposal(2, 'ItemUnavailable', 'Mesa')]))
 
       expect(screen.getByRole('button', { name: 'Atualizar' })).toBeInTheDocument()
-      expect(screen.getAllByRole('button')).toHaveLength(1)
+      // The conversation stays reachable (read-only) after the negotiation closes
+      expect(screen.getByRole('button', { name: 'Conversar' })).toBeInTheDocument()
+      expect(screen.getAllByRole('button')).toHaveLength(2)
     })
 
     it('a proposal with an unavailable listing has no actions, but another can be created', async () => {

@@ -103,8 +103,9 @@ function actionCopy(action: PendingAction, negotiation: ApiNegotiationDetail) {
   }
 }
 
-// The header, the actions and the proposals panel (#97). The chat (#123) goes
-// below them. Which actions appear is only a convenience: the backend decides.
+// The header, the actions and the proposals panel (#97). The chat (#123) is the
+// floating widget in Layout, opened from here. Which actions appear is only a
+// convenience: the backend decides.
 export default function Negotiation() {
   const { id } = useParams()
   const { user, logout } = useAuth()
@@ -156,7 +157,7 @@ export default function Negotiation() {
   const refreshButton = useRef<HTMLButtonElement | null>(null)
 
   // A refresh keeps what is on screen, so a failure while the tab regains focus
-  // does not hide the negotiation, and the chat below is left alone.
+  // does not hide the negotiation, and the floating chat is left alone.
   // Resolves with the negotiation it loaded, or null if it loaded nothing new.
   const refresh = useCallback((): Promise<ApiNegotiationDetail | null> => {
     if (inFlight.current) return Promise.resolve(null)
@@ -441,38 +442,42 @@ export default function Negotiation() {
           </p>
         )}
 
-        {(stateName === 'Open' || stateName === 'Agreed') && (
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              size="sm"
-              variant={chatOpen ? 'secondary' : 'primary'}
-              onClick={() => {
-                if (chatOpen) {
-                  closeChat()
-                } else {
-                  const partnerName = isOwner
-                    ? negotiation.interested_user.user_name
-                    : negotiation.owner.user_name
-                  const isReadOnly = isNegotiationReadOnly(negotiation.state)
-                  openChat(negotiation.id, partnerName, isReadOnly)
-                }
-              }}
-            >
-              💬 {chatOpen ? 'Fechar conversa' : 'Conversar'}
-            </Button>
-            {stateName === 'Agreed' && isInterested && hasAccepted && (
-              <Button variant="primary" size="sm" disabled={busy} onClick={() => askToConfirm({ kind: 'complete' })}>
-                Confirmar conclusão
+        <div className="flex flex-wrap items-center gap-3">
+          {/* The conversation stays readable after the negotiation closes (the
+              widget goes read-only), so this button is offered in every state. */}
+          <Button
+            size="sm"
+            variant={chatOpen ? 'secondary' : 'primary'}
+            onClick={() => {
+              if (chatOpen) {
+                closeChat()
+              } else {
+                const partnerName = isOwner
+                  ? negotiation.interested_user.user_name
+                  : negotiation.owner.user_name
+                const isReadOnly = isNegotiationReadOnly(negotiation.state)
+                openChat(negotiation.id, partnerName, isReadOnly)
+              }
+            }}
+          >
+            <span aria-hidden="true">💬</span> {chatOpen ? 'Fechar conversa' : 'Conversar'}
+          </Button>
+          {(stateName === 'Open' || stateName === 'Agreed') && (
+            <>
+              {stateName === 'Agreed' && isInterested && hasAccepted && (
+                <Button variant="primary" size="sm" disabled={busy} onClick={() => askToConfirm({ kind: 'complete' })}>
+                  Confirmar conclusão
+                </Button>
+              )}
+              {stateName === 'Agreed' && isOwner && (
+                <p className="text-sm text-muted">À espera de que a pessoa interessada confirme a conclusão da troca.</p>
+              )}
+              <Button variant="dangerOutline" size="sm" disabled={busy} onClick={() => askToConfirm({ kind: 'cancel' })}>
+                Cancelar negociação
               </Button>
-            )}
-            {stateName === 'Agreed' && isOwner && (
-              <p className="text-sm text-muted">À espera de que a pessoa interessada confirme a conclusão da troca.</p>
-            )}
-            <Button variant="dangerOutline" size="sm" disabled={busy} onClick={() => askToConfirm({ kind: 'cancel' })}>
-              Cancelar negociação
-            </Button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" onClick={refreshByHand} disabled={busy} loading={refreshing}>
