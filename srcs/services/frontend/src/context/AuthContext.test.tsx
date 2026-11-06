@@ -2,12 +2,11 @@ import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import { AuthProvider, useAuth } from './AuthContext'
-import { ApiError, apiLogin, apiLogout, apiMe, apiRegister, apiSession, type ApiUser } from '../lib/api'
+import { ApiError, apiLogin, apiLogout, apiRegister, apiSession, type ApiUser } from '../lib/api'
 import { AccountCreatedError } from '../lib/errors'
 
 vi.mock('../lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/api')>()),
-  apiMe: vi.fn(),
   apiSession: vi.fn(),
   apiLogout: vi.fn(),
   apiRegister: vi.fn(),
@@ -39,11 +38,13 @@ function Probe() {
 describe('AuthContext heartbeat', () => {
   let visibility: DocumentVisibilityState
 
+  // The page load and every beat call /auth/session: the first call is the
+  // page load, the next ones are beats.
+  const NO_SESSION = { user: null }
+
   beforeEach(() => {
     vi.useFakeTimers()
-    // The page load asks /auth/session; only the heartbeats call /auth/me.
     vi.mocked(apiSession).mockReset().mockResolvedValue({ user: ME })
-    vi.mocked(apiMe).mockReset().mockResolvedValue(ME)
     visibility = 'visible'
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -55,27 +56,30 @@ describe('AuthContext heartbeat', () => {
     vi.useRealTimers()
   })
 
-  it('calls heartbeat every 60s with session and stops on 401', async () => {
-    vi.mocked(apiMe).mockRejectedValueOnce(new ApiError(401, 'Not authenticated.'))
+  it('beats every 60s with a session and stops when the session has ended', async () => {
+    vi.mocked(apiSession)
+      .mockResolvedValueOnce({ user: ME })
+      .mockResolvedValueOnce(NO_SESSION)
 
     render(<AuthProvider><Probe /></AuthProvider>)
 
     await advance(0)
     expect(screen.getByText('Com sessão')).toBeInTheDocument()
     expect(apiSession).toHaveBeenCalledTimes(1)
-    expect(apiMe).not.toHaveBeenCalled()
 
+    // The session ended with the site open (expired, or logged out in another
+    // tab): the beat answers user null, not a 401, and the page logs out.
     await advance(60_000)
-    expect(apiMe).toHaveBeenCalledTimes(1)
+    expect(apiSession).toHaveBeenCalledTimes(2)
     await advance(0)
     expect(screen.getByText('Sem sessão')).toBeInTheDocument()
 
     await advance(120_000)
-    expect(apiMe).toHaveBeenCalledTimes(1)
+    expect(apiSession).toHaveBeenCalledTimes(2)
   })
 
-  it('without a session, never calls /auth/me, so no 401 reaches the console', async () => {
-    vi.mocked(apiSession).mockResolvedValue({ user: null })
+  it('does not beat without a session', async () => {
+    vi.mocked(apiSession).mockResolvedValue(NO_SESSION)
 
     render(<AuthProvider><Probe /></AuthProvider>)
 
@@ -83,10 +87,10 @@ describe('AuthContext heartbeat', () => {
     expect(screen.getByText('Sem sessão')).toBeInTheDocument()
 
     await advance(180_000)
-    expect(apiMe).not.toHaveBeenCalled()
+    expect(apiSession).toHaveBeenCalledTimes(1)
   })
 
-  it('stays logged out when the session check fails', async () => {
+  it('stays logged out when the check on page load fails', async () => {
     vi.mocked(apiSession).mockRejectedValue(new ApiError(0, 'Could not reach the server.'))
 
     render(<AuthProvider><Probe /></AuthProvider>)
@@ -94,7 +98,7 @@ describe('AuthContext heartbeat', () => {
     await advance(0)
     expect(screen.getByText('Sem sessão')).toBeInTheDocument()
     await advance(180_000)
-    expect(apiMe).not.toHaveBeenCalled()
+    expect(apiSession).toHaveBeenCalledTimes(1)
   })
 
   it('pauses heartbeat while hidden and resumes on visible', async () => {
@@ -102,19 +106,19 @@ describe('AuthContext heartbeat', () => {
 
     await advance(0)
     expect(screen.getByText('Com sessão')).toBeInTheDocument()
-    expect(apiMe).not.toHaveBeenCalled()
+    expect(apiSession).toHaveBeenCalledTimes(1)
 
     visibility = 'hidden'
     document.dispatchEvent(new Event('visibilitychange'))
     await advance(120_000)
-    expect(apiMe).not.toHaveBeenCalled()
+    expect(apiSession).toHaveBeenCalledTimes(1)
 
     visibility = 'visible'
     document.dispatchEvent(new Event('visibilitychange'))
-    expect(apiMe).toHaveBeenCalledTimes(1)
+    expect(apiSession).toHaveBeenCalledTimes(2)
 
     await advance(60_000)
-    expect(apiMe).toHaveBeenCalledTimes(2)
+    expect(apiSession).toHaveBeenCalledTimes(3)
   })
 
   it('does not beat right away when the tab comes back within 30s', async () => {
@@ -122,7 +126,7 @@ describe('AuthContext heartbeat', () => {
 
     await advance(0)
     expect(screen.getByText('Com sessão')).toBeInTheDocument()
-    expect(apiMe).not.toHaveBeenCalled()
+    expect(apiSession).toHaveBeenCalledTimes(1)
 
     visibility = 'hidden'
     document.dispatchEvent(new Event('visibilitychange'))
@@ -130,11 +134,11 @@ describe('AuthContext heartbeat', () => {
 
     visibility = 'visible'
     document.dispatchEvent(new Event('visibilitychange'))
-    expect(apiMe).not.toHaveBeenCalled()
+    expect(apiSession).toHaveBeenCalledTimes(1)
 
     // The interval still runs after coming back.
     await advance(60_000)
-    expect(apiMe).toHaveBeenCalledTimes(1)
+    expect(apiSession).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the same user object when the heartbeat returns the same account', async () => {
@@ -148,7 +152,6 @@ describe('AuthContext heartbeat', () => {
     }
     // A fresh object with the same data, as the API would return.
     vi.mocked(apiSession).mockImplementation(async () => ({ user: { ...ME } }))
-    vi.mocked(apiMe).mockImplementation(async () => ({ ...ME }))
 
     render(<AuthProvider><Probe /><UserWatcher /></AuthProvider>)
 
@@ -158,12 +161,14 @@ describe('AuthContext heartbeat', () => {
 
     await advance(60_000)
     await advance(60_000)
-    expect(apiMe).toHaveBeenCalledTimes(2)
+    expect(apiSession).toHaveBeenCalledTimes(3)
     expect(onUserChange).toHaveBeenCalledTimes(callsAfterLogin)
   })
 
   it('replaces the user when the session now belongs to another account', async () => {
-    vi.mocked(apiMe).mockResolvedValueOnce({ ...ME, id: 2, user_name: 'Rita' })
+    vi.mocked(apiSession)
+      .mockResolvedValueOnce({ user: ME })
+      .mockResolvedValueOnce({ user: { ...ME, id: 2, user_name: 'Rita' } })
     function NameProbe() {
       const { user } = useAuth()
       return <p>{user?.user_name}</p>
@@ -181,7 +186,9 @@ describe('AuthContext heartbeat', () => {
     ['a server error', new ApiError(500, 'Server error')],
     ['a network error', new TypeError('Failed to fetch')],
   ])('keeps the session and the timer after %s', async (_, error) => {
-    vi.mocked(apiMe).mockRejectedValueOnce(error)
+    vi.mocked(apiSession)
+      .mockResolvedValueOnce({ user: ME })
+      .mockRejectedValueOnce(error)
 
     render(<AuthProvider><Probe /></AuthProvider>)
 
@@ -189,11 +196,11 @@ describe('AuthContext heartbeat', () => {
     expect(screen.getByText('Com sessão')).toBeInTheDocument()
 
     await advance(60_000)
-    expect(apiMe).toHaveBeenCalledTimes(1)
+    expect(apiSession).toHaveBeenCalledTimes(2)
     expect(screen.getByText('Com sessão')).toBeInTheDocument()
 
     await advance(60_000)
-    expect(apiMe).toHaveBeenCalledTimes(2)
+    expect(apiSession).toHaveBeenCalledTimes(3)
   })
 })
 
