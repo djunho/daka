@@ -2,11 +2,15 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import NegotiationChatWidget from './NegotiationChatWidget'
 import { useNegotiationChat } from '../hooks/useNegotiationChat'
+import { useUserPresence } from '../hooks/useUserPresence'
 import { formatDate } from '../types/negotiation'
 import type { UseNegotiationChatReturn } from '../hooks/useNegotiationChat'
 
 vi.mock('../hooks/useNegotiationChat', () => ({
   useNegotiationChat: vi.fn(),
+}))
+vi.mock('../hooks/useUserPresence', () => ({
+  useUserPresence: vi.fn(),
 }))
 
 function mockChat(overrides: Partial<UseNegotiationChatReturn> = {}): UseNegotiationChatReturn {
@@ -28,22 +32,25 @@ function mockChat(overrides: Partial<UseNegotiationChatReturn> = {}): UseNegotia
 describe('NegotiationChatWidget', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(useUserPresence).mockReturnValue(undefined)
     window.HTMLElement.prototype.scrollIntoView = vi.fn()
   })
 
   it('renders header with interlocutor name, negotiation ID and action buttons', () => {
     const handleClose = vi.fn()
     vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+    vi.mocked(useUserPresence).mockReturnValue(true)
 
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
-        interlocutorOnline={true}
         onClose={handleClose}
       />,
     )
 
+    expect(useUserPresence).toHaveBeenCalledWith(10)
     expect(screen.getByRole('heading', { level: 3, name: 'Beatriz' })).toBeInTheDocument()
     expect(screen.getByText('#42')).toBeInTheDocument()
     expect(screen.getByText('Online')).toBeInTheDocument()
@@ -54,17 +61,18 @@ describe('NegotiationChatWidget', () => {
     expect(handleClose).toHaveBeenCalledTimes(1)
   })
 
-  it('shows no presence badge while the caller has no presence data', () => {
+  it('shows no presence badge while the presence is unknown', () => {
     vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
 
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
 
-    // An always-offline dot would be wrong, so nothing is rendered without the prop
+    // A dot would be a guess before the first poll answers (or when it fails)
     expect(screen.queryByText('Offline')).not.toBeInTheDocument()
     expect(screen.queryByText('Online')).not.toBeInTheDocument()
   })
@@ -75,6 +83,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -102,6 +111,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -117,6 +127,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -152,6 +163,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -176,6 +188,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -194,6 +207,7 @@ describe('NegotiationChatWidget', () => {
     const { rerender } = render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -202,11 +216,11 @@ describe('NegotiationChatWidget', () => {
     expect(loadOlder).toHaveBeenCalledTimes(1)
 
     vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ messages: thread, hasOlder: true, isLoadingOlder: true, loadOlder }))
-    rerender(<NegotiationChatWidget negotiationId={42} interlocutorName="Beatriz" />)
+    rerender(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
     expect(screen.getByRole('button', { name: 'A carregar…' })).toBeDisabled()
 
     vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ messages: thread, hasOlder: false, loadOlder }))
-    rerender(<NegotiationChatWidget negotiationId={42} interlocutorName="Beatriz" />)
+    rerender(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
     expect(screen.queryByRole('button', { name: 'Ver mensagens anteriores' })).not.toBeInTheDocument()
   })
 
@@ -217,6 +231,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -244,6 +259,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -263,6 +279,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -278,6 +295,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -291,6 +309,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -313,6 +332,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -338,6 +358,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
         isReadOnly={true}
       />,
@@ -370,6 +391,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
         isReadOnly={true}
       />,
@@ -387,6 +409,7 @@ describe('NegotiationChatWidget', () => {
     const { rerender } = render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
         isReadOnly={false}
       />,
@@ -400,6 +423,7 @@ describe('NegotiationChatWidget', () => {
     rerender(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
         isReadOnly={true}
       />,
@@ -418,6 +442,7 @@ describe('NegotiationChatWidget', () => {
     const { container } = render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
         isReadOnly={true}
       />,
@@ -440,6 +465,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )
@@ -456,6 +482,7 @@ describe('NegotiationChatWidget', () => {
     render(
       <NegotiationChatWidget
         negotiationId={42}
+        interlocutorId={10}
         interlocutorName="Beatriz"
       />,
     )

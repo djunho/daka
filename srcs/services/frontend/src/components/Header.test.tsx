@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext'
 
 vi.mock('../context/AuthContext', () => ({ useAuth: vi.fn() }))
 
-const ME = { id: 1, user_name: 'Ana', avatar: null, user_location: null, email: 'ana@x.io', created_at: '' }
+const ME = { id: 1, user_name: 'Ana', avatar: null, user_location: null, is_online: false, email: 'ana@x.io', created_at: '' }
 
 function renderHeader(user: typeof ME | null) {
   vi.mocked(useAuth).mockReturnValue({ user, loading: false, logout: vi.fn() } as unknown as ReturnType<typeof useAuth>)

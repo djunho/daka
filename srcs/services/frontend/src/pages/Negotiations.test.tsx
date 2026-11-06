@@ -21,8 +21,8 @@ vi.mock('../lib/api', async (importOriginal) => ({
 }))
 vi.mock('../context/AuthContext', () => ({ useAuth: vi.fn() }))
 
-const ME = { id: 1, user_name: 'Ana', avatar: null, user_location: null, email: 'a@x.io', created_at: '2026-01-01' }
-const OTHER = { id: 2, user_name: 'Bruno', avatar: null, user_location: null }
+const ME = { id: 1, user_name: 'Ana', avatar: null, user_location: null, is_online: false, email: 'a@x.io', created_at: '2026-01-01' }
+const OTHER = { id: 2, user_name: 'Bruno', avatar: null, user_location: null, is_online: false }
 
 function listing(id: number, title: string, owner: ApiPublicUser = ME): ApiListingSummary {
   return {

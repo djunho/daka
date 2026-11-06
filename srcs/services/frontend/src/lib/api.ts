@@ -96,6 +96,8 @@ export type ApiPublicUser = {
   user_name: string
   avatar: string | null
   user_location: string | null
+  // Last activity within the backend's presence window (see app/presence.py).
+  is_online: boolean
 }
 
 export type ApiUser = ApiPublicUser & {
@@ -301,8 +303,8 @@ export function apiDeleteListingImage(id: number, imageId: number) {
 }
 
 // Requires a session: the backend answers 401 without one.
-export function apiGetPublicProfile(id: number) {
-  return request<ApiPublicProfile>(`/users/${id}`)
+export function apiGetPublicProfile(id: number, signal?: AbortSignal) {
+  return request<ApiPublicProfile>(`/users/${id}`, { signal })
 }
 
 export type ApiNegotiationState = {

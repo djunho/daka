@@ -19,8 +19,8 @@ vi.mock('../lib/api', async (importOriginal) => ({
 vi.mock('../context/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('../context/ChatContext', () => ({ useChat: vi.fn() }))
 
-const ME = { id: 1, user_name: 'Ana', avatar: null, user_location: null, email: 'a@x.io', created_at: '2026-01-01' }
-const OTHER = { id: 2, user_name: 'Bruno', avatar: null, user_location: null }
+const ME = { id: 1, user_name: 'Ana', avatar: null, user_location: null, is_online: true, email: 'a@x.io', created_at: '2026-01-01' }
+const OTHER = { id: 2, user_name: 'Bruno', avatar: null, user_location: null, is_online: true }
 const logout = vi.fn().mockResolvedValue(undefined)
 const openChat = vi.fn()
 
@@ -85,6 +85,8 @@ describe('NegotiationsDock', () => {
     openDrawer()
     expect(screen.getByText('Anúncio 7')).toBeInTheDocument()
     expect(screen.getByText('Anúncio 8')).toBeInTheDocument()
+    // The other participant's presence comes with the list
+    expect(screen.getAllByText('Online')).toHaveLength(2)
     expect(screen.getByRole('link', { name: 'Ver todas as negociações' })).toHaveAttribute('href', '/negotiations')
   })
 
@@ -95,7 +97,7 @@ describe('NegotiationsDock', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Chat' })[1])
 
-    expect(openChat).toHaveBeenCalledWith(8, 'Bruno', true)
+    expect(openChat).toHaveBeenCalledWith(8, expect.objectContaining({ id: 2, user_name: 'Bruno' }), true)
     expect(screen.queryByText('Anúncio 8')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Abrir gaveta de negociações/ })).toBeInTheDocument()
   })
@@ -115,7 +117,7 @@ describe('NegotiationsDock', () => {
 
   it('marks the card of the open chat in European Portuguese', async () => {
     vi.mocked(useChat).mockReturnValue({
-      activeChat: { negotiationId: 7, interlocutorName: 'Bruno' },
+      activeChat: { negotiationId: 7, interlocutorId: 2, interlocutorName: 'Bruno' },
       openChat,
       closeChat: vi.fn(),
       isChatOpen: (id) => id === 7,

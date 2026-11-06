@@ -3,13 +3,20 @@ import { useAuth } from './AuthContext'
 
 export interface ActiveChat {
   negotiationId: number
+  interlocutorId: number
   interlocutorName: string
   isReadOnly?: boolean
 }
 
+// The other participant, as any ApiPublicUser (owner, interested user, other_participant).
+export interface ChatInterlocutor {
+  id: number
+  user_name: string
+}
+
 interface ChatContextType {
   activeChat: ActiveChat | null
-  openChat: (negotiationId: number, interlocutorName: string, isReadOnly?: boolean) => void
+  openChat: (negotiationId: number, interlocutor: ChatInterlocutor, isReadOnly?: boolean) => void
   closeChat: () => void
   isChatOpen: (negotiationId: number) => boolean
 }
@@ -41,10 +48,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [user])
 
-  const openChat = useCallback((negotiationId: number, interlocutorName: string, isReadOnly?: boolean) => {
+  const openChat = useCallback((negotiationId: number, interlocutor: ChatInterlocutor, isReadOnly?: boolean) => {
     setActiveChat({
       negotiationId,
-      interlocutorName,
+      interlocutorId: interlocutor.id,
+      interlocutorName: interlocutor.user_name,
       isReadOnly,
     })
   }, [])

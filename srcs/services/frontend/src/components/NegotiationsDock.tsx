@@ -179,6 +179,7 @@ export default function NegotiationsDock() {
                       avatar={otherUser.avatar}
                       user_name={otherUser.user_name}
                       size="sm"
+                      online={otherUser.is_online}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1">
@@ -203,7 +204,7 @@ export default function NegotiationsDock() {
                     <button
                       type="button"
                       onClick={() => {
-                        openChat(neg.id, otherUser.user_name, isNegotiationReadOnly(neg.state))
+                        openChat(neg.id, otherUser, isNegotiationReadOnly(neg.state))
                         // Picking a conversation collapses the drawer so the chat gets the
                         // space; on phones both panels would not fit side by side.
                         setIsOpen(false)

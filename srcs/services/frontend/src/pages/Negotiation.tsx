@@ -128,7 +128,7 @@ export default function Negotiation() {
     if (!negotiation) return
     const isReadOnly = isNegotiationReadOnly(negotiation.state)
     if (activeChat?.negotiationId === negotiation.id && activeChat.isReadOnly !== isReadOnly) {
-      openChat(negotiation.id, activeChat.interlocutorName, isReadOnly)
+      openChat(negotiation.id, { id: activeChat.interlocutorId, user_name: activeChat.interlocutorName }, isReadOnly)
     }
   }, [negotiation, activeChat, openChat])
 
@@ -452,11 +452,8 @@ export default function Negotiation() {
               if (chatOpen) {
                 closeChat()
               } else {
-                const partnerName = isOwner
-                  ? negotiation.interested_user.user_name
-                  : negotiation.owner.user_name
-                const isReadOnly = isNegotiationReadOnly(negotiation.state)
-                openChat(negotiation.id, partnerName, isReadOnly)
+                const partner = isOwner ? negotiation.interested_user : negotiation.owner
+                openChat(negotiation.id, partner, isNegotiationReadOnly(negotiation.state))
               }
             }}
           >

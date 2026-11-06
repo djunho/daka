@@ -13,8 +13,8 @@ vi.mock('../lib/api', async (importOriginal) => ({
 }))
 vi.mock('../context/AuthContext', () => ({ useAuth: vi.fn() }))
 
-const OWNER = { id: 1, user_name: 'Ana', avatar: null, user_location: null }
-const VISITOR = { id: 2, user_name: 'Bia', avatar: null, user_location: null, email: 'b@x.io', created_at: '2026-01-01' }
+const OWNER = { id: 1, user_name: 'Ana', avatar: null, user_location: null, is_online: false }
+const VISITOR = { id: 2, user_name: 'Bia', avatar: null, user_location: null, is_online: false, email: 'b@x.io', created_at: '2026-01-01' }
 
 const LISTING: ApiListingDetail = {
   id: 5,

@@ -75,6 +75,7 @@ export default function Layout() {
             <NegotiationChatWidget
               key={activeChat.negotiationId}
               negotiationId={activeChat.negotiationId}
+              interlocutorId={activeChat.interlocutorId}
               interlocutorName={activeChat.interlocutorName}
               isReadOnly={activeChat.isReadOnly}
               onClose={closeChat}
