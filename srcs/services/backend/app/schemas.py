@@ -445,6 +445,8 @@ class FriendOut(BaseModel):
         if value is None:
             return None
         if value.tzinfo is None:
+            # Database DATETIME values are written and read as UTC by the
+            # backend; a naive value therefore represents UTC here.
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
