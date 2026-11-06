@@ -50,12 +50,12 @@ export default function NegotiationChatWidget({
   const charCount = [...inputText].length
   const isOverLimit = charCount > MAX_MESSAGE_LENGTH
   const isConnected = status === 'connected'
-  const canSend = charCount > 0 && !isOverLimit && isConnected && !isReadOnly
+  const trimmed = inputText.trim()
+  const canSend = trimmed.length > 0 && !isOverLimit && isConnected && !isReadOnly
 
   const handleSendMessage = (e: FormEvent) => {
     e.preventDefault()
     if (isReadOnly) return
-    const trimmed = inputText.trim()
     if (!trimmed || [...trimmed].length > MAX_MESSAGE_LENGTH) return
 
     const sent = sendMessage(trimmed)

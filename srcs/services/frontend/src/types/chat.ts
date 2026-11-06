@@ -105,3 +105,20 @@ export interface WebSocketErrorEvent {
  * Union of all possible incoming WebSocket event envelopes.
  */
 export type IncomingWebSocketEvent = MessageCreatedEvent | WebSocketErrorEvent
+
+// ============================================================================
+// 3. WebSocket Close Codes (RFC 6455 & Application Contract)
+// ============================================================================
+
+/**
+ * WebSocket Close Codes.
+ * Standard code 1000 is defined by RFC 6455 Section 7.4.1 (Normal Closure).
+ * Codes 4401, 4403, and 4404 are custom application-level terminal close codes
+ * defined by the backend WebSocket endpoint (Issue #120 / ADR-0002).
+ */
+export const WS_CLOSE_CODES = {
+  NORMAL_CLOSURE: 1000,
+  UNAUTHORIZED: 4401,
+  FORBIDDEN: 4403,
+  NOT_FOUND: 4404,
+} as const

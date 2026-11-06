@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useNegotiationChat } from './useNegotiationChat'
 import { apiListNegotiationMessages } from '../lib/api'
+import { WS_CLOSE_CODES } from '../types/chat'
 import { useAuth } from '../context/AuthContext'
 
 vi.mock('../lib/api', () => ({
@@ -386,7 +387,7 @@ describe('useNegotiationChat', () => {
     const { result: res4401 } = renderHook(() => useNegotiationChat(42))
     const ws4401 = MockWebSocket.instances[0]
     act(() => {
-      ws4401.simulateClose(4401, 'Unauthorized')
+      ws4401.simulateClose(WS_CLOSE_CODES.UNAUTHORIZED, 'Unauthorized')
     })
     expect(res4401.current.status).toBe('disconnected')
     expect(res4401.current.error).toContain('A tua sessão expirou')
@@ -395,7 +396,7 @@ describe('useNegotiationChat', () => {
     const { result: res4404 } = renderHook(() => useNegotiationChat(999))
     const ws4404 = MockWebSocket.instances[1]
     act(() => {
-      ws4404.simulateClose(4404, 'Not Found')
+      ws4404.simulateClose(WS_CLOSE_CODES.NOT_FOUND, 'Not Found')
     })
     expect(res4404.current.status).toBe('disconnected')
     expect(res4404.current.error).toContain('A negociação não foi encontrada')
@@ -404,7 +405,7 @@ describe('useNegotiationChat', () => {
     expect(MockWebSocket.instances).toHaveLength(2)
   })
 
-  it('cleans up and closes socket with code 1000 on unmount', async () => {
+  it('cleans up and closes socket with normal closure code on unmount', async () => {
     vi.useFakeTimers()
     const { unmount } = renderHook(() => useNegotiationChat(42))
     const ws = MockWebSocket.instances[0]
