@@ -58,8 +58,9 @@ class FriendsEndpointsTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(response.json()["id"], self.bob.id)
+        friendship = self.db.query(Friendship).one()
         self.assertEqual(
-            (self.db.query(Friendship).one().user_id, self.db.query(Friendship).one().friend_id),
+            (friendship.user_id, friendship.friend_id),
             (self.alice.id, self.bob.id),
         )
 
@@ -185,7 +186,7 @@ class FriendsEndpointsTestCase(unittest.TestCase):
         self.assertTrue(body["is_online"])
         self.assertIsNotNone(body["last_seen"])
 
-    def test_all_friend_endpoints_require_authentication(self) -> None:
+    def test_friend_and_public_profile_endpoints_require_authentication(self) -> None:
         app.dependency_overrides.pop(get_current_user)
 
         requests = (
