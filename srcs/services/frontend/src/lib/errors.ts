@@ -99,6 +99,7 @@ export function getPortugueseErrorMessage(
  * Translates a WebSocket error code or rejection status into user-friendly European Portuguese (pt-PT) copy.
  *
  * @param code The machine-readable error code or close status (e.g. 'rate_limited', 'empty_content', 4401, 4403).
+ *             'not_connected' is client-side only: the socket was not open when a send was attempted.
  * @param retryAfter Optional seconds to wait before retrying (for 'rate_limited').
  * @returns Localized error string in pt-PT.
  */
@@ -125,6 +126,8 @@ export function getWebSocketErrorMessage(
       return 'Não foi possível guardar a mensagem. Tenta novamente.'
     case 'delivery_failed':
       return 'A mensagem foi guardada, mas não foi entregue em tempo real.'
+    case 'not_connected':
+      return 'O chat não está ligado. Aguarda a reconexão e tenta novamente.'
     case 'unauthenticated':
     case '4401':
       return 'A tua sessão expirou. Por favor, inicia sessão novamente.'

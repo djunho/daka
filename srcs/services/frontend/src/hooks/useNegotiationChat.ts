@@ -282,7 +282,7 @@ export function useNegotiationChat(
       }
 
       if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-        setError(getWebSocketErrorMessage('persistence_failed'))
+        setError(getWebSocketErrorMessage('not_connected'))
         return false
       }
 

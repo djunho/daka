@@ -332,7 +332,7 @@ describe('useNegotiationChat', () => {
     expect(ws.sentData).toHaveLength(1)
   })
 
-  it('returns persistence_failed error when trying to send with socket not open', () => {
+  it('reports the chat as not connected when sending before the socket opens', () => {
     const { result } = renderHook(() => useNegotiationChat(42))
     // Socket is in CONNECTING state (readyState = 0)
     expect(MockWebSocket.instances[0].readyState).toBe(MockWebSocket.CONNECTING)
@@ -343,7 +343,7 @@ describe('useNegotiationChat', () => {
     })
 
     expect(sent).toBe(false)
-    expect(result.current.error).toBe('Não foi possível guardar a mensagem. Tenta novamente.')
+    expect(result.current.error).toBe('O chat não está ligado. Aguarda a reconexão e tenta novamente.')
   })
 
   it('clears error with clearError callback', () => {
