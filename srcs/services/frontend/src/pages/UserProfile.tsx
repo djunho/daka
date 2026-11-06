@@ -1,15 +1,25 @@
-import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
-import { buttonClasses } from '../components/Button'
+import Button, { buttonClasses } from '../components/Button'
 import MessageCard from '../components/MessageCard'
+import OnlineBadge from '../components/OnlineBadge'
 import ListingCard, { EMPTY_STATE_CLASSES, LISTING_GRID_CLASSES } from '../components/ListingCard'
-import { ApiError, apiGetPublicProfile, type ApiPublicProfile } from '../lib/api'
+import {
+  ApiError,
+  apiAddFriend,
+  apiGetFriendStatus,
+  apiGetPublicProfile,
+  apiRemoveFriend,
+  type ApiPublicProfile,
+} from '../lib/api'
+import { getPortugueseErrorMessage } from '../lib/errors'
 
 export default function UserProfile() {
   const { id } = useParams<{ id: string }>()
-  const { user: currentUser } = useAuth()
+  const { hash } = useLocation()
+  const { user: currentUser, logout } = useAuth()
 
   // The backend looks users up by numeric id only. Anything else
   // ("/users/rita") can never match, so it goes straight to "not found"
@@ -22,9 +32,98 @@ export default function UserProfile() {
   const [notFound, setNotFound] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Known before the profile arrives: the route requires a session, so the
+  // current user is already loaded. Your own profile has no friend button.
+  const isOwnProfile = currentUser?.id === userId
+
+  // Friendship with the profile being viewed. null while it is being asked
+  // for, so the button never guesses "Adicionar" or "Remover".
+  const [isFriend, setIsFriend] = useState<boolean | null>(null)
+  const [friendStatusFailed, setFriendStatusFailed] = useState<boolean>(false)
+  const [friendBusy, setFriendBusy] = useState<boolean>(false)
+  const [friendError, setFriendError] = useState<string | null>(null)
+
+  // Bumped on every visit to a profile (and on leaving the page). The friend
+  // requests can also start from a click, outside the effect below, so each
+  // one remembers the visit it belongs to and drops its answer if the user
+  // has moved to another profile meanwhile.
+  const visit = useRef(0)
+  // The friendship request in flight. A new one, or leaving the profile,
+  // cancels it, so only the latest answer can reach the screen.
+  const statusRequest = useRef<AbortController | null>(null)
+
+  function cancelFriendStatus() {
+    statusRequest.current?.abort()
+    statusRequest.current = null
+  }
+
+  function loadFriendStatus() {
+    cancelFriendStatus()
+    const request = new AbortController()
+    statusRequest.current = request
+    setIsFriend(null)
+    setFriendStatusFailed(false)
+    apiGetFriendStatus(userId, request.signal)
+      .then((data) => {
+        if (request.signal.aborted) return
+        setIsFriend(data.is_friend)
+      })
+      .catch((err) => {
+        if (request.signal.aborted) return
+        if (err instanceof ApiError && err.status === 401) {
+          // The session expired. Clearing it lets RequireAuth send them to login.
+          void logout()
+        } else {
+          // The profile itself still shows; only the button waits for a retry.
+          setFriendStatusFailed(true)
+        }
+      })
+  }
+
+  async function toggleFriend() {
+    const current = visit.current
+    const adding = !isFriend
+    setFriendBusy(true)
+    setFriendError(null)
+    try {
+      if (adding) {
+        await apiAddFriend(userId)
+      } else {
+        await apiRemoveFriend(userId)
+      }
+      if (visit.current !== current) return
+      setIsFriend(adding)
+    } catch (err) {
+      if (visit.current !== current) return
+      if (err instanceof ApiError && err.status === 401) {
+        void logout()
+      } else if (adding && err instanceof ApiError && err.status === 409) {
+        // Already friends (added from another tab, or by the other user).
+        setIsFriend(true)
+      } else if (!adding && err instanceof ApiError && err.status === 404) {
+        // No active friendship any more: the other user may have removed it.
+        setIsFriend(false)
+      } else if (adding && err instanceof ApiError && err.status === 404) {
+        // The user deleted their account after the profile loaded.
+        setNotFound(true)
+      } else {
+        setFriendError(getPortugueseErrorMessage(
+          err,
+          adding
+            ? 'Não foi possível adicionar o amigo. Tenta outra vez.'
+            : 'Não foi possível remover o amigo. Tenta outra vez.',
+        ))
+      }
+    } finally {
+      if (visit.current === current) setFriendBusy(false)
+    }
+  }
+
   // Hooks stay above the early returns below (Rules of Hooks).
   useEffect(() => {
     if (!validId) return
+
+    visit.current += 1
 
     // When the id in the URL changes before the previous response arrives,
     // that stale response is dropped.
@@ -36,6 +135,15 @@ export default function UserProfile() {
     setLoading(true)
     setNotFound(false)
     setError(null)
+    setFriendBusy(false)
+    setFriendError(null)
+    // Asked at the same time as the profile, not after it.
+    if (isOwnProfile) {
+      setIsFriend(null)
+      setFriendStatusFailed(false)
+    } else {
+      loadFriendStatus()
+    }
     apiGetPublicProfile(userId)
       .then((data) => {
         if (ignore) return
@@ -47,6 +155,8 @@ export default function UserProfile() {
         // their account (soft delete).
         if (err instanceof ApiError && err.status === 404) {
           setNotFound(true)
+        } else if (err instanceof ApiError && err.status === 401) {
+          void logout()
         } else {
           setError('Não foi possível carregar o perfil. Tenta outra vez.')
         }
@@ -58,8 +168,25 @@ export default function UserProfile() {
 
     return () => {
       ignore = true
+      visit.current += 1
+      cancelFriendStatus()
     }
-  }, [userId, validId])
+    // loadFriendStatus, cancelFriendStatus and logout are left out on purpose:
+    // the first two only read userId (listed), refs and setters, and the last just ends the
+    // session, whichever render it comes from.
+  }, [userId, validId, isOwnProfile])
+
+  // "Ver anúncios" in the friends list links to /users/{id}#anuncios. The
+  // router does not scroll to a hash, and the section only exists once the
+  // profile is on screen, so scroll here. The profile and the end of loading
+  // arrive in separate renders: both are needed, the same as the check that
+  // decides between the skeleton and the page below.
+  const profileReady = !loading && profile !== null && profile.id === userId
+  useEffect(() => {
+    if (profileReady && hash === '#anuncios') {
+      document.getElementById('anuncios')?.scrollIntoView?.({ block: 'start' })
+    }
+  }, [profileReady, hash])
 
   if (!validId || notFound) {
     return (
@@ -106,9 +233,6 @@ export default function UserProfile() {
     )
   }
 
-  // Check if the viewer is looking at their own profile
-  const isOwnProfile = currentUser?.id === profile.id
-
   // Format date: "janeiro de 2026"
   const memberSince = new Date(profile.created_at).toLocaleDateString('pt-PT', {
     month: 'long',
@@ -127,6 +251,7 @@ export default function UserProfile() {
               <h1 className="font-display text-2xl font-bold text-ink">
                 {profile.user_name}
               </h1>
+              <OnlineBadge online={profile.is_online} showLabel className="mt-1" />
               <p className="text-sm text-muted">Membro desde {memberSince}</p>
               {profile.user_location && (
                 <p className="text-xs text-muted flex items-center gap-1 mt-1">
@@ -137,7 +262,7 @@ export default function UserProfile() {
             </div>
           </div>
 
-          {isOwnProfile && (
+          {isOwnProfile ? (
             <div>
               <Link
                 to="/profile"
@@ -145,6 +270,33 @@ export default function UserProfile() {
               >
                 Editar o meu perfil
               </Link>
+            </div>
+          ) : (
+            <div className="flex flex-col items-start sm:items-end gap-1.5">
+              {friendStatusFailed ? (
+                <>
+                  <p className="text-xs text-muted">Não foi possível verificar a amizade.</p>
+                  <Button size="sm" onClick={loadFriendStatus}>
+                    Tentar outra vez
+                  </Button>
+                </>
+              ) : isFriend === null ? (
+                <Button size="sm" loading>
+                  A verificar amizade…
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant={isFriend ? 'dangerOutline' : 'primary'}
+                  loading={friendBusy}
+                  onClick={toggleFriend}
+                >
+                  {isFriend ? 'Remover amigo' : 'Adicionar amigo'}
+                </Button>
+              )}
+              {friendError && (
+                <p role="alert" className="text-xs text-accent">{friendError}</p>
+              )}
             </div>
           )}
         </div>
@@ -167,7 +319,7 @@ export default function UserProfile() {
       </div>
 
       {/* Listings Section */}
-      <section className="space-y-4">
+      <section id="anuncios" className="space-y-4 scroll-mt-24">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-xl font-bold text-ink">
             Artigos de {profile.user_name}

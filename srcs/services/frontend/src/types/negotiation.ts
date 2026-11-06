@@ -39,6 +39,19 @@ export const NEGOTIATION_STATE_LABELS: Record<ApiNegotiationState['state_name'],
   Unavailable: 'Indisponível',
 }
 
+/**
+ * The states in which a negotiation is active and accepts new messages.
+ * Completed, Cancelled or Unavailable lock the negotiation into read-only mode.
+ */
+export const ACTIVE_NEGOTIATION_STATES = ['Open', 'Agreed'] as const satisfies readonly ApiNegotiationState['state_name'][]
+
+export function isNegotiationReadOnly(
+  state: ApiNegotiationState | ApiNegotiationState['state_name'],
+): boolean {
+  const stateName = typeof state === 'string' ? state : state.state_name
+  return !(ACTIVE_NEGOTIATION_STATES as readonly string[]).includes(stateName)
+}
+
 export const NEGOTIATION_ROLE_LABELS: Record<NegotiationRole, string> = {
   owner: 'Proprietário',
   interested: 'Interessado',

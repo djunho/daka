@@ -336,6 +336,12 @@ class UserOut(BaseModel):
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
+
+class SessionOut(BaseModel):
+    """Answer of GET /api/auth/session: the logged-in user, or null."""
+
+    user: UserOut | None
+
 # ==========================================================================
 # LISTINGS SCHEMAS
 # ==========================================================================

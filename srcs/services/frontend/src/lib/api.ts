@@ -1,3 +1,5 @@
+import { type ApiChatMessagePage } from '../types/chat'
+
 // A thin wrapper around fetch for talking to our backend.
 //
 // Everything the frontend sends to the API goes through here, for three
@@ -94,6 +96,8 @@ export type ApiPublicUser = {
   user_name: string
   avatar: string | null
   user_location: string | null
+  // Last activity within the backend's presence window (see app/presence.py).
+  is_online: boolean
 }
 
 export type ApiUser = ApiPublicUser & {
@@ -142,9 +146,30 @@ export type ApiListingPage = {
   offset: number
 }
 
-export type ApiPublicProfile = ApiPublicUser & {
+// Presence, as the backend reports it on profiles and friends (#142):
+// online means an authenticated request in the last 3 minutes. last_seen is
+// null for someone who was never seen.
+export type ApiPresence = {
+  is_online: boolean
+  last_seen: string | null
+}
+
+export type ApiPublicProfile = ApiPublicUser & ApiPresence & {
   created_at: string
   listings: ApiListingSummary[]
+}
+
+export type ApiFriend = ApiPublicUser & ApiPresence
+
+export type ApiFriendStatus = {
+  is_friend: boolean
+}
+
+export type ApiFriendPage = {
+  items: ApiFriend[]
+  total: number
+  limit: number
+  offset: number
 }
 
 // --- The four auth calls, named so components read like prose. ---
@@ -167,8 +192,12 @@ export function apiLogout() {
   return request<void>('/auth/logout', { method: 'POST' })
 }
 
-export function apiMe() {
-  return request<ApiUser>('/auth/me')
+// Used on page load and by the presence heartbeat. Unlike /auth/me, no
+// session is not an error: the answer is 200 with user null, so neither a
+// visitor nor a session that ended with the site open shows a 401 in the
+// browser console.
+export function apiSession() {
+  return request<{ user: ApiUser | null }>('/auth/session')
 }
 
 export function apiDeleteAccount(): Promise<void> {
@@ -295,8 +324,45 @@ export function apiDeleteListingImage(id: number, imageId: number) {
 }
 
 // Requires a session: the backend answers 401 without one.
-export function apiGetPublicProfile(id: number) {
-  return request<ApiPublicProfile>(`/users/${id}`)
+export function apiGetPublicProfile(id: number, signal?: AbortSignal) {
+  return request<ApiPublicProfile>(`/users/${id}`, { signal })
+}
+
+// --- Friends (#143). A friendship is mutual and needs no approval: adding
+// or removing it changes it for both users at once. ---
+
+export type ListFriendsParams = {
+  limit?: number
+  offset?: number
+}
+
+// Active friendships only, online friends first. `signal` lets the page
+// cancel a request it no longer needs.
+export function apiGetFriends(params: ListFriendsParams = {}, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  // Compare with undefined, because 0 is a valid offset.
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+
+  const qs = query.toString()
+  return request<ApiFriendPage>(qs ? `/friends?${qs}` : '/friends', { signal })
+}
+
+// Only an active friendship counts: a removed one answers false, as does
+// asking about yourself.
+export function apiGetFriendStatus(userId: number, signal?: AbortSignal) {
+  return request<ApiFriendStatus>(`/friends/${userId}/status`, { signal })
+}
+
+// 409 when already friends, 404 when the user does not exist or deleted
+// their account. Adding a removed friendship again reactivates it.
+export function apiAddFriend(userId: number) {
+  return request<ApiFriend>(`/friends/${userId}`, { method: 'POST' })
+}
+
+// 404 when there is no active friendship (the other user may have removed it).
+export function apiRemoveFriend(userId: number): Promise<void> {
+  return request<void>(`/friends/${userId}`, { method: 'DELETE' })
 }
 
 export type ApiNegotiationState = {
@@ -398,6 +464,11 @@ export function apiWithdrawProposal(id: number) {
   return request<ApiProposal>(`/proposals/${id}/withdraw`, { method: 'PATCH' })
 }
 
+// Puts a proposal the interested user withdrew back to Pending (ADR-0003).
+export function apiReopenProposal(id: number) {
+  return request<ApiProposal>(`/proposals/${id}/reopen`, { method: 'PATCH' })
+}
+
 export function apiCancelNegotiation(id: number) {
   return request<ApiNegotiationDetail>(`/negotiations/${id}/cancel`, { method: 'PATCH' })
 }
@@ -414,4 +485,23 @@ export function apiCreateNegotiation(listingId: number) {
     method: 'POST',
     body: { listing_id: listingId },
   })
+}
+
+/**
+ * Fetch paginated chat messages for a negotiation.
+ * GET /api/negotiations/{negotiation_id}/messages?limit=50&before_id=...
+ */
+export function apiListNegotiationMessages(
+  negotiationId: number,
+  options: { limit?: number; before_id?: number | null; signal?: AbortSignal } = {},
+) {
+  const params = new URLSearchParams()
+  if (options.limit !== undefined)
+    params.set('limit', String(options.limit))
+  if (options.before_id != null)
+    params.set('before_id', String(options.before_id))
+
+  const query = params.toString()
+  const path = `/negotiations/${negotiationId}/messages${query ? `?${query}` : ''}`
+  return request<ApiChatMessagePage>(path, { signal: options.signal })
 }

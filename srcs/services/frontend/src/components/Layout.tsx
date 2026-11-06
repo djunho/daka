@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import Header from './Header'
+import NegotiationChatWidget from './NegotiationChatWidget'
+import NegotiationsDock from './NegotiationsDock'
+import { useChat } from '../context/ChatContext'
 
 // A page can send a one-off message to the next one through the navigation
 // state, e.g. navigate('/', { state: { notice: 'O teu anúncio foi removido.' } }).
@@ -12,6 +15,7 @@ export default function Layout() {
   const location = useLocation()
   const navigate = useNavigate()
   const [notice, setNotice] = useState<string | null>(null)
+  const { activeChat, closeChat } = useChat()
 
   // A new page starts at the top. Changing the route does not reload the
   // document, so without this the scroll position of the previous page stays
@@ -60,6 +64,30 @@ export default function Layout() {
         <span aria-hidden="true">·</span>
         <Link to="/terms" className="inline-flex items-center min-h-11 px-3 hover:text-brand transition-colors no-underline">Termos</Link>
       </footer>
+
+      {/* Floating dock container pinned to the bottom-right. The chat widget and
+          the dock sit side by side; when they do not fit (phones) the row wraps
+          and the dock drops below the chat instead of overflowing off-screen. */}
+      <div className="fixed bottom-0 right-2 sm:right-6 z-50 flex flex-wrap justify-end items-end gap-3 pointer-events-none max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-3rem)]">
+        {/* 1. Chat Widget (positioned to the left of the dock) */}
+        {activeChat && (
+          <div className="pointer-events-auto">
+            <NegotiationChatWidget
+              key={activeChat.negotiationId}
+              negotiationId={activeChat.negotiationId}
+              interlocutorId={activeChat.interlocutorId}
+              interlocutorName={activeChat.interlocutorName}
+              isReadOnly={activeChat.isReadOnly}
+              onClose={closeChat}
+            />
+          </div>
+        )}
+
+        {/* 2. Negotiations Dock (anchored on the far right) */}
+        <div className="pointer-events-auto">
+          <NegotiationsDock />
+        </div>
+      </div>
     </>
   )
 }

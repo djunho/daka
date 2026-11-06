@@ -4,6 +4,7 @@ import Avatar from '../components/Avatar'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
 import MessageCard from '../components/MessageCard'
+import { useChat } from '../context/ChatContext'
 import ProposalForm from '../components/ProposalForm'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -14,6 +15,7 @@ import {
   apiCreateProposal,
   apiGetNegotiation,
   apiRejectProposal,
+  apiReopenProposal,
   apiWithdrawProposal,
   type ApiNegotiationDetail,
   type ApiProposal,
@@ -24,6 +26,7 @@ import { categoryTint } from '../types/listing'
 import {
   formatDate,
   groupProposals,
+  isNegotiationReadOnly,
   NEGOTIATION_STATE_LABELS,
   PROPOSAL_STATE_LABELS,
 } from '../types/negotiation'
@@ -32,7 +35,7 @@ const CONFLICT_MESSAGE = 'Os dados desta negociação foram alterados ou deixara
 
 // The action waiting for confirmation in the dialog.
 type PendingAction =
-  | { kind: 'accept' | 'reject' | 'withdraw'; proposal: ApiProposal }
+  | { kind: 'accept' | 'reject' | 'withdraw' | 'reopen'; proposal: ApiProposal }
   | { kind: 'cancel' | 'complete' }
 
 function proposalName(proposal: ApiProposal): string {
@@ -70,6 +73,15 @@ function actionCopy(action: PendingAction, negotiation: ApiNegotiationDetail) {
         confirmVariant: 'danger' as const,
         success: 'Proposta retirada.',
       }
+    case 'reopen':
+      return {
+        title: 'Reabrir proposta',
+        message: `A proposta volta a ficar pendente: ${proposalName(action.proposal)}. ${negotiation.owner.user_name} pode aceitá-la ou rejeitá-la.`,
+        confirmLabel: 'Sim, reabrir',
+        busyLabel: 'A reabrir…',
+        confirmVariant: 'primary' as const,
+        success: 'Proposta reaberta.',
+      }
     case 'complete':
       return {
         title: 'Confirmar conclusão',
@@ -91,8 +103,9 @@ function actionCopy(action: PendingAction, negotiation: ApiNegotiationDetail) {
   }
 }
 
-// The header, the actions and the proposals panel (#97). The chat (#123) goes
-// below them. Which actions appear is only a convenience: the backend decides.
+// The header, the actions and the proposals panel (#97). The chat (#123) is the
+// floating widget in Layout, opened from here. Which actions appear is only a
+// convenience: the backend decides.
 export default function Negotiation() {
   const { id } = useParams()
   const { user, logout } = useAuth()
@@ -107,6 +120,19 @@ export default function Negotiation() {
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState<boolean>(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const { activeChat, isChatOpen, openChat, closeChat } = useChat()
+  const chatOpen = negotiation ? isChatOpen(negotiation.id) : false
+
+  // Lock the active chat once this page sees the negotiation closed. Only in
+  // that direction: terminal states never return to Open, and a chat the dock
+  // opened read-only from a fresher list must not be reopened writable by a
+  // page whose negotiation is stale.
+  useEffect(() => {
+    if (!negotiation) return
+    if (activeChat?.negotiationId === negotiation.id && !activeChat.isReadOnly && isNegotiationReadOnly(negotiation.state)) {
+      openChat(negotiation.id, { id: activeChat.interlocutorId, user_name: activeChat.interlocutorName }, true)
+    }
+  }, [negotiation, activeChat, openChat])
 
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const [proposalFormOpen, setProposalFormOpen] = useState<boolean>(false)
@@ -133,7 +159,7 @@ export default function Negotiation() {
   const refreshButton = useRef<HTMLButtonElement | null>(null)
 
   // A refresh keeps what is on screen, so a failure while the tab regains focus
-  // does not hide the negotiation, and the chat below is left alone.
+  // does not hide the negotiation, and the floating chat is left alone.
   // Resolves with the negotiation it loaded, or null if it loaded nothing new.
   const refresh = useCallback((): Promise<ApiNegotiationDetail | null> => {
     if (inFlight.current) return Promise.resolve(null)
@@ -287,6 +313,13 @@ export default function Negotiation() {
       case 'withdraw':
         void perform(() => apiWithdrawProposal(pendingAction.proposal.id), success)
         break
+      case 'reopen':
+        void perform(
+          () => apiReopenProposal(pendingAction.proposal.id),
+          success,
+          'Não foi possível reabrir a proposta: a negociação ou o anúncio oferecido mudaram entretanto. A página foi atualizada.',
+        )
+        break
       case 'cancel':
         void perform(() => apiCancelNegotiation(negotiationId), success)
         break
@@ -306,7 +339,7 @@ export default function Negotiation() {
     const created = await perform(
       () => apiCreateProposal(negotiationId, offeredListingId),
       'Proposta enviada.',
-      'Já existe uma proposta igual nesta negociação, ou os dados foram alterados. A página foi atualizada.',
+      'Já existe uma proposta com este anúncio nesta negociação, ou os dados foram alterados. Se a retiraste, podes reabri-la no histórico. A página foi atualizada.',
       { inlineConflict: true },
     )
     if (created) setProposalFormOpen(false)
@@ -411,21 +444,41 @@ export default function Negotiation() {
           </p>
         )}
 
-        {(stateName === 'Open' || stateName === 'Agreed') && (
-          <div className="flex flex-wrap items-center gap-3">
-            {stateName === 'Agreed' && isInterested && hasAccepted && (
-              <Button variant="primary" size="sm" disabled={busy} onClick={() => askToConfirm({ kind: 'complete' })}>
-                Confirmar conclusão
+        <div className="flex flex-wrap items-center gap-3">
+          {/* The conversation stays readable after the negotiation closes (the
+              widget goes read-only), so this button is offered in every state. */}
+          <Button
+            size="sm"
+            variant={chatOpen ? 'secondary' : 'primary'}
+            onClick={() => {
+              if (chatOpen) {
+                closeChat()
+              } else {
+                const partner = isOwner ? negotiation.interested_user : negotiation.owner
+                // The widget checks the negotiation's current state itself, so a
+                // stale page cannot open a writable chat for a closed negotiation.
+                openChat(negotiation.id, partner, isNegotiationReadOnly(negotiation.state))
+              }
+            }}
+          >
+            <span aria-hidden="true">💬</span> {chatOpen ? 'Fechar conversa' : 'Conversar'}
+          </Button>
+          {(stateName === 'Open' || stateName === 'Agreed') && (
+            <>
+              {stateName === 'Agreed' && isInterested && hasAccepted && (
+                <Button variant="primary" size="sm" disabled={busy} onClick={() => askToConfirm({ kind: 'complete' })}>
+                  Confirmar conclusão
+                </Button>
+              )}
+              {stateName === 'Agreed' && isOwner && (
+                <p className="text-sm text-muted">À espera de que a pessoa interessada confirme a conclusão da troca.</p>
+              )}
+              <Button variant="dangerOutline" size="sm" disabled={busy} onClick={() => askToConfirm({ kind: 'cancel' })}>
+                Cancelar negociação
               </Button>
-            )}
-            {stateName === 'Agreed' && isOwner && (
-              <p className="text-sm text-muted">À espera de que a pessoa interessada confirme a conclusão da troca.</p>
-            )}
-            <Button variant="dangerOutline" size="sm" disabled={busy} onClick={() => askToConfirm({ kind: 'cancel' })}>
-              Cancelar negociação
-            </Button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" onClick={refreshByHand} disabled={busy} loading={refreshing}>
@@ -445,6 +498,9 @@ export default function Negotiation() {
               proposalFormOpen ? (
                 <ProposalForm
                   userId={user.id}
+                  usedListingIds={negotiation.proposals.flatMap((p) => (p.offered_listing ? [p.offered_listing.id] : []))}
+                  hasNoListingProposal={negotiation.proposals.some((p) => p.offered_listing === null)}
+                  canReopen={negotiation.proposals.some((p) => p.state.state_name === 'Withdrawn')}
                   busy={busy}
                   error={actionError}
                   onSubmit={submitProposal}
@@ -671,6 +727,23 @@ function ProposalsPanel({
     )
   }
 
+  // Only the interested user may reopen, and only what they withdrew (ADR-0003).
+  function closedActions(proposal: ApiProposal) {
+    if (!canAct || !isInterested || proposal.state.state_name !== 'Withdrawn') return null
+    return (
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button
+          size="sm"
+          disabled={busy}
+          aria-label={`Reabrir proposta: ${proposalName(proposal)}`}
+          onClick={() => onAction({ kind: 'reopen', proposal })}
+        >
+          Reabrir
+        </Button>
+      </div>
+    )
+  }
+
   return (
     <section aria-labelledby="proposals-heading" className="space-y-5">
       <h2 id="proposals-heading" className="font-display text-xl font-bold text-ink">Propostas</h2>
@@ -691,7 +764,7 @@ function ProposalsPanel({
         renderActions={pendingActions}
         linkListings={canAct}
       />
-      <ProposalGroup title="Histórico" proposals={closed} />
+      <ProposalGroup title="Histórico" proposals={closed} renderActions={closedActions} />
     </section>
   )
 }

@@ -1,19 +1,20 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
 
 import {
-  ApiError,
   apiDeleteAvatar,
   apiLogin,
   apiLogout,
-  apiMe,
   apiDeleteAccount,
   apiRegister,
+  apiSession,
   apiUpdateProfile,
   apiUploadAvatar,
   type UpdateProfileData,
@@ -36,6 +37,12 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  // Re-reads the session from the current cookie, like a heartbeat beat:
+  // 'same' account, another account ('changed', e.g. signed in from another
+  // tab), 'signedOut' (cleared locally, no POST /auth/logout), or 'unknown'
+  // when the check itself failed. Unlike logout(), it never revokes the
+  // session in the current cookie, which may belong to another account.
+  syncUser: () => Promise<'same' | 'changed' | 'signedOut' | 'unknown'>
   updateProfile: (data: UpdateProfileData) => Promise<void>
   deleteAccount: () => Promise<void>
   uploadAvatar: (file: File) => Promise<void>
@@ -56,22 +63,24 @@ const HEARTBEAT_MIN_GAP_MS = 30_000
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<ApiUser | null>(null)
+  const userRef = useRef<ApiUser | null>(null)
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
   const [loading, setLoading] = useState(true)
 
   // On first mount, ask the backend who we are. If a valid session cookie is
-  // present, /auth/me returns the user; if not, it 401s and we stay logged
-  // out. This is what restores a session after a page refresh -- the cookie
-  // survives the reload, and this call reads it back.
+  // present, /auth/session returns the user; if not, it returns user null and
+  // we stay logged out. This is what restores a session after a page refresh
+  // -- the cookie survives the reload, and this call reads it back. It is not
+  // /auth/me because that answers 401 without a session, and the browser
+  // prints every 401 in red in the console, on every visit.
   useEffect(() => {
-    apiMe()
-      .then((me) => setUser(me))
-      .catch((err) => {
-        // A 401 here is normal: it just means nobody is logged in. Anything
-        // else (server down) also leaves us logged out, which is the safe
-        // default. Either way, swallow it -- there is nothing to show.
-        if (!(err instanceof ApiError)) {
-          // Unexpected non-API error; leave user null but don't crash.
-        }
+    apiSession()
+      .then(({ user: current }) => setUser(current))
+      .catch(() => {
+        // The server could not be reached or failed: staying logged out is
+        // the safe default, and there is nothing to show.
         setUser(null)
       })
       .finally(() => setLoading(false))
@@ -96,18 +105,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const runHeartbeat = async () => {
       lastHeartbeatAt = Date.now()
       try {
-        const me = await apiMe()
+        // /auth/session rather than /auth/me: when the session ends with the
+        // site open (it expires, or another tab logs out), the answer is
+        // user null instead of a 401 printed in red in the console.
+        const { user: current } = await apiSession()
+        if (!active) return
+        if (current === null) {
+          stopHeartbeat()
+          setUser(null)
+          return
+        }
         // Keep the same object while the session still belongs to the same
         // account. A new object on every beat would re-run every effect that
         // depends on `user` (the profile form would reset what is being
         // typed). Only a different account (a login in another tab) replaces it.
-        if (active) setUser((prev) => (prev?.id === me.id ? prev : me))
-      } catch (err) {
-        if (!active) return
-        if (err instanceof ApiError && err.status === 401) {
-          stopHeartbeat()
-          setUser(null)
-        }
+        setUser((prev) => (prev?.id === current.id ? prev : current))
+      } catch {
+        // A server or network failure keeps the session: the next beat tries again.
       }
     }
 
@@ -208,6 +222,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const syncUser = useCallback(async () => {
+    try {
+      const { user: current } = await apiSession()
+      if (current === null) {
+        setUser(null)
+        return 'signedOut' as const
+      }
+      const same = userRef.current?.id === current.id
+      // Same object for the same account, as the heartbeat does
+      setUser((prev) => (prev?.id === current.id ? prev : current))
+      return same ? ('same' as const) : ('changed' as const)
+    } catch {
+      return 'unknown' as const
+    }
+  }, [])
+
   return (
     <AuthContext.Provider
       value={{
@@ -216,6 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         logout,
+        syncUser,
         updateProfile,
         deleteAccount,
         uploadAvatar,

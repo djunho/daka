@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { ChatProvider } from './context/ChatContext'
 import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
 import Home from './pages/Home'
@@ -14,6 +15,7 @@ import Publish from './pages/Publish'
 import EditListing from './pages/EditListing'
 import Negotiation from './pages/Negotiation'
 import Negotiations from './pages/Negotiations'
+import Friends from './pages/Friends'
 
 // The router reads the address bar and decides which page component to show.
 // BrowserRouter enables it; Routes picks the first Route whose path matches.
@@ -31,7 +33,8 @@ export default function App() {
       }}
     >
       <AuthProvider>
-        <Routes>
+        <ChatProvider>
+          <Routes>
           <Route element={<Layout />}>
             {/* ---- Public routes ---- */}
             <Route path="/" element={<Home />} />
@@ -74,10 +77,16 @@ export default function App() {
                     <Negotiation />
                 </RequireAuth>
             } />
+            <Route path="/friends" element={
+                <RequireAuth>
+                    <Friends />
+                </RequireAuth>
+            } />
 
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
+        </ChatProvider>
       </AuthProvider>
     </BrowserRouter>
   )

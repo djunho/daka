@@ -1,4 +1,5 @@
 import { ApiError } from './api'
+import { MESSAGE_MAX_LENGTH } from '../types/chat'
 
 /**
  * Thrown by register() when the account was created but the automatic sign-in
@@ -94,3 +95,51 @@ export function getPortugueseErrorMessage(
 
   return fallback
 }
+
+/**
+ * Translates a WebSocket error code or rejection status into user-friendly European Portuguese (pt-PT) copy.
+ *
+ * @param code The machine-readable error code or close status (e.g. 'rate_limited', 'empty_content', 4401, 4403).
+ *             'not_connected' is client-side only: the socket was not open when a send was attempted.
+ * @param retryAfter Optional seconds to wait before retrying (for 'rate_limited').
+ * @returns Localized error string in pt-PT.
+ */
+export function getWebSocketErrorMessage(
+  code: string | number,
+  retryAfter?: number,
+): string {
+  const normalized = String(code).toLowerCase()
+
+  switch (normalized) {
+    case 'rate_limited':
+      return retryAfter
+        ? `Demasiadas mensagens enviadas. Por favor, aguarda ${retryAfter} segundo${retryAfter === 1 ? '' : 's'}.`
+        : 'Demasiadas mensagens enviadas. Por favor, aguarda alguns momentos.'
+    case 'empty_content':
+      return 'A mensagem não pode estar vazia.'
+    case 'content_too_long':
+      return `A mensagem excede o limite máximo de ${MESSAGE_MAX_LENGTH} caracteres.`
+    case 'payload_too_large':
+      return 'A mensagem é demasiado grande para ser processada.'
+    case 'negotiation_read_only':
+      return 'Esta negociação está encerrada. O chat está em modo de leitura.'
+    case 'persistence_failed':
+      return 'Não foi possível guardar a mensagem. Tenta novamente.'
+    case 'delivery_failed':
+      return 'A mensagem foi guardada, mas não foi entregue em tempo real.'
+    case 'not_connected':
+      return 'O chat não está ligado. Aguarda a reconexão e tenta novamente.'
+    case 'unauthenticated':
+    case '4401':
+      return 'A tua sessão expirou. Por favor, inicia sessão novamente.'
+    case 'forbidden':
+    case '4403':
+      return 'Não tens permissão para participar nesta conversa ou a origem não é permitida.'
+    case 'negotiation_not_found':
+    case '4404':
+      return 'A negociação não foi encontrada.'
+    default:
+      return 'Ocorreu um erro na ligação do chat. Tenta novamente.'
+  }
+}
+
