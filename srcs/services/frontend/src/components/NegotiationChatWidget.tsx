@@ -135,7 +135,7 @@ export default function NegotiationChatWidget({
 
   const handleSendMessage = (e: FormEvent) => {
     e.preventDefault()
-    if (isReadOnly) return
+    if (isReadOnly || isSending) return
     if (!trimmed || [...trimmed].length > MESSAGE_MAX_LENGTH) return
 
     if (sendMessage(trimmed)) {
@@ -361,13 +361,21 @@ export default function NegotiationChatWidget({
                 }}
                 placeholder={placeholder}
                 aria-label="Mensagem"
-                disabled={!isConnected || isReadOnly}
-                className="flex-1 px-3 py-1.5 bg-paper border border-line focus:border-brand focus:outline-none rounded-xl text-xs text-ink placeholder:text-muted transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                // Only a closed negotiation disables the composer. While the
+                // chat reconnects it is read-only instead, so a focused input
+                // keeps the keyboard focus (a disabled one drops it to <body>).
+                disabled={isReadOnly}
+                readOnly={!isConnected}
+                aria-disabled={!isConnected || undefined}
+                className="flex-1 px-3 py-1.5 bg-paper border border-line focus:border-brand focus:outline-none rounded-xl text-xs text-ink placeholder:text-muted transition-colors disabled:opacity-60 disabled:cursor-not-allowed aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"
               />
+              {/* Likewise, a send in flight marks the button aria-disabled rather
+                  than disabled, so pressing it does not lose the focus. */}
               <button
                 type="submit"
-                disabled={!canSend}
-                className="px-3 py-1.5 bg-brand not-disabled:hover:opacity-90 text-white text-xs font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                disabled={!canSend && !isSending}
+                aria-disabled={isSending || undefined}
+                className="px-3 py-1.5 bg-brand not-disabled:not-aria-disabled:hover:opacity-90 text-white text-xs font-semibold rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed shrink-0"
               >
                 {isSending ? 'A enviar…' : 'Enviar'}
               </button>

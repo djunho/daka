@@ -17,6 +17,12 @@ export type ChatConnectionStatus = 'connecting' | 'connected' | 'disconnected' |
 type RefusalCode = 'unauthenticated' | 'forbidden' | 'negotiation_not_found'
 type SyncResult = 'merged' | 'dropped' | 'failed' | RefusalCode
 
+// Error frames the server sends right before closing with 4401/4403/4404
+const CLOSING_ERROR_CODES = new Set(['unauthenticated', 'forbidden', 'negotiation_not_found'])
+
+// How long a socket must stay open before the reconnect backoff resets
+const STABLE_CONNECTION_MS = 5000
+
 const REFUSAL_BY_STATUS: Partial<Record<number, RefusalCode>> = {
   401: 'unauthenticated',
   403: 'forbidden',
@@ -335,6 +341,10 @@ export function useNegotiationChat(
 
     let isCancelled = false
     let socket: WebSocket | null = null
+    // The server accepts a refused handshake and then closes it (4401/4403/
+    // 4404), so opening proves nothing: the backoff resets only once the
+    // socket has stayed open for a while.
+    let stableTimer: ReturnType<typeof setTimeout> | null = null
 
     // Fetch the newest page while the chat is live (after a reconnect, or for a
     // message stored without delivery): announce what is new, recover from a
@@ -372,7 +382,9 @@ export function useNegotiationChat(
         if (reconnectAttemptsRef.current > 0) {
           syncNewest()
         }
-        reconnectAttemptsRef.current = 0
+        stableTimer = setTimeout(() => {
+          reconnectAttemptsRef.current = 0
+        }, STABLE_CONNECTION_MS)
       }
 
       socket.onmessage = (event: MessageEvent) => {
@@ -424,10 +436,15 @@ export function useNegotiationChat(
             if (data.error.code === 'delivery_failed') {
               syncNewest()
             }
-            showError(
-              getWebSocketErrorMessage(data.error.code, data.error.retry_after),
-              data.error.code === 'delivery_failed' || data.error.code === 'negotiation_read_only',
-            )
+            // These codes precede a close with the matching code (4401/4403/
+            // 4404); onclose decides what to show, so the 4401 check stays
+            // quiet and a refusal is not announced twice.
+            if (!CLOSING_ERROR_CODES.has(data.error.code)) {
+              showError(
+                getWebSocketErrorMessage(data.error.code, data.error.retry_after),
+                data.error.code === 'delivery_failed' || data.error.code === 'negotiation_read_only',
+              )
+            }
           }
         } catch {
           // Ignore invalid frames to prevent crashing the socket listener
@@ -440,6 +457,10 @@ export function useNegotiationChat(
       }
 
       socket.onclose = (event: CloseEvent) => {
+        if (stableTimer) {
+          clearTimeout(stableTimer)
+          stableTimer = null
+        }
         if (isCancelled) return
         // An unanswered send is unknown; the text stays in the composer
         pendingContentRef.current = null
@@ -505,6 +526,7 @@ export function useNegotiationChat(
 
     return () => {
       isCancelled = true
+      if (stableTimer) clearTimeout(stableTimer)
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null
