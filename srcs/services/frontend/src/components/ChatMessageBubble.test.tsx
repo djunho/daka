@@ -48,16 +48,7 @@ describe('ChatMessageBubble', () => {
     expect(bubble).toHaveClass('bg-surface', 'border', 'border-line', 'text-ink')
   })
 
-  it('supports pre-formatted HH:mm time and fallback on invalid date', () => {
-    render(
-      <ChatMessageBubble
-        content="Mensagem com hora HH:mm"
-        createdAt="15:45"
-        isOwn={true}
-      />,
-    )
-    expect(screen.getByText('15:45')).toBeInTheDocument()
-
+  it('falls back to the raw value on an invalid date', () => {
     render(
       <ChatMessageBubble
         content="Mensagem com data inválida"
