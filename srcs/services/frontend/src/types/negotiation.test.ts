@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ApiProposal } from '../lib/api'
-import { groupProposals, isNegotiationReadOnly } from './negotiation'
+import { ACTIVE_NEGOTIATION_STATES, groupProposals, isNegotiationReadOnly } from './negotiation'
 
 function proposal(id: number, created_at: string): ApiProposal {
   return {
@@ -34,6 +34,10 @@ describe('groupProposals', () => {
 })
 
 describe('isNegotiationReadOnly', () => {
+  it('treats exactly the active states as writable', () => {
+    expect(ACTIVE_NEGOTIATION_STATES).toEqual(['Open', 'Agreed'])
+  })
+
   it('returns false for active states (Open and Agreed)', () => {
     expect(isNegotiationReadOnly('Open')).toBe(false)
     expect(isNegotiationReadOnly('Agreed')).toBe(false)
