@@ -123,12 +123,14 @@ export default function Negotiation() {
   const { activeChat, isChatOpen, openChat, closeChat } = useChat()
   const chatOpen = negotiation ? isChatOpen(negotiation.id) : false
 
-  // Keep active chat read-only state in sync with the negotiation state
+  // Lock the active chat once this page sees the negotiation closed. Only in
+  // that direction: terminal states never return to Open, and a chat the dock
+  // opened read-only from a fresher list must not be reopened writable by a
+  // page whose negotiation is stale.
   useEffect(() => {
     if (!negotiation) return
-    const isReadOnly = isNegotiationReadOnly(negotiation.state)
-    if (activeChat?.negotiationId === negotiation.id && activeChat.isReadOnly !== isReadOnly) {
-      openChat(negotiation.id, { id: activeChat.interlocutorId, user_name: activeChat.interlocutorName }, isReadOnly)
+    if (activeChat?.negotiationId === negotiation.id && !activeChat.isReadOnly && isNegotiationReadOnly(negotiation.state)) {
+      openChat(negotiation.id, { id: activeChat.interlocutorId, user_name: activeChat.interlocutorName }, true)
     }
   }, [negotiation, activeChat, openChat])
 
@@ -453,6 +455,8 @@ export default function Negotiation() {
                 closeChat()
               } else {
                 const partner = isOwner ? negotiation.interested_user : negotiation.owner
+                // The widget checks the negotiation's current state itself, so a
+                // stale page cannot open a writable chat for a closed negotiation.
                 openChat(negotiation.id, partner, isNegotiationReadOnly(negotiation.state))
               }
             }}

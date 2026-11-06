@@ -25,6 +25,8 @@ const Consumer = memo(function Consumer() {
       </span>
       <span data-testid="open7">{String(isChatOpen(7))}</span>
       <button onClick={() => openChat(7, { id: 2, user_name: 'Bruno' }, true)}>abrir</button>
+      <button onClick={() => openChat(7, { id: 2, user_name: 'Bruno' }, false)}>abrir-escrita</button>
+      <button onClick={() => openChat(8, { id: 3, user_name: 'Carla' }, false)}>abrir-outra</button>
       <button onClick={closeChat}>fechar</button>
     </div>
   )
@@ -67,6 +69,17 @@ describe('ChatProvider', () => {
     fireEvent.click(screen.getByText(/parent/))
 
     expect(consumerRenders.mock.calls.length).toBe(before)
+  })
+
+  it('keeps a read-only lock when the same negotiation is reopened as writable', () => {
+    render(<App />)
+    fireEvent.click(screen.getByText('abrir'))
+    fireEvent.click(screen.getByText('abrir-escrita'))
+    expect(screen.getByTestId('active')).toHaveTextContent('7:2:Bruno:true')
+
+    // Another negotiation starts from its own state
+    fireEvent.click(screen.getByText('abrir-outra'))
+    expect(screen.getByTestId('active')).toHaveTextContent('8:3:Carla:false')
   })
 
   it('dismisses the active chat on logout', () => {

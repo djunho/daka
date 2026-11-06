@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { ApiError, apiListNegotiationMessages } from '../lib/api'
+import { ApiError, apiGetNegotiation, apiListNegotiationMessages } from '../lib/api'
+import { isNegotiationReadOnly } from '../types/negotiation'
 import { getWebSocketErrorMessage } from '../lib/errors'
 import type {
   IncomingWebSocketEvent,
@@ -202,6 +203,21 @@ export function useNegotiationChat(
     },
     [],
   )
+
+  // Whoever opened the chat (the dock, a page) may hold an old state: ask for
+  // the current one, so a negotiation closed since then opens read-only
+  // instead of failing on the first send. Failures are left to the socket,
+  // which reports refusals with its close codes.
+  useEffect(() => {
+    if (!negotiationId || !currentUserId) return
+    const controller = new AbortController()
+    apiGetNegotiation(negotiationId, controller.signal)
+      .then((negotiation) => {
+        if (!controller.signal.aborted && isNegotiationReadOnly(negotiation.state)) setServerReadOnly(true)
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [negotiationId, currentUserId])
 
   // Fetch initial message history from the REST endpoint
   useEffect(() => {

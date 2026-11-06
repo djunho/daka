@@ -48,9 +48,9 @@ function negotiation(state: ApiNegotiationState['state_name']): ApiNegotiationDe
 const openChat = vi.fn()
 const closeChat = vi.fn()
 
-function chat(activeId: number | null) {
+function chat(activeId: number | null, isReadOnly = false) {
   vi.mocked(useChat).mockReturnValue({
-    activeChat: activeId === null ? null : { negotiationId: activeId, interlocutorId: 1, interlocutorName: 'Ana', isReadOnly: false },
+    activeChat: activeId === null ? null : { negotiationId: activeId, interlocutorId: 1, interlocutorName: 'Ana', isReadOnly },
     openChat,
     closeChat,
     isChatOpen: (id) => id === activeId,
@@ -95,6 +95,16 @@ describe('Negotiation chat button', () => {
 
     expect(openChat).toHaveBeenCalledWith(20, expect.objectContaining({ id: 1, user_name: 'Ana' }), true)
     expect(screen.queryByRole('button', { name: 'Cancelar negociação' })).not.toBeInTheDocument()
+  })
+
+  it('never reopens a read-only chat as writable from a stale page', async () => {
+    // The dock opened the chat read-only from a fresh list; this page still has the negotiation as Open
+    vi.mocked(apiGetNegotiation).mockResolvedValue(negotiation('Open'))
+    chat(20, true)
+    renderPage()
+
+    await screen.findByRole('button', { name: 'Fechar conversa' })
+    expect(openChat).not.toHaveBeenCalled()
   })
 
   it('syncs an open chat to read-only and closes it from the page', async () => {

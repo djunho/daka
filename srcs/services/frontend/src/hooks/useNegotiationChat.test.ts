@@ -1,13 +1,14 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useNegotiationChat } from './useNegotiationChat'
-import { ApiError, apiListNegotiationMessages } from '../lib/api'
+import { ApiError, apiGetNegotiation, apiListNegotiationMessages, type ApiNegotiationDetail } from '../lib/api'
 import { WS_CLOSE_CODES } from '../types/chat'
 import { useAuth } from '../context/AuthContext'
 
 vi.mock('../lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/api')>()),
   apiListNegotiationMessages: vi.fn(),
+  apiGetNegotiation: vi.fn(),
 }))
 
 type MessagePage = Awaited<ReturnType<typeof apiListNegotiationMessages>>
@@ -74,6 +75,7 @@ describe('useNegotiationChat', () => {
       logout,
     } as unknown as ReturnType<typeof useAuth>)
 
+    vi.mocked(apiGetNegotiation).mockResolvedValue({ id: 42, state: { id: 1, state_name: 'Open' } } as ApiNegotiationDetail)
     vi.mocked(apiListNegotiationMessages).mockResolvedValue({
       items: [
         {
@@ -309,6 +311,33 @@ describe('useNegotiationChat', () => {
 
     expect(sent).toBe(false)
     expect(result.current.error).toBe('Esta negociação está encerrada. O chat está em modo de leitura.')
+  })
+
+  it('opens read-only when the negotiation is already closed, whatever the caller believed', async () => {
+    vi.mocked(apiGetNegotiation).mockResolvedValueOnce({ id: 42, state: { id: 3, state_name: 'Cancelled' } } as ApiNegotiationDetail)
+    const { result } = renderHook(() => useNegotiationChat(42, { isReadOnly: false }))
+    expect(apiGetNegotiation).toHaveBeenCalledWith(42, expect.any(AbortSignal))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.isReadOnly).toBe(true)
+  })
+
+  it('stays writable for an active negotiation, and when its state cannot be read', async () => {
+    const { result, unmount } = renderHook(() => useNegotiationChat(42))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.isReadOnly).toBe(false)
+    unmount()
+
+    vi.mocked(apiGetNegotiation).mockRejectedValueOnce(new ApiError(500, 'boom'))
+    const second = renderHook(() => useNegotiationChat(42))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(second.result.current.isReadOnly).toBe(false)
+    expect(second.result.current.error).toBeNull()
   })
 
   it('switches to read-only dynamically when server emits negotiation_read_only error', () => {

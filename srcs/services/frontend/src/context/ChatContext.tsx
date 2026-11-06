@@ -48,13 +48,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [user])
 
+  // A read-only lock is one-way: re-opening the same negotiation from an
+  // older list (the dock, a stale page) never makes it writable again, since
+  // closed negotiations never reopen.
   const openChat = useCallback((negotiationId: number, interlocutor: ChatInterlocutor, isReadOnly?: boolean) => {
-    setActiveChat({
+    setActiveChat((previous) => ({
       negotiationId,
       interlocutorId: interlocutor.id,
       interlocutorName: interlocutor.user_name,
-      isReadOnly,
-    })
+      isReadOnly: Boolean(isReadOnly) || (previous?.negotiationId === negotiationId && Boolean(previous.isReadOnly)),
+    }))
   }, [])
 
   const closeChat = useCallback(() => {
