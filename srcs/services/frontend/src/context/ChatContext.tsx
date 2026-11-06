@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { useAuth } from './AuthContext'
 
 export interface ActiveChat {
@@ -57,18 +57,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     return activeChat?.negotiationId === negotiationId
   }, [activeChat])
 
-  return (
-    <ChatContext.Provider
-      value={{
-        activeChat,
-        openChat,
-        closeChat,
-        isChatOpen,
-      }}
-    >
-      {children}
-    </ChatContext.Provider>
+  // A stable value: the provider re-renders with AuthProvider (heartbeat,
+  // profile updates) and every useChat() consumer would re-render with it.
+  const value = useMemo(
+    () => ({ activeChat, openChat, closeChat, isChatOpen }),
+    [activeChat, openChat, closeChat, isChatOpen],
   )
+
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
 }
 
 export function useChat(): ChatContextType {
