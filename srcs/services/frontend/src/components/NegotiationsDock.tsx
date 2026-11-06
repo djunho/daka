@@ -1,23 +1,31 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import Avatar from './Avatar'
-import { ApiError, apiListNegotiations, type ApiNegotiationSummary } from '../lib/api'
+import { ApiError, apiListNegotiations, type ApiNegotiationPage, type ApiNegotiationSummary } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
-import { isNegotiationReadOnly } from '../types/negotiation'
+import { ACTIVE_NEGOTIATION_STATES, isNegotiationReadOnly } from '../types/negotiation'
+
+// Cards per active state. Closed negotiations are not listed here: their
+// read-only chat is reachable from the negotiation page (linked from /negotiations).
+const DOCK_CARDS = 15
 
 /**
  * NegotiationsDock:
  * Floating dock / drawer pinned at the bottom-right of the viewport.
  * When minimized: displays a compact floating square with a 🤝 icon and active count badge.
- * When expanded: displays the list of negotiations as cards matching Daniel's wireframe,
- * allowing instant 1-click access to open the chat or navigate to the full negotiation page.
+ * When expanded: displays the active negotiations (Open and Agreed) as cards matching
+ * Daniel's wireframe, allowing instant 1-click access to open the chat or navigate to
+ * the full negotiation page.
  */
 export default function NegotiationsDock() {
   const { user, logout } = useAuth()
   const { activeChat, openChat } = useChat()
   const [isOpen, setIsOpen] = useState(false)
   const [negotiations, setNegotiations] = useState<ApiNegotiationSummary[]>([])
+  // Server-side totals of Open + Agreed: exact even beyond the cards shown
+  // null when the last load failed: unknown is not the same as none
+  const [activeCount, setActiveCount] = useState<number | null>(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,17 +47,42 @@ export default function NegotiationsDock() {
     setLoading(true)
     setError(null)
     try {
-      const page = await apiListNegotiations({ limit: 15 }, controller.signal)
+      // The list filter takes one state, so each active state is one request.
+      // All are awaited to the end: a 401 on any must sign out, even when
+      // another one failed first.
+      const results = await Promise.allSettled(
+        ACTIVE_NEGOTIATION_STATES.map((state) =>
+          apiListNegotiations({ state, limit: DOCK_CARDS }, controller.signal),
+        ),
+      )
       if (controller.signal.aborted) return
-      setNegotiations(page.items)
-    } catch (err) {
-      if (controller.signal.aborted) return
-      if (err instanceof ApiError && err.status === 401) {
+      const failures = results.flatMap((r) => (r.status === 'rejected' ? [r.reason] : []))
+      if (failures.some((err) => err instanceof ApiError && err.status === 401)) {
         // The session expired. Clearing it lets RequireAuth send them to login.
         void logoutRef.current()
         return
       }
-      setError('Não foi possível carregar as negociações.')
+      if (failures.length > 0) {
+        // No half-loaded or outdated list under the error message
+        setNegotiations([])
+        setActiveCount(null)
+        setError('Não foi possível carregar as negociações.')
+        return
+      }
+      const pages = results.map((r) => (r as PromiseFulfilledResult<ApiNegotiationPage>).value)
+      // Each page holds its state's newest DOCK_CARDS, so the newest DOCK_CARDS of
+      // their union are exactly the newest active ones overall.
+      // A negotiation that changed state between the requests can be in two
+      // pages; keep it once (its newest copy comes first after sorting).
+      const seen = new Set<number>()
+      setNegotiations(
+        pages
+          .flatMap((page) => page.items)
+          .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at) || b.id - a.id)
+          .filter((n) => !seen.has(n.id) && seen.add(n.id) !== undefined)
+          .slice(0, DOCK_CARDS),
+      )
+      setActiveCount(pages.reduce((sum, page) => sum + page.total, 0))
     } finally {
       if (!controller.signal.aborted) setLoading(false)
     }
@@ -60,6 +93,7 @@ export default function NegotiationsDock() {
       void loadNegotiations()
     } else {
       setNegotiations([])
+      setActiveCount(0)
       setLoading(false)
       setIsOpen(false)
     }
@@ -69,9 +103,13 @@ export default function NegotiationsDock() {
   // Don't render anything for unauthenticated visitors
   if (!user) return null
 
-  // Count active negotiations (not in read-only mode)
-  const activeCount = negotiations.filter((n) => !isNegotiationReadOnly(n.state)).length
   const activeLabel = activeCount === 1 ? '1 negociação ativa' : `${activeCount} negociações ativas`
+  const triggerLabel =
+    activeCount === null
+      ? 'Abrir gaveta de negociações, não foi possível carregar as negociações'
+      : activeCount > 0
+        ? `Abrir gaveta de negociações, ${activeLabel}`
+        : 'Abrir gaveta de negociações'
 
   return (
     <aside
@@ -86,19 +124,19 @@ export default function NegotiationsDock() {
             setIsOpen(true)
             void loadNegotiations()
           }}
-          aria-label={activeCount > 0 ? `Abrir gaveta de negociações, ${activeLabel}` : 'Abrir gaveta de negociações'}
+          aria-label={triggerLabel}
           title="Ver negociações"
           className="relative mb-3 w-12 h-12 flex items-center justify-center bg-brand hover:opacity-90 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 select-none hover:scale-105 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
         >
           <span className="text-2xl" aria-hidden="true">🤝</span>
-          {activeCount > 0 && (
+          {(activeCount === null || activeCount > 0) && (
             // The count is read as part of the button's label: an aria-label on a
-            // plain span is ignored by screen readers.
+            // plain span is ignored by screen readers. "!" marks an unknown count.
             <span
               aria-hidden="true"
               className="absolute -top-1.5 -right-1.5 bg-accent text-white text-[10px] font-bold min-w-5 h-5 px-1 flex items-center justify-center rounded-full border-2 border-surface shadow-sm"
             >
-              {activeCount}
+              {activeCount ?? '!'}
             </span>
           )}
         </button>
@@ -110,9 +148,9 @@ export default function NegotiationsDock() {
             <div className="flex items-center gap-2 min-w-0">
               <span className="text-lg" aria-hidden="true">🤝</span>
               <h3 className="font-semibold text-sm truncate">As Minhas Negociações</h3>
-              {negotiations.length > 0 && (
+              {activeCount !== null && activeCount > 0 && (
                 <span className="text-[10px] bg-white/20 text-white font-bold px-2 py-0.5 rounded-full shrink-0">
-                  {negotiations.length}
+                  {activeCount}
                 </span>
               )}
             </div>
@@ -157,9 +195,9 @@ export default function NegotiationsDock() {
             {!loading && !error && negotiations.length === 0 && (
               <div className="py-8 text-center text-muted px-4">
                 <span className="text-2xl mb-1 block" aria-hidden="true">📭</span>
-                <p className="text-xs font-medium text-ink">Sem negociações</p>
+                <p className="text-xs font-medium text-ink">Sem negociações ativas</p>
                 <p className="text-[11px] text-muted mt-0.5">
-                  Ainda não tens negociações em curso. Explora os anúncios para propor trocas!
+                  Não tens negociações em curso. Explora os anúncios para propor trocas!
                 </p>
               </div>
             )}
@@ -204,6 +242,8 @@ export default function NegotiationsDock() {
                     <button
                       type="button"
                       onClick={() => {
+                        // Always writable for the states listed; kept so the call
+                        // stays right if the list ever widens.
                         openChat(neg.id, otherUser, isNegotiationReadOnly(neg.state))
                         // Picking a conversation collapses the drawer so the chat gets the
                         // space; on phones both panels would not fit side by side.
@@ -231,19 +271,17 @@ export default function NegotiationsDock() {
             })}
           </div>
 
-          {/* Drawer footer */}
-          {negotiations.length > 0 && (
-            <div className="p-2.5 bg-surface border-t border-line text-center">
-              <Link
-                to="/negotiations"
-                onClick={() => setIsOpen(false)}
-                className="text-xs font-medium text-brand hover:underline inline-flex items-center gap-1"
-              >
-                <span>Ver todas as negociações</span>
-                <span aria-hidden="true">→</span>
-              </Link>
-            </div>
-          )}
+          {/* Drawer footer: the full list also holds the closed negotiations */}
+          <div className="p-2.5 bg-surface border-t border-line text-center">
+            <Link
+              to="/negotiations"
+              onClick={() => setIsOpen(false)}
+              className="text-xs font-medium text-brand hover:underline inline-flex items-center gap-1"
+            >
+              <span>Ver todas as negociações</span>
+              <span aria-hidden="true">→</span>
+            </Link>
+          </div>
         </div>
       )}
     </aside>
