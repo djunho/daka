@@ -7,11 +7,9 @@ import {
 } from 'react'
 
 import {
-  ApiError,
   apiDeleteAvatar,
   apiLogin,
   apiLogout,
-  apiMe,
   apiDeleteAccount,
   apiRegister,
   apiSession,
@@ -95,18 +93,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const runHeartbeat = async () => {
       lastHeartbeatAt = Date.now()
       try {
-        const me = await apiMe()
+        // /auth/session rather than /auth/me: when the session ends with the
+        // site open (it expires, or another tab logs out), the answer is
+        // user null instead of a 401 printed in red in the console.
+        const { user: current } = await apiSession()
+        if (!active) return
+        if (current === null) {
+          stopHeartbeat()
+          setUser(null)
+          return
+        }
         // Keep the same object while the session still belongs to the same
         // account. A new object on every beat would re-run every effect that
         // depends on `user` (the profile form would reset what is being
         // typed). Only a different account (a login in another tab) replaces it.
-        if (active) setUser((prev) => (prev?.id === me.id ? prev : me))
-      } catch (err) {
-        if (!active) return
-        if (err instanceof ApiError && err.status === 401) {
-          stopHeartbeat()
-          setUser(null)
-        }
+        setUser((prev) => (prev?.id === current.id ? prev : current))
+      } catch {
+        // A server or network failure keeps the session: the next beat tries again.
       }
     }
 

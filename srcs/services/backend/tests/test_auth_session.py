@@ -49,10 +49,10 @@ class SessionCheckTestCase(unittest.TestCase):
             self.client.cookies.set(SESSION_COOKIE_NAME, token)
         return self.client.get("/auth/session")
 
-    def assert_cookie_cleared(self, response) -> None:
-        header = response.headers.get("set-cookie", "")
-        self.assertIn(f"{SESSION_COOKIE_NAME}=", header)
-        self.assertIn("Max-Age=0", header)
+    def assert_cookie_untouched(self, response) -> None:
+        # Another tab may have just logged in: clearing the cookie here would
+        # delete that new session's cookie.
+        self.assertNotIn("set-cookie", response.headers)
 
     def test_no_cookie_answers_200_with_no_user(self) -> None:
         response = self.check()
@@ -61,12 +61,12 @@ class SessionCheckTestCase(unittest.TestCase):
         self.assertEqual(response.json(), NO_SESSION)
         self.assertNotIn("set-cookie", response.headers)
 
-    def test_unknown_cookie_answers_no_user_and_clears_it(self) -> None:
+    def test_unknown_cookie_answers_no_user_and_leaves_the_cookie(self) -> None:
         response = self.check("not-a-session")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), NO_SESSION)
-        self.assert_cookie_cleared(response)
+        self.assert_cookie_untouched(response)
 
     def test_expired_session_answers_no_user_and_is_deleted(self) -> None:
         self.open_session("old", expires_in=timedelta(hours=-1))
@@ -75,7 +75,7 @@ class SessionCheckTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), NO_SESSION)
-        self.assert_cookie_cleared(response)
+        self.assert_cookie_untouched(response)
         self.assertEqual(self.db.query(UserSession).count(), 0)
 
     def test_deactivated_account_answers_no_user(self) -> None:

@@ -167,12 +167,9 @@ export function apiLogout() {
   return request<void>('/auth/logout', { method: 'POST' })
 }
 
-export function apiMe() {
-  return request<ApiUser>('/auth/me')
-}
-
-// Used on page load. Unlike /auth/me, no session is not an error: the answer
-// is 200 with user null, so a visitor without a session sees no 401 in the
+// Used on page load and by the presence heartbeat. Unlike /auth/me, no
+// session is not an error: the answer is 200 with user null, so neither a
+// visitor nor a session that ended with the site open shows a 401 in the
 // browser console.
 export function apiSession() {
   return request<{ user: ApiUser | null }>('/auth/session')
