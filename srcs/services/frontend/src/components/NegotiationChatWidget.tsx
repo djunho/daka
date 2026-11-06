@@ -4,7 +4,7 @@ import ChatMessageBubble from './ChatMessageBubble'
 import { useNegotiationChat } from '../hooks/useNegotiationChat'
 import { useUserPresence } from '../hooks/useUserPresence'
 import { formatDate } from '../types/negotiation'
-import { MESSAGE_MAX_LENGTH, normaliseMessageContent } from '../types/chat'
+import { DOCK_TRIGGER_ID, MESSAGE_MAX_LENGTH, normaliseMessageContent } from '../types/chat'
 
 // Calendar day in the viewer's timezone: a separator goes where it changes.
 function dayKey(iso: string): string {
@@ -41,10 +41,13 @@ export default function NegotiationChatWidget({
     isLoadingHistory,
     isReadOnly,
     error,
+    errorSeq,
+    errorIsNotice,
     clearError,
     sendMessage,
     isSending,
     confirmedSends,
+    incoming,
     historyFailed,
     retryHistory,
     connectionRefused,
@@ -68,6 +71,17 @@ export default function NegotiationChatWidget({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [newestId, isMinimized])
+
+  // Screen readers hear only new messages from the other person (the hook
+  // decides what is new). The thread itself is not a live region: the first
+  // page, older pages and a thread replaced after a reconnect insert dozens
+  // of bubbles at once, which would all be read aloud.
+  const latestIncoming = incoming.messages[incoming.messages.length - 1]
+  const announcement = !latestIncoming
+    ? ''
+    : incoming.messages.length === 1
+      ? `Nova mensagem de ${interlocutorName}: ${latestIncoming.content}`
+      : `${incoming.messages.length} novas mensagens de ${interlocutorName}. A última: ${latestIncoming.content}`
 
   // Keep the viewport on the same message when an older page is inserted above:
   // snapshot the scroll metrics on click and compensate once an older first id
@@ -129,11 +143,51 @@ export default function NegotiationChatWidget({
     }
   }
 
+  // The widget opens on a person's action (a "Chat" card, "Conversar"), so it
+  // takes the focus; closing it gives the focus back to what opened it, or to
+  // the dock trigger when that is gone (the card of a collapsed drawer).
+  const rootRef = useRef<HTMLElement | null>(null)
+  const openerRef = useRef<Element | null>(null)
+  useEffect(() => {
+    // StrictMode runs this twice; the second run must not record the widget
+    // itself (focused by the first run) as the opener.
+    const active = document.activeElement
+    if (openerRef.current === null && !rootRef.current?.contains(active)) openerRef.current = active
+    rootRef.current?.focus()
+  }, [])
+  const handleClose = () => {
+    const opener = openerRef.current
+    const target =
+      opener instanceof HTMLElement && opener.isConnected && opener !== document.body
+        ? opener
+        : document.getElementById(DOCK_TRIGGER_ID)
+    onClose?.()
+    target?.focus()
+  }
+
   return (
     <aside
+      ref={rootRef}
+      tabIndex={-1}
       aria-label={`Chat da negociação #${negotiationId}`}
-      className="w-80 bg-surface border border-line rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-200"
+      className="w-[min(20rem,calc(100vw-1rem))] bg-surface border border-line rounded-t-2xl shadow-2xl overflow-hidden transition-all duration-200 focus:outline-none"
     >
+      {/* Always mounted (also while minimized), so changes are announced. The
+          key replaces the node per batch, so a repeated text is read again. */}
+      <div aria-live="polite" className="sr-only">
+        {announcement && <p key={incoming.seq}>{announcement}</p>}
+      </div>
+      {/* Why a send failed or the chat stopped is announced assertively;
+          information (stored but not broadcast, negotiation closed) politely.
+          Both regions are always mounted, and each error is a new node, so
+          the same error twice is read twice. The visible banner below is
+          hidden from assistive technology to avoid reading it twice. */}
+      <div role="alert" className="sr-only">
+        {error && !errorIsNotice && <p key={errorSeq}>{error}</p>}
+      </div>
+      <div aria-live="polite" className="sr-only">
+        {error && errorIsNotice && <p key={errorSeq}>{error}</p>}
+      </div>
       {/* Widget header bar */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-brand text-white select-none">
         <div className="flex items-center gap-2 min-w-0">
@@ -161,7 +215,7 @@ export default function NegotiationChatWidget({
           {onClose && (
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               aria-label="Fechar chat"
               className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 text-white text-xs font-bold transition-colors"
             >
@@ -209,8 +263,7 @@ export default function NegotiationChatWidget({
           <div
             ref={logRef}
             role="log"
-            aria-live="polite"
-            aria-relevant="additions text"
+            aria-live="off"
             aria-label={`Mensagens da negociação #${negotiationId}`}
             className="flex-1 p-3 overflow-y-auto space-y-3 flex flex-col"
           >
@@ -225,8 +278,15 @@ export default function NegotiationChatWidget({
               historyFailed || connectionRefused ? null : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-muted text-xs select-none">
                   <span className="text-2xl mb-1">💬</span>
-                  <p className="font-medium text-ink">Sem mensagens ainda</p>
-                  <p className="text-[11px] mt-0.5">Inicia a conversa com {interlocutorName}!</p>
+                  {isReadOnly ? (
+                    // Nothing can be sent any more: no invitation to start
+                    <p className="font-medium text-ink">Sem mensagens nesta negociação</p>
+                  ) : (
+                    <>
+                      <p className="font-medium text-ink">Sem mensagens ainda</p>
+                      <p className="text-[11px] mt-0.5">Inicia a conversa com {interlocutorName}!</p>
+                    </>
+                  )}
                 </div>
               )
             ) : (
@@ -275,7 +335,7 @@ export default function NegotiationChatWidget({
             {error && (
               <div className="flex items-start justify-between gap-2 text-[11px] text-accent bg-accent/10 px-2.5 py-1.5 rounded-lg select-none leading-tight">
                 {/* For more info about this word break: https://tailwindcss.com/docs/overflow-wrap */}
-                <span className="wrap-break-word">
+                <span className="wrap-break-word" aria-hidden="true">
                   ⚠️ {error}
                 </span>
                 <button
@@ -300,6 +360,7 @@ export default function NegotiationChatWidget({
                   if (error) clearError()
                 }}
                 placeholder={placeholder}
+                aria-label="Mensagem"
                 disabled={!isConnected || isReadOnly}
                 className="flex-1 px-3 py-1.5 bg-paper border border-line focus:border-brand focus:outline-none rounded-xl text-xs text-ink placeholder:text-muted transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               />

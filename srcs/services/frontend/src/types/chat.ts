@@ -50,6 +50,11 @@ export interface ApiChatMessagePage {
  */
 export const MESSAGE_MAX_LENGTH = 250
 
+// The negotiations dock trigger. The chat widget sends the focus back to it on
+// close when the element that opened the chat is gone (a card of the
+// collapsed drawer).
+export const DOCK_TRIGGER_ID = 'negotiations-dock-trigger'
+
 // Python's str.strip() (used by the backend) also removes U+001C-U+001F and
 // U+0085, which String.prototype.trim() keeps. JS \s covers every other
 // character Python strips (and also U+FEFF, which is harmless to drop first).

@@ -209,6 +209,52 @@ describe('NegotiationsDock', () => {
     expect(screen.queryByText('Conversando')).not.toBeInTheDocument()
   })
 
+  it('moves the focus into the drawer when it opens and back to the trigger when it collapses', async () => {
+    renderDock()
+    await flush()
+    const trigger = screen.getByRole('button', { name: /Abrir gaveta de negociações/ })
+    trigger.focus()
+
+    fireEvent.click(trigger)
+    expect(document.activeElement).toBe(screen.getByRole('region', { name: 'As Minhas Negociações' }))
+    await flush()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Minimizar negociações' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /Abrir gaveta de negociações/ }))
+  })
+
+  it('leaves the focus alone when the footer link navigates away', async () => {
+    renderDock()
+    await flush()
+    openDrawer()
+    await flush()
+
+    fireEvent.click(screen.getByRole('link', { name: 'Ver todas as negociações' }))
+    expect(document.activeElement).not.toBe(screen.getByRole('button', { name: /Abrir gaveta de negociações/ }))
+  })
+
+  it('does not take the focus from a chat opened from a card', async () => {
+    // A stand-in for the widget, which focuses itself when it mounts
+    const widget = document.createElement('button')
+    widget.textContent = 'widget'
+    openChat.mockImplementation(() => {
+      document.body.appendChild(widget)
+      widget.focus()
+    })
+    try {
+      renderDock()
+      await flush()
+      openDrawer()
+      await flush()
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Chat' })[0])
+      expect(document.activeElement).toBe(widget)
+    } finally {
+      widget.remove()
+      openChat.mockReset()
+    }
+  })
+
   it('aborts both requests in flight when unmounted', () => {
     vi.mocked(apiListNegotiations).mockReturnValue(new Promise(() => {}))
     const { unmount } = renderDock()

@@ -961,6 +961,139 @@ describe('useNegotiationChat', () => {
     vi.useRealTimers()
   })
 
+  it('reports as news only live messages from the other person, once each', async () => {
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({ items: [], limit: 50, next_before_id: null, has_more: false })
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    // An empty first page is not news, and the first message after it is
+    expect(result.current.incoming.seq).toBe(0)
+    const created = (id: number, sender_id: number, content: string) => ({
+      type: 'message.created',
+      message: { id, negotiation_id: 42, sender_id, content, created_at: '2026-10-28T10:05:00Z' },
+    })
+    act(() => {
+      MockWebSocket.instances[0].simulateMessage(created(5, 2, 'Olá'))
+    })
+    expect(result.current.incoming.seq).toBe(1)
+    expect(result.current.incoming.messages.map((m) => m.id)).toEqual([5])
+
+    // A duplicate broadcast and our own message are not news
+    act(() => {
+      MockWebSocket.instances[0].simulateMessage(created(5, 2, 'Olá'))
+    })
+    act(() => {
+      MockWebSocket.instances[0].simulateMessage(created(6, 1, 'Minha'))
+    })
+    expect(result.current.incoming.seq).toBe(1)
+
+    // The same text again is a new message
+    act(() => {
+      MockWebSocket.instances[0].simulateMessage(created(7, 2, 'Olá'))
+    })
+    expect(result.current.incoming.seq).toBe(2)
+  })
+
+  it('reports what a reconnect brought back from the other person, even when our message is newest', async () => {
+    vi.useFakeTimers()
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    // First load (message 10) is history, not news
+    expect(result.current.incoming.seq).toBe(0)
+
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [
+        { id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Mensagem antiga', created_at: '2026-10-28T10:00:00Z' },
+        { id: 11, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Ainda tens?', created_at: '2026-10-28T11:00:00Z' },
+        { id: 12, negotiation_id: 42, sender: { id: 1, user_name: 'Daniel', avatar: null }, content: 'De outra tab', created_at: '2026-10-28T11:05:00Z' },
+      ],
+      limit: 50,
+      next_before_id: null,
+      has_more: false,
+    })
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(result.current.incoming.seq).toBe(1)
+    expect(result.current.incoming.messages.map((m) => m.id)).toEqual([11])
+    vi.useRealTimers()
+  })
+
+  it('does not announce a backfill that is the history itself (first page failed)', async () => {
+    vi.useFakeTimers()
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new Error('Blip'))
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(true)
+
+    // The reconnect backfill brings the default page (message 10 from the other person)
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.messages.map((m) => m.id)).toEqual([10])
+    expect(result.current.incoming.seq).toBe(0)
+    vi.useRealTimers()
+  })
+
+  it('counts every error, identical ones too, and marks notices', () => {
+    const { result } = renderHook(() => useNegotiationChat(42))
+    // Not connected yet: two identical failures
+    act(() => {
+      result.current.sendMessage('Um')
+    })
+    const firstSeq = result.current.errorSeq
+    act(() => {
+      result.current.sendMessage('Um')
+    })
+    expect(result.current.errorSeq).toBe(firstSeq + 1)
+    expect(result.current.errorIsNotice).toBe(false)
+
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    act(() => {
+      MockWebSocket.instances[0].simulateMessage({ type: 'error', error: { code: 'delivery_failed', message: 'Stored' } })
+    })
+    expect(result.current.errorIsNotice).toBe(true)
+    act(() => {
+      MockWebSocket.instances[0].simulateMessage({ type: 'error', error: { code: 'persistence_failed', message: 'DB' } })
+    })
+    expect(result.current.errorIsNotice).toBe(false)
+  })
+
   it('clears error with clearError callback', () => {
     const { result } = renderHook(() => useNegotiationChat(42, { isReadOnly: true }))
 
