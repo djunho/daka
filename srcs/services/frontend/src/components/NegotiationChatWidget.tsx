@@ -8,6 +8,8 @@ const MAX_MESSAGE_LENGTH = 250
 export interface NegotiationChatWidgetProps {
   negotiationId: number
   interlocutorName: string
+  // Presence of the other participant. Leave it undefined while the API exposes
+  // no presence data: an always-offline dot would be misleading.
   interlocutorOnline?: boolean
   isReadOnly?: boolean
   onClose?: () => void
@@ -20,7 +22,7 @@ export interface NegotiationChatWidgetProps {
 export default function NegotiationChatWidget({
   negotiationId,
   interlocutorName,
-  interlocutorOnline = false,
+  interlocutorOnline,
   isReadOnly: initialReadOnly = false,
   onClose,
 }: NegotiationChatWidgetProps) {
@@ -72,7 +74,9 @@ export default function NegotiationChatWidget({
       {/* Widget header bar */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-brand text-white select-none">
         <div className="flex items-center gap-2 min-w-0">
-          <OnlineBadge online={interlocutorOnline} size="sm" />
+          {interlocutorOnline !== undefined && (
+            <OnlineBadge online={interlocutorOnline} size="sm" />
+          )}
           <h3 className="font-semibold text-sm truncate">
             {interlocutorName}
           </h3>

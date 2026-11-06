@@ -42,11 +42,27 @@ describe('NegotiationChatWidget', () => {
 
     expect(screen.getByRole('heading', { level: 3, name: 'Beatriz' })).toBeInTheDocument()
     expect(screen.getByText('#42')).toBeInTheDocument()
+    expect(screen.getByText('Online')).toBeInTheDocument()
     expect(screen.getByLabelText('Minimizar chat')).toBeInTheDocument()
 
     const closeBtn = screen.getByLabelText('Fechar chat')
     fireEvent.click(closeBtn)
     expect(handleClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no presence badge while the caller has no presence data', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+
+    render(
+      <NegotiationChatWidget
+        negotiationId={42}
+        interlocutorName="Beatriz"
+      />,
+    )
+
+    // An always-offline dot would be wrong, so nothing is rendered without the prop
+    expect(screen.queryByText('Offline')).not.toBeInTheDocument()
+    expect(screen.queryByText('Online')).not.toBeInTheDocument()
   })
 
   it('toggles minimize and expand modes', () => {
