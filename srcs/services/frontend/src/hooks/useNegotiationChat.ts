@@ -36,6 +36,15 @@ export interface ChatMessageItem {
   isOwn: boolean
 }
 
+// New messages from the other person, for announcing: a live message.created
+// or what a reconnect backfill brought back. Not the first load, not older
+// pages, not our own messages. `seq` changes on every batch, even when the
+// text repeats, so the widget can re-announce identical replies ("Ok").
+export interface IncomingBatch {
+  seq: number
+  messages: ChatMessageItem[]
+}
+
 export interface UseNegotiationChatOptions {
   isReadOnly?: boolean
 }
@@ -46,6 +55,11 @@ export interface UseNegotiationChatReturn {
   isLoadingHistory: boolean
   isReadOnly: boolean
   error: string | null
+  // Bumped for every error shown, even an identical one, so it can be
+  // announced again; errorIsNotice marks information rather than a failure
+  // (stored but not broadcast, negotiation closed).
+  errorSeq: number
+  errorIsNotice: boolean
   clearError: () => void
   // Buffers one message; false when it cannot be sent now (see the guards).
   sendMessage: (content: string) => boolean
@@ -60,6 +74,7 @@ export interface UseNegotiationChatReturn {
   // closes with the matching code and `error` reports that instead.
   historyFailed: boolean
   retryHistory: () => void
+  incoming: IncomingBatch
   // The socket was refused for good (4401/4403/4404); `error` says why.
   connectionRefused: boolean
   // The last "older messages" page could not be loaded; loadOlder() retries it.
@@ -102,11 +117,22 @@ export function useNegotiationChat(
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false)
   const [serverReadOnly, setServerReadOnly] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorSeq, setErrorSeq] = useState<number>(0)
+  const [errorIsNotice, setErrorIsNotice] = useState<boolean>(false)
+  const showError = useCallback((message: string, notice = false) => {
+    setError(message)
+    setErrorIsNotice(notice)
+    setErrorSeq((seq) => seq + 1)
+  }, [])
   const [hasOlder, setHasOlder] = useState<boolean>(false)
   const [isLoadingOlder, setIsLoadingOlder] = useState<boolean>(false)
   const [historyFailed, setHistoryFailed] = useState<boolean>(false)
   const [isSending, setIsSending] = useState<boolean>(false)
   const [connectionRefused, setConnectionRefused] = useState<boolean>(false)
+  const [incoming, setIncoming] = useState<IncomingBatch>({ seq: 0, messages: [] })
+  // Ids already announced, so a duplicate broadcast or a backfill that brings
+  // back a message received live is not announced twice.
+  const announcedIdsRef = useRef<Set<number>>(new Set())
   const [olderFailed, setOlderFailed] = useState<boolean>(false)
   const [confirmedSends, setConfirmedSends] = useState<number>(0)
   // Content of the message in flight, matched against our own message.created.
@@ -146,6 +172,8 @@ export function useNegotiationChat(
     messagesRef.current = []
     pendingContentRef.current = null
     setIsSending(false)
+    announcedIdsRef.current = new Set()
+    setIncoming({ seq: 0, messages: [] })
     newestPageCountRef.current = 0
     setMessages([])
     setError(null)
@@ -166,10 +194,10 @@ export function useNegotiationChat(
       void logoutRef.current()
       return
     }
-    setError(getWebSocketErrorMessage(refusal))
+    showError(getWebSocketErrorMessage(refusal))
     setConnectionRefused(true)
     setHasOlder(false)
-  }, [])
+  }, [showError])
 
   // Fetch one page of history via REST (the newest 50, or the 50 before
   // `beforeId`) and merge it, deduplicated by id. A dropped (cancelled) page
@@ -181,12 +209,21 @@ export function useNegotiationChat(
   // replaces the thread, keeping only live messages newer than it, and the
   // older messages can be paged back in. hasOlder follows the page whenever
   // the page reaches at least as far back as the thread does.
+  const announce = useCallback((items: ChatMessageItem[]) => {
+    const news = items.filter((m) => !m.isOwn && !announcedIdsRef.current.has(m.id))
+    if (news.length === 0) return
+    news.forEach((m) => announcedIdsRef.current.add(m.id))
+    setIncoming((previous) => ({ seq: previous.seq + 1, messages: news }))
+  }, [])
+
   const syncHistory = useCallback(
     async (
       negId: number,
       userId: number,
       isCancelled: () => boolean,
       beforeId?: number,
+      // Only a reconnect backfill brings news: messages newer than the thread
+      announceNew = false,
     ): Promise<SyncResult> => {
       // Compare against the thread as it was when the page was requested: at a
       // reconnect nothing can have arrived on the new socket yet, and a live
@@ -194,6 +231,9 @@ export function useNegotiationChat(
       const shown = messagesRef.current
       const shownOldest = shown[0]?.id ?? Infinity
       const shownNewest = shown[shown.length - 1]?.id ?? 0
+      // News needs a baseline: without a merged newest page (first page failed
+      // or still loading) the backfill is the history itself, not news.
+      const hasBaseline = newestPageCountRef.current > 0
 
       try {
         const page = await apiListNegotiationMessages(negId, { limit: 50, before_id: beforeId })
@@ -233,6 +273,7 @@ export function useNegotiationChat(
           setHasOlder(page.has_more)
         }
         if (beforeId === undefined) newestPageCountRef.current += 1
+        if (announceNew && hasBaseline) announce(historicalItems.filter((m) => m.id > shownNewest))
         return 'merged'
       } catch (err) {
         // The WebSocket connection still proceeds; callers decide what to show
@@ -240,7 +281,7 @@ export function useNegotiationChat(
         return refusal ?? 'failed'
       }
     },
-    [],
+    [announce],
   )
 
   // Whoever opened the chat (the dock, a page) may hold an old state: ask for
@@ -314,7 +355,7 @@ export function useNegotiationChat(
         // If this was a reconnection after a disconnect, backfill any messages missed
         // while offline (syncHistory replaces the thread when more than a page was missed)
         if (reconnectAttemptsRef.current > 0) {
-          void syncHistory(negotiationId, currentUserId, () => isCancelled).then((result) => {
+          void syncHistory(negotiationId, currentUserId, () => isCancelled, undefined, true).then((result) => {
             if (isCancelled) return
             // A successful backfill also recovers from a failed first page; a failed
             // one may have missed messages, which only a retry can bring back
@@ -344,18 +385,19 @@ export function useNegotiationChat(
               setIsSending(false)
               setConfirmedSends((count) => count + 1)
             }
+            const newItem: ChatMessageItem = {
+              id: incoming.id,
+              negotiationId: incoming.negotiation_id,
+              senderId: incoming.sender_id,
+              content: incoming.content,
+              createdAt: incoming.created_at,
+              isOwn: incoming.sender_id === currentUserId,
+            }
+            if (!messagesRef.current.some((m) => m.id === newItem.id)) announce([newItem])
             setMessages((prev) => {
               // Deduplicate incoming messages by unique database ID
-              if (prev.some((m) => m.id === incoming.id)) {
+              if (prev.some((m) => m.id === newItem.id)) {
                 return prev
-              }
-              const newItem: ChatMessageItem = {
-                id: incoming.id,
-                negotiationId: incoming.negotiation_id,
-                senderId: incoming.sender_id,
-                content: incoming.content,
-                createdAt: incoming.created_at,
-                isOwn: incoming.sender_id === currentUserId,
               }
               return [...prev, newItem]
             })
@@ -371,7 +413,10 @@ export function useNegotiationChat(
               setIsSending(false)
               if (data.error.code === 'delivery_failed') setConfirmedSends((count) => count + 1)
             }
-            setError(getWebSocketErrorMessage(data.error.code, data.error.retry_after))
+            showError(
+              getWebSocketErrorMessage(data.error.code, data.error.retry_after),
+              data.error.code === 'delivery_failed' || data.error.code === 'negotiation_read_only',
+            )
           }
         } catch {
           // Ignore invalid frames to prevent crashing the socket listener
@@ -408,7 +453,7 @@ export function useNegotiationChat(
           void syncUserRef.current().then((outcome) => {
             if (isCancelled) return
             if (outcome === 'signedOut' || outcome === 'changed') {
-              setError(getWebSocketErrorMessage(event.code))
+              showError(getWebSocketErrorMessage(event.code))
               setStatus('disconnected')
               setConnectionRefused(true)
               return
@@ -424,7 +469,7 @@ export function useNegotiationChat(
 
         // Other terminal server codes: do not reconnect
         if (event.code === WS_CLOSE_CODES.FORBIDDEN || event.code === WS_CLOSE_CODES.NOT_FOUND) {
-          setError(getWebSocketErrorMessage(event.code))
+          showError(getWebSocketErrorMessage(event.code))
           setStatus('disconnected')
           setConnectionRefused(true)
           return
@@ -471,7 +516,7 @@ export function useNegotiationChat(
       pendingContentRef.current = null
       setIsSending(false)
     }
-  }, [negotiationId, currentUserId, syncHistory, reportRefusal])
+  }, [negotiationId, currentUserId, syncHistory, reportRefusal, announce])
 
   const clearError = useCallback(() => {
     setError(null)
@@ -509,7 +554,7 @@ export function useNegotiationChat(
   const sendMessage = useCallback(
     (content: string): boolean => {
       if (effectiveReadOnly) {
-        setError(getWebSocketErrorMessage('negotiation_read_only'))
+        showError(getWebSocketErrorMessage('negotiation_read_only'), true)
         return false
       }
 
@@ -521,7 +566,7 @@ export function useNegotiationChat(
       }
 
       if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-        setError(getWebSocketErrorMessage('not_connected'))
+        showError(getWebSocketErrorMessage('not_connected'))
         return false
       }
 
@@ -548,12 +593,15 @@ export function useNegotiationChat(
     isLoadingHistory,
     isReadOnly: effectiveReadOnly,
     error,
+    errorSeq,
+    errorIsNotice,
     clearError,
     sendMessage,
     isSending,
     confirmedSends,
     historyFailed,
     retryHistory,
+    incoming,
     connectionRefused,
     olderFailed,
     hasOlder,

@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import NegotiationChatWidget from './NegotiationChatWidget'
@@ -24,6 +25,9 @@ function mockChat(overrides: Partial<UseNegotiationChatReturn> = {}): UseNegotia
     sendMessage: vi.fn().mockReturnValue(true),
     isSending: false,
     confirmedSends: 0,
+    incoming: { seq: 0, messages: [] },
+    errorSeq: 0,
+    errorIsNotice: false,
     historyFailed: false,
     retryHistory: vi.fn(),
     connectionRefused: false,
@@ -179,7 +183,7 @@ describe('NegotiationChatWidget', () => {
 
     expect(screen.queryByText('Sem mensagens ainda')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument()
-    expect(screen.getByText(/Não tens permissão/)).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(/Não tens permissão/)
   })
 
   it('keeps the invitation on an empty thread when a send error is shown', () => {
@@ -210,6 +214,48 @@ describe('NegotiationChatWidget', () => {
     expect(screen.getByRole('log')).not.toContainElement(notice)
     fireEvent.click(screen.getByRole('button', { name: 'Ver mensagens anteriores' }))
     expect(loadOlder).toHaveBeenCalledTimes(1)
+  })
+
+  it('announces each error, the same one again included, and notices politely', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+    const view = () => <NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />
+    const { container, rerender } = render(view())
+    const alert = screen.getByRole('alert')
+    expect(alert).toBeEmptyDOMElement()
+
+    const failed = 'Não foi possível guardar a mensagem. Tenta novamente.'
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ error: failed, errorSeq: 1 }))
+    rerender(view())
+    expect(screen.getByRole('alert')).toBe(alert)
+    const first = alert.firstElementChild
+    expect(alert).toHaveTextContent(failed)
+
+    // The same failure again: a new node, so it is read again
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ error: failed, errorSeq: 2 }))
+    rerender(view())
+    expect(alert.firstElementChild).not.toBe(first)
+
+    // A notice goes to the polite region, not the alert
+    const notice = 'A mensagem foi guardada, mas não foi entregue em tempo real.'
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ error: notice, errorSeq: 3, errorIsNotice: true }))
+    rerender(view())
+    expect(alert).toBeEmptyDOMElement()
+    const polite = Array.from(container.querySelectorAll('[aria-live="polite"]')).find((el) => el.textContent === notice)
+    expect(polite).toBeDefined()
+  })
+
+  it('does not invite to start a conversation in an empty read-only chat', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ isReadOnly: true }))
+    render(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" isReadOnly />)
+
+    expect(screen.getByText('Sem mensagens nesta negociação')).toBeInTheDocument()
+    expect(screen.queryByText(/Inicia a conversa/)).not.toBeInTheDocument()
+  })
+
+  it('gives the composer a fixed accessible name', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ status: 'connecting' }))
+    render(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />)
+    expect(screen.getByRole('textbox', { name: 'Mensagem' })).toBeInTheDocument()
   })
 
   it('keeps the status region mounted and empty while the history is fine', () => {
@@ -498,7 +544,7 @@ describe('NegotiationChatWidget', () => {
       />,
     )
 
-    expect(screen.getByText(/Demasiadas mensagens enviadas\./)).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(/Demasiadas mensagens enviadas\./)
 
     // Manual dismiss button
     const dismissBtn = screen.getByLabelText('Dispensar aviso de erro')
@@ -620,7 +666,7 @@ describe('NegotiationChatWidget', () => {
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
-  it('renders messages thread with accessibility role="log" and aria-live="polite"', () => {
+  it('does not read the thread aloud in bulk: the log is not a live region', () => {
     vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
 
     render(
@@ -632,9 +678,74 @@ describe('NegotiationChatWidget', () => {
     )
 
     const logRegion = screen.getByRole('log', { name: 'Mensagens da negociação #42' })
-    expect(logRegion).toBeInTheDocument()
-    expect(logRegion).toHaveAttribute('aria-live', 'polite')
-    expect(logRegion).toHaveAttribute('aria-relevant', 'additions text')
+    expect(logRegion).toHaveAttribute('aria-live', 'off')
+  })
+
+  it('announces each batch of new messages from the other person, repeated text included', () => {
+    const msg = (id: number, content: string) => ({ id, negotiationId: 42, senderId: 10, content, createdAt: '2026-10-28T14:30:00Z', isOwn: false })
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+    const view = () => <NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" />
+    const { container, rerender } = render(view())
+    const announcer = container.querySelector('[aria-live="polite"]') as HTMLElement
+    // Nothing new yet (also: nothing from the history is announced)
+    expect(announcer).toBeEmptyDOMElement()
+
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ messages: [msg(5, 'Ok')], incoming: { seq: 1, messages: [msg(5, 'Ok')] } }))
+    rerender(view())
+    const first = announcer.firstElementChild
+    expect(announcer).toHaveTextContent('Nova mensagem de Beatriz: Ok')
+
+    // Same text again: a new node, so screen readers read it again
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ messages: [msg(5, 'Ok'), msg(6, 'Ok')], incoming: { seq: 2, messages: [msg(6, 'Ok')] } }))
+    rerender(view())
+    expect(announcer).toHaveTextContent('Nova mensagem de Beatriz: Ok')
+    expect(announcer.firstElementChild).not.toBe(first)
+
+    // Several at once (a reconnect backfill)
+    vi.mocked(useNegotiationChat).mockReturnValue(
+      mockChat({ incoming: { seq: 3, messages: [msg(7, 'Ainda tens?'), msg(8, 'Diz-me algo')] } }),
+    )
+    rerender(view())
+    expect(announcer).toHaveTextContent('2 novas mensagens de Beatriz. A última: Diz-me algo')
+  })
+
+  it.each([false, true])('takes the focus and gives it back to its opener on close (StrictMode: %s)', (strict) => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+    const opener = document.createElement('button')
+    opener.textContent = 'Conversar'
+    document.body.appendChild(opener)
+    try {
+      opener.focus()
+      const onClose = vi.fn()
+      const widget = <NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" onClose={onClose} />
+      render(strict ? <StrictMode>{widget}</StrictMode> : widget)
+      expect(document.activeElement).toBe(screen.getByRole('complementary', { name: 'Chat da negociação #42' }))
+
+      fireEvent.click(screen.getByLabelText('Fechar chat'))
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(document.activeElement).toBe(opener)
+    } finally {
+      opener.remove()
+    }
+  })
+
+  it('gives the focus to the dock trigger on close when its opener is gone', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat())
+    const trigger = document.createElement('button')
+    trigger.id = 'negotiations-dock-trigger'
+    const card = document.createElement('button')
+    document.body.append(trigger, card)
+    try {
+      card.focus()
+      render(<NegotiationChatWidget negotiationId={42} interlocutorId={10} interlocutorName="Beatriz" onClose={vi.fn()} />)
+      // The drawer collapsed: the card that opened the chat no longer exists
+      card.remove()
+      fireEvent.click(screen.getByLabelText('Fechar chat'))
+      expect(document.activeElement).toBe(trigger)
+    } finally {
+      trigger.remove()
+      card.remove()
+    }
   })
 
   it('keeps the message thread selectable so users can copy text', () => {

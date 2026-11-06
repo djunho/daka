@@ -5,6 +5,7 @@ import { ApiError, apiListNegotiations, type ApiNegotiationPage, type ApiNegotia
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 import { ACTIVE_NEGOTIATION_STATES, isNegotiationReadOnly } from '../types/negotiation'
+import { DOCK_TRIGGER_ID } from '../types/chat'
 
 // Cards per active state. Closed negotiations are not listed here: their
 // read-only chat is reachable from the negotiation page (linked from /negotiations).
@@ -22,6 +23,27 @@ export default function NegotiationsDock() {
   const { user, logout } = useAuth()
   const { activeChat, openChat } = useChat()
   const [isOpen, setIsOpen] = useState(false)
+
+  // Opening and collapsing swap the focused element for another one, so move
+  // the focus along: into the drawer when it opens, back to the trigger when
+  // it collapses, unless something else took it (a chat opened from a card
+  // focuses the chat widget).
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const wasOpenRef = useRef(false)
+  // Set by the footer link: the person is going to another page, whose own
+  // focus handling applies, so the trigger must not pull the focus back here.
+  const navigatingAwayRef = useRef(false)
+  useEffect(() => {
+    if (isOpen) {
+      panelRef.current?.focus()
+    } else if (wasOpenRef.current && !navigatingAwayRef.current) {
+      const active = document.activeElement
+      if (!active || active === document.body) triggerRef.current?.focus()
+    }
+    navigatingAwayRef.current = false
+    wasOpenRef.current = isOpen
+  }, [isOpen])
   const [negotiations, setNegotiations] = useState<ApiNegotiationSummary[]>([])
   // Server-side totals of Open + Agreed: exact even beyond the cards shown
   // null when the last load failed: unknown is not the same as none
@@ -119,6 +141,8 @@ export default function NegotiationsDock() {
       {/* 1. Minimized mode: compact floating trigger button with 🤝 symbol */}
       {!isOpen ? (
         <button
+          ref={triggerRef}
+          id={DOCK_TRIGGER_ID}
           type="button"
           onClick={() => {
             setIsOpen(true)
@@ -142,7 +166,13 @@ export default function NegotiationsDock() {
         </button>
       ) : (
         /* 2. Expanded mode: card drawer with avatar, user name, listing title and action buttons */
-        <div className="w-80 sm:w-88 bg-surface border border-line rounded-t-2xl shadow-2xl overflow-hidden flex flex-col transition-all duration-200">
+        <div
+          ref={panelRef}
+          tabIndex={-1}
+          role="region"
+          aria-label="As Minhas Negociações"
+          className="w-[min(20rem,calc(100vw-1rem))] sm:w-88 bg-surface border border-line rounded-t-2xl shadow-2xl overflow-hidden flex flex-col transition-all duration-200 focus:outline-none"
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-brand text-white">
             <div className="flex items-center gap-2 min-w-0">
@@ -275,7 +305,10 @@ export default function NegotiationsDock() {
           <div className="p-2.5 bg-surface border-t border-line text-center">
             <Link
               to="/negotiations"
-              onClick={() => setIsOpen(false)}
+              onClick={() => {
+                navigatingAwayRef.current = true
+                setIsOpen(false)
+              }}
               className="text-xs font-medium text-brand hover:underline inline-flex items-center gap-1"
             >
               <span>Ver todas as negociações</span>
