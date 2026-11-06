@@ -17,6 +17,9 @@ function mockChat(overrides: Partial<UseNegotiationChatReturn> = {}): UseNegotia
     error: null,
     clearError: vi.fn(),
     sendMessage: vi.fn().mockReturnValue(true),
+    hasOlder: false,
+    isLoadingOlder: false,
+    loadOlder: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }
@@ -154,6 +157,32 @@ describe('NegotiationChatWidget', () => {
 
     expect(screen.getByText('Primeira mensagem recebida')).toBeInTheDocument()
     expect(screen.getByText('Minha resposta enviada')).toBeInTheDocument()
+  })
+
+  it('offers to load older messages only while the server has more', () => {
+    const loadOlder = vi.fn().mockResolvedValue(undefined)
+    const thread = [
+      { id: 30, negotiationId: 42, senderId: 10, content: 'Mais antiga carregada', createdAt: '2026-10-28T14:30:00Z', isOwn: false },
+    ]
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ messages: thread, hasOlder: true, loadOlder }))
+
+    const { rerender } = render(
+      <NegotiationChatWidget
+        negotiationId={42}
+        interlocutorName="Beatriz"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver mensagens anteriores' }))
+    expect(loadOlder).toHaveBeenCalledTimes(1)
+
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ messages: thread, hasOlder: true, isLoadingOlder: true, loadOlder }))
+    rerender(<NegotiationChatWidget negotiationId={42} interlocutorName="Beatriz" />)
+    expect(screen.getByRole('button', { name: 'A carregar…' })).toBeDisabled()
+
+    vi.mocked(useNegotiationChat).mockReturnValue(mockChat({ messages: thread, hasOlder: false, loadOlder }))
+    rerender(<NegotiationChatWidget negotiationId={42} interlocutorName="Beatriz" />)
+    expect(screen.queryByRole('button', { name: 'Ver mensagens anteriores' })).not.toBeInTheDocument()
   })
 
   it('submits text and resets input on send', () => {

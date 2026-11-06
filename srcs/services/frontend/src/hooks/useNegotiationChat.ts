@@ -31,6 +31,10 @@ export interface UseNegotiationChatReturn {
   error: string | null
   clearError: () => void
   sendMessage: (content: string) => boolean
+  // Older history is paged on demand: the first load brings the newest 50.
+  hasOlder: boolean
+  isLoadingOlder: boolean
+  loadOlder: () => Promise<void>
 }
 
 /**
@@ -40,6 +44,7 @@ export interface UseNegotiationChatReturn {
  * 2. Connecting to wss://<host>/api/ws/negotiations/:id with automatic exponential backoff reconnection
  * 3. Sending message.send events and appending incoming message.created broadcasts with deduplication
  * 4. Read-only negotiation state guarding against sending messages in concluded or cancelled trades
+ * 5. Loading older pages of history on demand through the before_id cursor
  */
 export function useNegotiationChat(
   negotiationId: number | null,
@@ -60,26 +65,41 @@ export function useNegotiationChat(
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false)
   const [serverReadOnly, setServerReadOnly] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  const [hasOlder, setHasOlder] = useState<boolean>(false)
+  const [isLoadingOlder, setIsLoadingOlder] = useState<boolean>(false)
 
   const socketRef = useRef<WebSocket | null>(null)
   const reconnectAttemptsRef = useRef<number>(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The negotiation currently shown: a page that arrives after a switch must
+  // not be merged into the new thread.
+  const negotiationIdRef = useRef<number | null>(negotiationId)
 
   const effectiveReadOnly = Boolean(options?.isReadOnly || serverReadOnly)
 
   // Clear messages and reset state when negotiationId changes
   useEffect(() => {
+    negotiationIdRef.current = negotiationId
     setMessages([])
     setError(null)
     setServerReadOnly(false)
+    setHasOlder(false)
+    setIsLoadingOlder(false)
   }, [negotiationId])
 
-  // Helper to fetch history via REST and merge deduplicated items
+  // Fetch one page of history via REST (the newest 50, or the 50 before
+  // `beforeId`) and merge it, deduplicated by id. Resolves with the page's
+  // has_more flag, or null when the page was dropped or the request failed.
   const syncHistory = useCallback(
-    async (negId: number, userId: number, isCancelled: () => boolean) => {
+    async (
+      negId: number,
+      userId: number,
+      isCancelled: () => boolean,
+      beforeId?: number,
+    ): Promise<boolean | null> => {
       try {
-        const page = await apiListNegotiationMessages(negId, { limit: 50 })
-        if (isCancelled()) return
+        const page = await apiListNegotiationMessages(negId, { limit: 50, before_id: beforeId })
+        if (isCancelled()) return null
 
         const historicalItems: ChatMessageItem[] = page.items.map((item) => ({
           id: item.id,
@@ -96,8 +116,10 @@ export function useNegotiationChat(
           const realtimeOnly = prev.filter((m) => !existingIds.has(m.id))
           return [...historicalItems, ...realtimeOnly].sort((a, b) => a.id - b.id)
         })
+        return page.has_more
       } catch {
         // Silently catch history fetch failures; WebSocket connection will still proceed
+        return null
       }
     },
     [],
@@ -113,10 +135,10 @@ export function useNegotiationChat(
     let isCancelled = false
     setIsLoadingHistory(true)
 
-    syncHistory(negotiationId, currentUserId, () => isCancelled).finally(() => {
-      if (!isCancelled) {
-        setIsLoadingHistory(false)
-      }
+    syncHistory(negotiationId, currentUserId, () => isCancelled).then((hasMore) => {
+      if (isCancelled) return
+      if (hasMore !== null) setHasOlder(hasMore)
+      setIsLoadingHistory(false)
     })
 
     return () => {
@@ -151,7 +173,7 @@ export function useNegotiationChat(
 
         // If this was a reconnection after a disconnect, backfill any messages missed while offline
         if (reconnectAttemptsRef.current > 0) {
-          syncHistory(negotiationId, currentUserId, () => isCancelled)
+          void syncHistory(negotiationId, currentUserId, () => isCancelled)
         }
         reconnectAttemptsRef.current = 0
       }
@@ -264,6 +286,22 @@ export function useNegotiationChat(
   }, [])
 
   /**
+   * Load the page of history before the oldest message shown. No-op while a
+   * page is loading, before the first page arrived, or once there is nothing older.
+   */
+  const oldestId = messages[0]?.id
+  const loadOlder = useCallback(async () => {
+    if (!negotiationId || !currentUserId || !hasOlder || isLoadingOlder || oldestId === undefined) return
+
+    setIsLoadingOlder(true)
+    const switched = () => negotiationIdRef.current !== negotiationId
+    const hasMore = await syncHistory(negotiationId, currentUserId, switched, oldestId)
+    if (switched()) return
+    if (hasMore !== null) setHasOlder(hasMore)
+    setIsLoadingOlder(false)
+  }, [negotiationId, currentUserId, hasOlder, isLoadingOlder, oldestId, syncHistory])
+
+  /**
    * Submit a new text message through the active WebSocket channel.
    * Returns true if the message frame was successfully buffered for transmission.
    */
@@ -305,5 +343,8 @@ export function useNegotiationChat(
     error,
     clearError,
     sendMessage,
+    hasOlder,
+    isLoadingOlder,
+    loadOlder,
   }
 }
