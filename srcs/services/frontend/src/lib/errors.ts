@@ -1,4 +1,5 @@
 import { ApiError } from './api'
+import { MESSAGE_MAX_LENGTH } from '../types/chat'
 
 /**
  * Thrown by register() when the account was created but the automatic sign-in
@@ -117,7 +118,7 @@ export function getWebSocketErrorMessage(
     case 'empty_content':
       return 'A mensagem não pode estar vazia.'
     case 'content_too_long':
-      return 'A mensagem excede o limite máximo de 250 caracteres.'
+      return `A mensagem excede o limite máximo de ${MESSAGE_MAX_LENGTH} caracteres.`
     case 'payload_too_large':
       return 'A mensagem é demasiado grande para ser processada.'
     case 'negotiation_read_only':

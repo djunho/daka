@@ -195,6 +195,110 @@ describe('useNegotiationChat', () => {
     })
   })
 
+  it('trims like the server, so a text ending in a character only Python strips is still confirmed', () => {
+    const { result } = renderHook(() => useNegotiationChat(42))
+    const ws = MockWebSocket.instances[0]
+    act(() => {
+      ws.simulateOpen()
+    })
+
+    act(() => {
+      result.current.sendMessage('Olá\u001f\u0085 ')
+    })
+    expect(JSON.parse(ws.sentData[0]).content).toBe('Olá')
+    // The backend strips the same characters and echoes 'Olá'
+    act(() => {
+      ws.simulateMessage({ type: 'message.created', message: { id: 40, negotiation_id: 42, sender_id: 1, content: 'Olá', created_at: '2026-10-28T10:05:00Z' } })
+    })
+    expect(result.current.isSending).toBe(false)
+    expect(result.current.confirmedSends).toBe(1)
+  })
+
+  it('frees an in-flight send when the socket is replaced for another user', () => {
+    const { result, rerender } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    act(() => {
+      result.current.sendMessage('Em curso')
+    })
+    expect(result.current.isSending).toBe(true)
+
+    // Same negotiation, different account: the effect re-runs and ignores the old onclose
+    vi.mocked(useAuth).mockReturnValue({
+      user: { id: 9, user_name: 'Outra', email: 'o@daka.pt', avatar: null, user_location: null, created_at: '' },
+      loading: false,
+      logout,
+    } as unknown as ReturnType<typeof useAuth>)
+    rerender()
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    expect(result.current.isSending).toBe(false)
+  })
+
+  it('holds one send in flight until the server confirms or rejects it', () => {
+    const { result } = renderHook(() => useNegotiationChat(42))
+    const ws = MockWebSocket.instances[0]
+    act(() => {
+      ws.simulateOpen()
+    })
+
+    act(() => {
+      result.current.sendMessage('Primeira')
+    })
+    expect(result.current.isSending).toBe(true)
+    // A second one waits for the answer
+    let second = true
+    act(() => {
+      second = result.current.sendMessage('Segunda')
+    })
+    expect(second).toBe(false)
+    expect(ws.sentData).toHaveLength(1)
+
+    // Someone else's message with the same text is not our confirmation
+    act(() => {
+      ws.simulateMessage({ type: 'message.created', message: { id: 30, negotiation_id: 42, sender_id: 2, content: 'Primeira', created_at: '2026-10-28T10:05:00Z' } })
+    })
+    expect(result.current.isSending).toBe(true)
+    expect(result.current.confirmedSends).toBe(0)
+
+    act(() => {
+      ws.simulateMessage({ type: 'message.created', message: { id: 31, negotiation_id: 42, sender_id: 1, content: 'Primeira', created_at: '2026-10-28T10:05:01Z' } })
+    })
+    expect(result.current.isSending).toBe(false)
+    expect(result.current.confirmedSends).toBe(1)
+
+    // A rejection frees the composer without confirming
+    act(() => {
+      result.current.sendMessage('Terceira')
+    })
+    act(() => {
+      ws.simulateMessage({ type: 'error', error: { code: 'rate_limited', message: 'Too many', retry_after: 3 } })
+    })
+    expect(result.current.isSending).toBe(false)
+    expect(result.current.confirmedSends).toBe(1)
+
+    // delivery_failed means stored: confirmed, so it is not resent
+    act(() => {
+      result.current.sendMessage('Quarta')
+    })
+    act(() => {
+      ws.simulateMessage({ type: 'error', error: { code: 'delivery_failed', message: 'Stored but not delivered' } })
+    })
+    expect(result.current.confirmedSends).toBe(2)
+
+    // A drop with a send in flight frees the composer too
+    act(() => {
+      result.current.sendMessage('Quinta')
+    })
+    act(() => {
+      ws.simulateClose(1006, 'Drop')
+    })
+    expect(result.current.isSending).toBe(false)
+    expect(result.current.confirmedSends).toBe(2)
+  })
+
   it('blocks sending when in read-only mode and sets localized error', () => {
     const { result } = renderHook(() => useNegotiationChat(42, { isReadOnly: true }))
 

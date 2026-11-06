@@ -44,6 +44,26 @@ export interface ApiChatMessagePage {
 // ============================================================================
 
 /**
+ * Maximum message length in Unicode code points after trimming, mirroring the
+ * backend's MessageSendEvent (app/schemas.py). The hook, the widget's counter
+ * and the error copy all read this one value.
+ */
+export const MESSAGE_MAX_LENGTH = 250
+
+// Python's str.strip() (used by the backend) also removes U+001C-U+001F and
+// U+0085, which String.prototype.trim() keeps. JS \s covers every other
+// character Python strips (and also U+FEFF, which is harmless to drop first).
+const SERVER_EDGE_SPACE = /^[\s\x1c-\x1f\x85]+|[\s\x1c-\x1f\x85]+$/g
+
+/**
+ * Trims a message the way the backend will, so the length check matches the
+ * server's and the content echoed in message.created equals what was sent.
+ */
+export function normaliseMessageContent(content: string): string {
+  return content.replace(SERVER_EDGE_SPACE, '')
+}
+
+/**
  * Outgoing event: sent by the client to submit a new text message.
  * Note: sender_id and negotiation_id are inferred by the server from the
  * authenticated session and the URL route; the client must not send them.
