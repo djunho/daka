@@ -12,6 +12,7 @@ from authlib.integrations.base_client import OAuthError
 from authlib.integrations.starlette_client import OAuth
 from fastapi import (
     APIRouter,
+    Cookie,
     Depends,
     File,
     HTTPException,
@@ -27,7 +28,11 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import SESSION_COOKIE_NAME, get_current_user
+from app.dependencies import (
+    SESSION_COOKIE_NAME,
+    get_current_user,
+    get_user_from_session_token,
+)
 from app.media import delete_image, save_image
 from app.models import (
     Favorite,
@@ -41,7 +46,8 @@ from app.models import (
     User,
     UserSession,
 )
-from app.schemas import LoginIn, ProfileUpdate, RegisterIn, UserOut
+from app.presence import touch_last_seen
+from app.schemas import LoginIn, ProfileUpdate, RegisterIn, SessionOut, UserOut
 from app.security import (
     generate_session_token,
     hash_password,
@@ -388,21 +394,18 @@ def login(
     """
     user = db.query(User).filter(User.email == payload.email).first()
 
-    # Three cases collapse into one here, deliberately:
+    # Four cases collapse into one here, deliberately:
     #   - no account with that email        -> compare against the dummy hash
-    #   - account exists but has no password (Google-only, once OAuth lands)
+    #   - account exists but has no password (Google-only)
+    #   - account is deactivated (deleted_at is set)
     #   - account exists and the password is wrong
-    # All three take the same amount of time and produce the same message, so
-    # the response leaks nothing about which emails are registered.
+    # The password is always checked first, so all four take the same amount
+    # of time and produce the same message: the response leaks nothing about
+    # which emails are registered or which accounts were deactivated.
     stored_hash = user.pass_hash if user and user.pass_hash else _DUMMY_HASH
+    password_ok = verify_password(payload.password, stored_hash)
 
-    if user.deleted_at is not None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="This account is deactivated.",
-        )
-
-    if not verify_password(payload.password, stored_hash) or user is None:
+    if user is None or user.deleted_at is not None or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password.",
@@ -410,6 +413,35 @@ def login(
 
     _open_session(db, user, response)
     return user
+
+
+@router.get(
+    "/session",
+    response_model=SessionOut,
+    summary="Return the logged-in user, or null when there is no session",
+)
+def get_session(
+    daka_session: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+    db: Session = Depends(get_db),
+) -> SessionOut:
+    """Tell the frontend whether someone is logged in.
+
+    Called on page load and by the presence heartbeat. Unlike GET /me, having
+    no session is a normal answer here, not an error: without one the answer
+    is 200 with ``user: null``. Every visit makes this call, and a session can
+    end while the site is open (it expires, or another tab logs out), so a 401
+    would show up in red in the browser console. The same checks as get_current_user apply, so a
+    missing, unknown, expired or deactivated session all read as no session.
+    """
+    user = get_user_from_session_token(daka_session, db)
+    if user is None:
+        # The cookie is left alone. Another tab may be logging in while this
+        # answer travels back: clearing the cookie here would delete the new
+        # one and log that tab out. Logging out is what clears it.
+        return SessionOut(user=None)
+    # Opening the site is activity, as with every authenticated request.
+    touch_last_seen(db, user)
+    return SessionOut(user=UserOut.model_validate(user))
 
 
 @router.get(
@@ -423,8 +455,8 @@ def me(current_user: User = Depends(get_current_user)) -> User:
     The whole job is done by the get_current_user dependency: if the cookie is
     missing, unknown or expired, it raises 401 before this function runs, so
     reaching the body at all means there is a valid user. The frontend calls
-    this once on page load to decide whether someone is logged in -- that is
-    what keeps a session alive across a browser refresh.
+    GET /session instead, on page load and for the presence heartbeat, because
+    that one answers without an error when nobody is logged in.
     """
     return current_user
 
@@ -440,6 +472,12 @@ def update_me(
     db: Session = Depends(get_db),
 ) -> User:
     """Update only the profile fields included in the request body."""
+    # get_current_user already read this row, which pins a MariaDB snapshot.
+    # End that read before locking so a concurrent presence update does not
+    # produce error 1020 under innodb_snapshot_isolation.
+    db.rollback()
+    db.refresh(current_user, with_for_update=True)
+
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(current_user, field, value)
 

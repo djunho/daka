@@ -7,18 +7,18 @@ import {
 } from 'react'
 
 import {
-  ApiError,
   apiDeleteAvatar,
   apiLogin,
   apiLogout,
-  apiMe,
   apiDeleteAccount,
   apiRegister,
+  apiSession,
   apiUpdateProfile,
   apiUploadAvatar,
   type UpdateProfileData,
   type ApiUser,
 } from '../lib/api'
+import { AccountCreatedError } from '../lib/errors'
 
 // The single place that knows who is logged in. Any component that needs the
 // current user -- the header, the route guard, a profile page -- reads it from
@@ -58,19 +58,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   // On first mount, ask the backend who we are. If a valid session cookie is
-  // present, /auth/me returns the user; if not, it 401s and we stay logged
-  // out. This is what restores a session after a page refresh -- the cookie
-  // survives the reload, and this call reads it back.
+  // present, /auth/session returns the user; if not, it returns user null and
+  // we stay logged out. This is what restores a session after a page refresh
+  // -- the cookie survives the reload, and this call reads it back. It is not
+  // /auth/me because that answers 401 without a session, and the browser
+  // prints every 401 in red in the console, on every visit.
   useEffect(() => {
-    apiMe()
-      .then((me) => setUser(me))
-      .catch((err) => {
-        // A 401 here is normal: it just means nobody is logged in. Anything
-        // else (server down) also leaves us logged out, which is the safe
-        // default. Either way, swallow it -- there is nothing to show.
-        if (!(err instanceof ApiError)) {
-          // Unexpected non-API error; leave user null but don't crash.
-        }
+    apiSession()
+      .then(({ user: current }) => setUser(current))
+      .catch(() => {
+        // The server could not be reached or failed: staying logged out is
+        // the safe default, and there is nothing to show.
         setUser(null)
       })
       .finally(() => setLoading(false))
@@ -95,18 +93,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const runHeartbeat = async () => {
       lastHeartbeatAt = Date.now()
       try {
-        const me = await apiMe()
+        // /auth/session rather than /auth/me: when the session ends with the
+        // site open (it expires, or another tab logs out), the answer is
+        // user null instead of a 401 printed in red in the console.
+        const { user: current } = await apiSession()
+        if (!active) return
+        if (current === null) {
+          stopHeartbeat()
+          setUser(null)
+          return
+        }
         // Keep the same object while the session still belongs to the same
         // account. A new object on every beat would re-run every effect that
         // depends on `user` (the profile form would reset what is being
         // typed). Only a different account (a login in another tab) replaces it.
-        if (active) setUser((prev) => (prev?.id === me.id ? prev : me))
-      } catch (err) {
-        if (!active) return
-        if (err instanceof ApiError && err.status === 401) {
-          stopHeartbeat()
-          setUser(null)
-        }
+        setUser((prev) => (prev?.id === current.id ? prev : current))
+      } catch {
+        // A server or network failure keeps the session: the next beat tries again.
       }
     }
 
@@ -153,7 +156,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // rather than being sent back to the sign-in tab. This is the "auto login
     // after register" behaviour we chose.
     await apiRegister(name, email, password)
-    const me = await apiLogin(email, password)
+    let me: ApiUser
+    try {
+      me = await apiLogin(email, password)
+    } catch (err) {
+      // The account exists from here on: say so, rather than let the sign-in
+      // error look like the sign-up failed.
+      throw new AccountCreatedError(err)
+    }
     setUser(me)
   }
 
@@ -186,15 +196,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
-    // Tell the server to delete the session row, then forget the user locally.
-    // We clear user even if the request fails, because the intent is to be
-    // logged out -- a failed logout should not trap someone in a signed-in UI.
+    // Forget the user first, so the UI leaves the signed-in state at once.
+    // Pages call this when the server already answered 401: waiting for
+    // /auth/logout would leave them on screen, with no message, for as long as
+    // that request takes. It is still sent, to delete the session row and the
+    // cookie, and a failure is ignored: a failed logout should not trap
+    // someone in a signed-in UI.
+    setUser(null)
     try {
       await apiLogout()
     } catch {
-      // Network/server failure: still log out locally.
-    } finally {
-      setUser(null)
+      // Network/server failure: already logged out locally.
     }
   }
 

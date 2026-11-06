@@ -188,8 +188,12 @@ export function apiLogout() {
   return request<void>('/auth/logout', { method: 'POST' })
 }
 
-export function apiMe() {
-  return request<ApiUser>('/auth/me')
+// Used on page load and by the presence heartbeat. Unlike /auth/me, no
+// session is not an error: the answer is 200 with user null, so neither a
+// visitor nor a session that ended with the site open shows a 401 in the
+// browser console.
+export function apiSession() {
+  return request<{ user: ApiUser | null }>('/auth/session')
 }
 
 export function apiDeleteAccount(): Promise<void> {
@@ -454,6 +458,11 @@ export function apiRejectProposal(id: number) {
 
 export function apiWithdrawProposal(id: number) {
   return request<ApiProposal>(`/proposals/${id}/withdraw`, { method: 'PATCH' })
+}
+
+// Puts a proposal the interested user withdrew back to Pending (ADR-0003).
+export function apiReopenProposal(id: number) {
+  return request<ApiProposal>(`/proposals/${id}/reopen`, { method: 'PATCH' })
 }
 
 export function apiCancelNegotiation(id: number) {

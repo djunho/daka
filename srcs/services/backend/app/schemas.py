@@ -40,6 +40,8 @@ MIN_PASSWORD_LENGTH = 8
 LISTINGS_PAGE_SIZE = 12
 DEFAULT_NEGOTIATIONS_PAGE_SIZE = 20
 MAX_NEGOTIATIONS_PAGE_SIZE = 100
+DEFAULT_FRIENDS_PAGE_SIZE = 50
+MAX_FRIENDS_PAGE_SIZE = 100
 MAX_LISTINGS_PAGE_SIZE = 100
 # Without a ceiling, a huge offset passes validation and makes the database
 # fail (500). One billion is far beyond any real list.
@@ -323,6 +325,22 @@ class UserOut(BaseModel):
     avatar: str | None
     user_location: str | None
     created_at: datetime
+    last_seen: datetime | None
+    is_online: bool
+
+    @field_serializer("last_seen")
+    def serialise_last_seen(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+class SessionOut(BaseModel):
+    """Answer of GET /api/auth/session: the logged-in user, or null."""
+
+    user: UserOut | None
 
 # ==========================================================================
 # LISTINGS SCHEMAS
@@ -413,6 +431,44 @@ class PublicUserOut(BaseModel):
     user_name: str
     avatar: str | None
     user_location: str | None
+    is_online: bool
+
+
+class FriendOut(BaseModel):
+    """Public data for a user in the authenticated user's friend list."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_name: str
+    avatar: str | None
+    user_location: str | None
+    is_online: bool
+    last_seen: datetime | None
+
+    @field_serializer("last_seen")
+    def serialise_last_seen(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            # Database DATETIME values are written and read as UTC by the
+            # backend; a naive value therefore represents UTC here.
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+class FriendPageOut(BaseModel):
+    """One page of the authenticated user's active friends."""
+
+    items: list[FriendOut]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=MAX_FRIENDS_PAGE_SIZE)
+    offset: int = Field(ge=0)
+
+
+class FriendStatusOut(BaseModel):
+    is_friend: bool
+
 
 # --- Saídas de Anúncios ---
 class ListingSummaryOut(BaseModel):
@@ -456,7 +512,17 @@ class PublicProfileOut(BaseModel):
     avatar: str | None
     user_location: str | None
     created_at: datetime
+    last_seen: datetime | None
+    is_online: bool
     listings: list[ListingSummaryOut] = Field(default_factory=list)
+
+    @field_serializer("last_seen")
+    def serialise_last_seen(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 # ===========================================================================
