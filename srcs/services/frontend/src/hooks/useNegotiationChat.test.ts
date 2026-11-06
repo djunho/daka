@@ -795,6 +795,169 @@ describe('useNegotiationChat', () => {
     expect(result.current.isLoadingOlder).toBe(false)
   })
 
+  it('reports a failed older page, clears it on a retry that works, and ignores refusals', async () => {
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [{ id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Antiga', created_at: '2026-10-28T10:00:00Z' }],
+      limit: 50,
+      next_before_id: 10,
+      has_more: true,
+    })
+    const { result } = renderHook(() => useNegotiationChat(42))
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new Error('Blip'))
+    await act(async () => {
+      await result.current.loadOlder()
+    })
+    expect(result.current.olderFailed).toBe(true)
+    expect(result.current.hasOlder).toBe(true)
+
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({ items: [], limit: 50, next_before_id: null, has_more: false })
+    await act(async () => {
+      await result.current.loadOlder()
+    })
+    expect(result.current.olderFailed).toBe(false)
+    expect(result.current.hasOlder).toBe(false)
+  })
+
+  it('reports a refused older page itself, since an idle socket does not learn about it', async () => {
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [{ id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Antiga', created_at: '2026-10-28T10:00:00Z' }],
+      limit: 50,
+      next_before_id: 10,
+      has_more: true,
+    })
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new ApiError(403, 'Not a participant'))
+    await act(async () => {
+      await result.current.loadOlder()
+    })
+    expect(result.current.error).toContain('Não tens permissão')
+    expect(result.current.connectionRefused).toBe(true)
+    expect(result.current.hasOlder).toBe(false)
+    expect(result.current.olderFailed).toBe(false)
+    expect(logout).not.toHaveBeenCalled()
+  })
+
+  it('signs out when an older page answers 401', async () => {
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [{ id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Antiga', created_at: '2026-10-28T10:00:00Z' }],
+      limit: 50,
+      next_before_id: 10,
+      has_more: true,
+    })
+    const { result } = renderHook(() => useNegotiationChat(42))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new ApiError(401, 'Not authenticated'))
+    await act(async () => {
+      await result.current.loadOlder()
+    })
+    expect(logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops an older-page failure notice when a reconnect replaces the thread', async () => {
+    vi.useFakeTimers()
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [{ id: 10, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: 'Antiga', created_at: '2026-10-28T10:00:00Z' }],
+      limit: 50,
+      next_before_id: 10,
+      has_more: true,
+    })
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new Error('Blip'))
+    await act(async () => {
+      await result.current.loadOlder()
+    })
+    expect(result.current.olderFailed).toBe(true)
+
+    vi.mocked(apiListNegotiationMessages).mockResolvedValueOnce({
+      items: [120, 121].map((id) => ({
+        id, negotiation_id: 42, sender: { id: 2, user_name: 'Beatriz', avatar: null }, content: `Nova ${id}`, created_at: '2026-10-28T12:00:00Z',
+      })),
+      limit: 50,
+      next_before_id: 120,
+      has_more: true,
+    })
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.messages.map((m) => m.id)).toEqual([120, 121])
+    expect(result.current.olderFailed).toBe(false)
+    vi.useRealTimers()
+  })
+
+  it('marks the connection refused only on terminal closes', () => {
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(WS_CLOSE_CODES.FORBIDDEN, 'Forbidden')
+    })
+    expect(result.current.connectionRefused).toBe(true)
+
+    const other = renderHook(() => useNegotiationChat(43))
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateClose(WS_CLOSE_CODES.NORMAL_CLOSURE, 'Bye')
+    })
+    expect(other.result.current.connectionRefused).toBe(false)
+  })
+
+  it('clears an old history notice when the reconnect backfill is refused', async () => {
+    vi.useFakeTimers()
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new Error('Blip'))
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(true)
+
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new ApiError(403, 'Not a participant'))
+    act(() => {
+      MockWebSocket.instances[0].simulateClose(1006, 'Drop')
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    act(() => {
+      MockWebSocket.instances[1].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(false)
+    vi.useRealTimers()
+  })
+
   it('clears error with clearError callback', () => {
     const { result } = renderHook(() => useNegotiationChat(42, { isReadOnly: true }))
 
@@ -899,6 +1062,39 @@ describe('useNegotiationChat', () => {
       await Promise.resolve()
     })
     expect(result.current.historyFailed).toBe(false)
+  })
+
+  it('reports a refused retry of the first page instead of showing an empty thread', async () => {
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new Error('Blip'))
+    const { result } = renderHook(() => useNegotiationChat(42))
+    act(() => {
+      MockWebSocket.instances[0].simulateOpen()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(true)
+
+    // The socket sits idle; meanwhile the membership was revoked
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new ApiError(403, 'Not a participant'))
+    act(() => {
+      result.current.retryHistory()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.historyFailed).toBe(false)
+    expect(result.current.connectionRefused).toBe(true)
+    expect(result.current.error).toContain('Não tens permissão')
+
+    vi.mocked(apiListNegotiationMessages).mockRejectedValueOnce(new ApiError(401, 'Not authenticated'))
+    act(() => {
+      result.current.retryHistory()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(logout).toHaveBeenCalledTimes(1)
   })
 
   it('does not offer a retry when the history is refused (the socket reports 403/404)', async () => {

@@ -12,9 +12,20 @@ import { MESSAGE_MAX_LENGTH, WS_CLOSE_CODES, normaliseMessageContent } from '../
 export type ChatConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
 // Outcome of one history page: merged into the thread, dropped as stale, a
-// transient failure worth retrying, or a terminal refusal (401/403/404) that
-// the socket reports on its own and a retry could not fix.
-type SyncResult = 'merged' | 'dropped' | 'failed' | 'terminal'
+// transient failure worth retrying, or a refusal a retry could not fix
+// (401/403/404, named after the matching WebSocket error codes).
+type RefusalCode = 'unauthenticated' | 'forbidden' | 'negotiation_not_found'
+type SyncResult = 'merged' | 'dropped' | 'failed' | RefusalCode
+
+const REFUSAL_BY_STATUS: Partial<Record<number, RefusalCode>> = {
+  401: 'unauthenticated',
+  403: 'forbidden',
+  404: 'negotiation_not_found',
+}
+
+function isRefusal(result: SyncResult): result is RefusalCode {
+  return result === 'unauthenticated' || result === 'forbidden' || result === 'negotiation_not_found'
+}
 
 export interface ChatMessageItem {
   id: number
@@ -49,6 +60,10 @@ export interface UseNegotiationChatReturn {
   // closes with the matching code and `error` reports that instead.
   historyFailed: boolean
   retryHistory: () => void
+  // The socket was refused for good (4401/4403/4404); `error` says why.
+  connectionRefused: boolean
+  // The last "older messages" page could not be loaded; loadOlder() retries it.
+  olderFailed: boolean
   // Older history is paged on demand: the first load brings the newest 50.
   hasOlder: boolean
   isLoadingOlder: boolean
@@ -87,6 +102,8 @@ export function useNegotiationChat(
   const [isLoadingOlder, setIsLoadingOlder] = useState<boolean>(false)
   const [historyFailed, setHistoryFailed] = useState<boolean>(false)
   const [isSending, setIsSending] = useState<boolean>(false)
+  const [connectionRefused, setConnectionRefused] = useState<boolean>(false)
+  const [olderFailed, setOlderFailed] = useState<boolean>(false)
   const [confirmedSends, setConfirmedSends] = useState<number>(0)
   // Content of the message in flight, matched against our own message.created.
   // The protocol has no acknowledgement id, so our own other tab sending the
@@ -132,7 +149,23 @@ export function useNegotiationChat(
     setHasOlder(false)
     setIsLoadingOlder(false)
     setHistoryFailed(false)
+    setConnectionRefused(false)
+    setOlderFailed(false)
   }, [negotiationId])
+
+  // A history request refused with 401/403/404. An idle socket only learns
+  // about a revoked session or membership on its next send or broadcast, so
+  // the REST answer is reported here: sign out on 401 like the pages do,
+  // otherwise explain and stop offering history that cannot load.
+  const reportRefusal = useCallback((refusal: RefusalCode) => {
+    if (refusal === 'unauthenticated') {
+      void logoutRef.current()
+      return
+    }
+    setError(getWebSocketErrorMessage(refusal))
+    setConnectionRefused(true)
+    setHasOlder(false)
+  }, [])
 
   // Fetch one page of history via REST (the newest 50, or the 50 before
   // `beforeId`) and merge it, deduplicated by id. A dropped (cancelled) page
@@ -177,7 +210,11 @@ export function useNegotiationChat(
         // a page starting right after the newest shown id also replaces the
         // thread, and the message it hides is one page back.
         const gap = beforeId === undefined && page.has_more && pageOldest !== undefined && pageOldest > shownNewest
-        if (gap) threadGenerationRef.current += 1
+        if (gap) {
+          threadGenerationRef.current += 1
+          // A failure notice for an older page of the replaced thread no longer applies
+          setOlderFailed(false)
+        }
 
         setMessages((prev) => {
           if (gap) {
@@ -195,10 +232,8 @@ export function useNegotiationChat(
         return 'merged'
       } catch (err) {
         // The WebSocket connection still proceeds; callers decide what to show
-        if (err instanceof ApiError && (err.status === 401 || err.status === 403 || err.status === 404)) {
-          return 'terminal'
-        }
-        return 'failed'
+        const refusal = err instanceof ApiError ? REFUSAL_BY_STATUS[err.status] : undefined
+        return refusal ?? 'failed'
       }
     },
     [],
@@ -238,12 +273,13 @@ export function useNegotiationChat(
       const supersededByBackfill = newestPageCountRef.current !== newestPagesBefore
       setHistoryFailed(result === 'failed' && !supersededByBackfill)
       setIsLoadingHistory(false)
+      if (isRefusal(result)) reportRefusal(result)
     })
 
     return () => {
       isCancelled = true
     }
-  }, [negotiationId, currentUserId, historyAttempt, syncHistory])
+  }, [negotiationId, currentUserId, historyAttempt, syncHistory, reportRefusal])
 
   // Establish and manage the WebSocket lifecycle for the active negotiation
   useEffect(() => {
@@ -269,6 +305,7 @@ export function useNegotiationChat(
         if (isCancelled) return
         setStatus('connected')
         setError(null)
+        setConnectionRefused(false)
 
         // If this was a reconnection after a disconnect, backfill any messages missed
         // while offline (syncHistory replaces the thread when more than a page was missed)
@@ -277,8 +314,11 @@ export function useNegotiationChat(
             if (isCancelled) return
             // A successful backfill also recovers from a failed first page; a failed
             // one may have missed messages, which only a retry can bring back
-            if (result === 'merged') setHistoryFailed(false)
+            // A refusal is reported by the socket's own close (and `error`), so
+            // an old retry notice would only offer a retry that cannot work.
+            if (result === 'merged' || isRefusal(result)) setHistoryFailed(false)
             else if (result === 'failed') setHistoryFailed(true)
+            if (isRefusal(result)) reportRefusal(result)
           })
         }
         reconnectAttemptsRef.current = 0
@@ -356,6 +396,7 @@ export function useNegotiationChat(
         if (event.code === WS_CLOSE_CODES.UNAUTHORIZED) {
           setError(getWebSocketErrorMessage(event.code))
           setStatus('disconnected')
+          setConnectionRefused(true)
           void logoutRef.current()
           return
         }
@@ -364,6 +405,7 @@ export function useNegotiationChat(
         if (event.code === WS_CLOSE_CODES.FORBIDDEN || event.code === WS_CLOSE_CODES.NOT_FOUND) {
           setError(getWebSocketErrorMessage(event.code))
           setStatus('disconnected')
+          setConnectionRefused(true)
           return
         }
 
@@ -408,7 +450,7 @@ export function useNegotiationChat(
       pendingContentRef.current = null
       setIsSending(false)
     }
-  }, [negotiationId, currentUserId, syncHistory])
+  }, [negotiationId, currentUserId, syncHistory, reportRefusal])
 
   const clearError = useCallback(() => {
     setError(null)
@@ -427,14 +469,17 @@ export function useNegotiationChat(
     if (!negotiationId || !currentUserId || !hasOlder || isLoadingOlder || oldestId === undefined) return
 
     setIsLoadingOlder(true)
+    setOlderFailed(false)
     const switched = () => negotiationIdRef.current !== negotiationId
     // The page belongs to the thread as shown now; drop it if that thread is replaced meanwhile
     const generation = threadGenerationRef.current
     const stale = () => switched() || threadGenerationRef.current !== generation
-    await syncHistory(negotiationId, currentUserId, stale, oldestId)
+    const result = await syncHistory(negotiationId, currentUserId, stale, oldestId)
     if (switched()) return
+    setOlderFailed(result === 'failed')
     setIsLoadingOlder(false)
-  }, [negotiationId, currentUserId, hasOlder, isLoadingOlder, oldestId, syncHistory])
+    if (isRefusal(result)) reportRefusal(result)
+  }, [negotiationId, currentUserId, hasOlder, isLoadingOlder, oldestId, syncHistory, reportRefusal])
 
   /**
    * Submit a new text message through the active WebSocket channel.
@@ -488,6 +533,8 @@ export function useNegotiationChat(
     confirmedSends,
     historyFailed,
     retryHistory,
+    connectionRefused,
+    olderFailed,
     hasOlder,
     isLoadingOlder,
     loadOlder,
