@@ -99,7 +99,7 @@ class MessageCreatedData(BaseModel):
     created_at: datetime
 
     @field_serializer("created_at")
-    def serialise_created_at(self, value: datetime) -> str:
+    def serialize_created_at(self, value: datetime) -> str:
         # app.database enforces UTC on every MariaDB pool checkout, so naive
         # TIMESTAMP results represent UTC rather than the server's local zone.
         if value.tzinfo is None:
@@ -138,7 +138,7 @@ class MessageHistoryOut(BaseModel):
     created_at: datetime
 
     @field_serializer("created_at")
-    def serialise_created_at(self, value: datetime) -> str:
+    def serialize_created_at(self, value: datetime) -> str:
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -329,7 +329,7 @@ class UserOut(BaseModel):
     is_online: bool
 
     @field_serializer("last_seen")
-    def serialise_last_seen(self, value: datetime | None) -> str | None:
+    def serialize_last_seen(self, value: datetime | None) -> str | None:
         if value is None:
             return None
         if value.tzinfo is None:
@@ -441,7 +441,7 @@ class FriendOut(BaseModel):
     last_seen: datetime | None
 
     @field_serializer("last_seen")
-    def serialise_last_seen(self, value: datetime | None) -> str | None:
+    def serialize_last_seen(self, value: datetime | None) -> str | None:
         if value is None:
             return None
         if value.tzinfo is None:
@@ -511,7 +511,7 @@ class PublicProfileOut(BaseModel):
     listings: list[ListingSummaryOut] = Field(default_factory=list)
 
     @field_serializer("last_seen")
-    def serialise_last_seen(self, value: datetime | None) -> str | None:
+    def serialize_last_seen(self, value: datetime | None) -> str | None:
         if value is None:
             return None
         if value.tzinfo is None:
