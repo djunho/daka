@@ -14,6 +14,7 @@ import {
   apiCreateProposal,
   apiGetNegotiation,
   apiRejectProposal,
+  apiReopenProposal,
   apiWithdrawProposal,
   type ApiNegotiationDetail,
   type ApiProposal,
@@ -32,7 +33,7 @@ const CONFLICT_MESSAGE = 'Os dados desta negociação foram alterados ou deixara
 
 // The action waiting for confirmation in the dialog.
 type PendingAction =
-  | { kind: 'accept' | 'reject' | 'withdraw'; proposal: ApiProposal }
+  | { kind: 'accept' | 'reject' | 'withdraw' | 'reopen'; proposal: ApiProposal }
   | { kind: 'cancel' | 'complete' }
 
 function proposalName(proposal: ApiProposal): string {
@@ -69,6 +70,15 @@ function actionCopy(action: PendingAction, negotiation: ApiNegotiationDetail) {
         busyLabel: 'A retirar…',
         confirmVariant: 'danger' as const,
         success: 'Proposta retirada.',
+      }
+    case 'reopen':
+      return {
+        title: 'Reabrir proposta',
+        message: `A proposta volta a ficar pendente: ${proposalName(action.proposal)}. ${negotiation.owner.user_name} pode aceitá-la ou rejeitá-la.`,
+        confirmLabel: 'Sim, reabrir',
+        busyLabel: 'A reabrir…',
+        confirmVariant: 'primary' as const,
+        success: 'Proposta reaberta.',
       }
     case 'complete':
       return {
@@ -287,6 +297,13 @@ export default function Negotiation() {
       case 'withdraw':
         void perform(() => apiWithdrawProposal(pendingAction.proposal.id), success)
         break
+      case 'reopen':
+        void perform(
+          () => apiReopenProposal(pendingAction.proposal.id),
+          success,
+          'Não foi possível reabrir a proposta: a negociação ou o anúncio oferecido mudaram entretanto. A página foi atualizada.',
+        )
+        break
       case 'cancel':
         void perform(() => apiCancelNegotiation(negotiationId), success)
         break
@@ -306,7 +323,7 @@ export default function Negotiation() {
     const created = await perform(
       () => apiCreateProposal(negotiationId, offeredListingId),
       'Proposta enviada.',
-      'Já existe uma proposta igual nesta negociação, ou os dados foram alterados. A página foi atualizada.',
+      'Já existe uma proposta com este anúncio nesta negociação, ou os dados foram alterados. Se a retiraste, podes reabri-la no histórico. A página foi atualizada.',
       { inlineConflict: true },
     )
     if (created) setProposalFormOpen(false)
@@ -445,6 +462,9 @@ export default function Negotiation() {
               proposalFormOpen ? (
                 <ProposalForm
                   userId={user.id}
+                  usedListingIds={negotiation.proposals.flatMap((p) => (p.offered_listing ? [p.offered_listing.id] : []))}
+                  hasNoListingProposal={negotiation.proposals.some((p) => p.offered_listing === null)}
+                  canReopen={negotiation.proposals.some((p) => p.state.state_name === 'Withdrawn')}
                   busy={busy}
                   error={actionError}
                   onSubmit={submitProposal}
@@ -671,6 +691,23 @@ function ProposalsPanel({
     )
   }
 
+  // Only the interested user may reopen, and only what they withdrew (ADR-0003).
+  function closedActions(proposal: ApiProposal) {
+    if (!canAct || !isInterested || proposal.state.state_name !== 'Withdrawn') return null
+    return (
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button
+          size="sm"
+          disabled={busy}
+          aria-label={`Reabrir proposta: ${proposalName(proposal)}`}
+          onClick={() => onAction({ kind: 'reopen', proposal })}
+        >
+          Reabrir
+        </Button>
+      </div>
+    )
+  }
+
   return (
     <section aria-labelledby="proposals-heading" className="space-y-5">
       <h2 id="proposals-heading" className="font-display text-xl font-bold text-ink">Propostas</h2>
@@ -691,7 +728,7 @@ function ProposalsPanel({
         renderActions={pendingActions}
         linkListings={canAct}
       />
-      <ProposalGroup title="Histórico" proposals={closed} />
+      <ProposalGroup title="Histórico" proposals={closed} renderActions={closedActions} />
     </section>
   )
 }

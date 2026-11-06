@@ -4,7 +4,7 @@
 
 **Date:** 28-10-2026
 
-**Last updated:** 31-10-2026
+**Last updated:** 05-11-2026
 
 **Author(s):** DAKA Team
 
@@ -42,7 +42,8 @@ DAKA will adopt a chat-centric negotiation model with the following rules:
   to offer in return.
 - Within one negotiation, the same offered listing may appear in at most one
   proposal, and at most one proposal may omit the offered listing.
-- The interested user may withdraw an individual pending proposal.
+- The interested user may withdraw an individual pending proposal, and may
+  reopen it while the negotiation is open (see ADR-0003).
 - When one proposal is accepted, the accepted proposal moves to `Accepted` and
   the negotiation moves to `Agreed`.
 - The requested listing and, when present, the offered listing move atomically
@@ -224,4 +225,6 @@ and a separate proposal banner.
 
 ## Related ADRs
 
-- None.
+- [ADR-0003](0003-allow-reopening-withdrawn-proposals.md): lets the
+  interested user reopen a withdrawn proposal. It complements the rules above
+  on withdrawing and preserving proposals.

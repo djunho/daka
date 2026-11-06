@@ -12,6 +12,7 @@ import {
   apiGetNegotiation,
   apiGetPublicProfile,
   apiRejectProposal,
+  apiReopenProposal,
   apiWithdrawProposal,
   type ApiListingDetail,
   type ApiNegotiationDetail,
@@ -31,6 +32,7 @@ vi.mock('../lib/api', async (importOriginal) => ({
   apiGetNegotiation: vi.fn(),
   apiGetPublicProfile: vi.fn(),
   apiRejectProposal: vi.fn(),
+  apiReopenProposal: vi.fn(),
   apiWithdrawProposal: vi.fn(),
 }))
 vi.mock('../context/AuthContext', () => ({ useAuth: vi.fn() }))
@@ -119,7 +121,7 @@ describe('Negotiation actions', () => {
 
   beforeEach(() => {
     vi.mocked(apiGetNegotiation).mockReset()
-    for (const fn of [apiAcceptProposal, apiRejectProposal, apiWithdrawProposal, apiCreateProposal]) {
+    for (const fn of [apiAcceptProposal, apiRejectProposal, apiWithdrawProposal, apiReopenProposal, apiCreateProposal]) {
       vi.mocked(fn).mockReset().mockResolvedValue(proposal(1, 'Pending', 'x'))
     }
     vi.mocked(apiCancelNegotiation).mockReset()
@@ -263,7 +265,7 @@ describe('Negotiation actions', () => {
       await userEvent.click(await button('Enviar proposta'))
 
       const alert = await screen.findByRole('alert')
-      expect(alert).toHaveTextContent('Já existe uma proposta igual nesta negociação')
+      expect(alert).toHaveTextContent('Já existe uma proposta com este anúncio nesta negociação')
       // The message stays in the form, next to the choice to change.
       expect(alert.closest('form')).not.toBeNull()
       expect(screen.getAllByRole('alert')).toHaveLength(1)
@@ -280,7 +282,7 @@ describe('Negotiation actions', () => {
       await userEvent.click(await button('Enviar proposta'))
 
       const alert = await screen.findByRole('alert')
-      expect(alert).toHaveTextContent('Já existe uma proposta igual nesta negociação')
+      expect(alert).toHaveTextContent('Já existe uma proposta com este anúncio nesta negociação')
       expect(alert.closest('form')).toBeNull()
       expect(alert).toHaveFocus()
       expect(screen.queryByLabelText('O que ofereces em troca?')).not.toBeInTheDocument()
@@ -560,6 +562,150 @@ describe('Negotiation actions', () => {
 
       expect(screen.getByText('Rejeitada')).toBeInTheDocument()
       expect(screen.queryByText('Pendente')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('reopening a withdrawn proposal', () => {
+    it('only the interested user sees "Reabrir", and only on withdrawn proposals', async () => {
+      const proposals = [proposal(1, 'Withdrawn', 'Livro'), proposal(2, 'Rejected', 'Mesa'), proposal(3, 'ItemUnavailable', 'Cadeira')]
+      await open(INTERESTED, negotiation('Open', proposals))
+
+      expect(await button('Reabrir proposta: Livro')).toBeInTheDocument()
+      noButton('Reabrir proposta: Mesa')
+      noButton('Reabrir proposta: Cadeira')
+    })
+
+    it('the owner cannot reopen', async () => {
+      await open(OWNER, negotiation('Open', [proposal(1, 'Withdrawn', 'Livro')]))
+
+      noButton(/Reabrir/)
+    })
+
+    it('a closed negotiation keeps its withdrawn proposals closed', async () => {
+      await open(INTERESTED, negotiation('Cancelled', [proposal(1, 'Withdrawn', 'Livro')]))
+
+      noButton(/Reabrir/)
+    })
+
+    it('reopens after confirming, and the proposal is pending again', async () => {
+      await open(INTERESTED, negotiation('Open', [proposal(1, 'Withdrawn', 'Livro')]))
+      vi.mocked(apiGetNegotiation).mockResolvedValue(negotiation('Open', [proposal(1, 'Pending', 'Livro')]))
+
+      await userEvent.click(await button('Reabrir proposta: Livro'))
+      const confirm = await dialog()
+      expect(confirm).toHaveTextContent('A proposta volta a ficar pendente: Livro. Ana pode aceitá-la ou rejeitá-la.')
+      expect(apiReopenProposal).not.toHaveBeenCalled()
+      await userEvent.click(within(confirm).getByRole('button', { name: 'Sim, reabrir' }))
+
+      expect(apiReopenProposal).toHaveBeenCalledWith(1)
+      expect(await screen.findByText('Proposta reaberta.')).toHaveFocus()
+      expect(screen.getByRole('heading', { name: 'Propostas pendentes' })).toBeInTheDocument()
+      expect(await button('Retirar proposta: Livro')).toBeInTheDocument()
+    })
+
+    it('cancelling the dialog does not reopen', async () => {
+      await open(INTERESTED, negotiation('Open', [proposal(1, 'Withdrawn', 'Livro')]))
+
+      await userEvent.click(await button('Reabrir proposta: Livro'))
+      await userEvent.click(within(await dialog()).getByRole('button', { name: 'Cancelar' }))
+
+      expect(apiReopenProposal).not.toHaveBeenCalled()
+    })
+
+    it('on 409 loads the negotiation again and explains why', async () => {
+      await open(INTERESTED, negotiation('Open', [proposal(1, 'Withdrawn', 'Livro')]))
+      vi.mocked(apiReopenProposal).mockRejectedValue(new ApiError(409, 'Offered listing is not available.'))
+
+      await userEvent.click(await button('Reabrir proposta: Livro'))
+      await userEvent.click(within(await dialog()).getByRole('button', { name: 'Sim, reabrir' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Não foi possível reabrir a proposta: a negociação ou o anúncio oferecido mudaram entretanto.',
+      )
+      expect(apiGetNegotiation).toHaveBeenCalledTimes(2)
+    })
+
+    it('on 401 clears the session', async () => {
+      await open(INTERESTED, negotiation('Open', [proposal(1, 'Withdrawn', 'Livro')]))
+      vi.mocked(apiReopenProposal).mockRejectedValue(new ApiError(401, 'Not authenticated.'))
+
+      await userEvent.click(await button('Reabrir proposta: Livro'))
+      await userEvent.click(within(await dialog()).getByRole('button', { name: 'Sim, reabrir' }))
+
+      await waitFor(() => expect(logout).toHaveBeenCalledTimes(1))
+    })
+  })
+
+  describe('new proposal choices', () => {
+    const BOOK = { ...LISTING, id: 7, title: 'Livro', owner: INTERESTED }
+    const TABLE = { ...LISTING, id: 8, title: 'Mesa', owner: INTERESTED }
+
+    async function openFormWith(proposals: ApiProposal[]) {
+      vi.mocked(apiGetPublicProfile).mockResolvedValue({ ...INTERESTED, created_at: '', listings: [BOOK, TABLE] } as ApiPublicProfile)
+      await open(INTERESTED, negotiation('Open', proposals))
+      await userEvent.click(await button('Criar proposta'))
+    }
+
+    it('leaves out the listings and the "no listing" option this negotiation already used', async () => {
+      await openFormWith([
+        { ...proposal(1, 'Withdrawn', null), offered_listing: BOOK },
+        proposal(2, 'Rejected', null),
+      ])
+
+      const select = await screen.findByLabelText('O que ofereces em troca?')
+      const options = within(select).getAllByRole('option').map((option) => option.textContent)
+      expect(options).toEqual(['Escolhe uma opção', 'Mesa'])
+    })
+
+    it('clears a choice that another tab used first, so it cannot be sent again', async () => {
+      await openFormWith([])
+      const select = await screen.findByLabelText('O que ofereces em troca?')
+      vi.mocked(apiCreateProposal).mockRejectedValue(new ApiError(409, 'An identical proposal already exists.'))
+      // The reload after the 409 shows the proposal the other tab made with Livro.
+      vi.mocked(apiGetNegotiation).mockResolvedValue(negotiation('Open', [{ ...proposal(1, 'Pending', null), offered_listing: BOOK }]))
+
+      await userEvent.selectOptions(select, 'Livro')
+      await userEvent.click(await button('Enviar proposta'))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Já existe uma proposta com este anúncio nesta negociação')
+      await waitFor(() => expect(screen.getByLabelText('O que ofereces em troca?')).toHaveValue(''))
+      expect(within(screen.getByLabelText('O que ofereces em troca?')).queryByRole('option', { name: 'Livro' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Enviar proposta' })).toBeDisabled()
+      expect(apiCreateProposal).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the 409 explanation when it used up the last choice', async () => {
+      // Only Livro is left: Mesa and "no listing" are already used.
+      await openFormWith([
+        { ...proposal(1, 'Rejected', null), offered_listing: TABLE },
+        proposal(2, 'Pending', null),
+      ])
+      const select = await screen.findByLabelText('O que ofereces em troca?')
+      vi.mocked(apiCreateProposal).mockRejectedValue(new ApiError(409, 'An identical proposal already exists.'))
+      vi.mocked(apiGetNegotiation).mockResolvedValue(negotiation('Open', [
+        { ...proposal(1, 'Rejected', null), offered_listing: TABLE },
+        proposal(2, 'Pending', null),
+        { ...proposal(3, 'Pending', null), offered_listing: BOOK },
+      ]))
+
+      await userEvent.selectOptions(select, 'Livro')
+      await userEvent.click(await button('Enviar proposta'))
+
+      expect(await screen.findByText(/Já usaste todos os teus anúncios disponíveis nesta negociação/)).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent('Já existe uma proposta com este anúncio nesta negociação')
+    })
+
+    it('says nothing is left and points to the history when everything was used', async () => {
+      await openFormWith([
+        { ...proposal(1, 'Withdrawn', null), offered_listing: BOOK },
+        { ...proposal(2, 'Rejected', null), offered_listing: TABLE },
+        proposal(3, 'Pending', null),
+      ])
+
+      expect(await screen.findByText(/Já usaste todos os teus anúncios disponíveis nesta negociação\./)).toHaveTextContent(
+        'Podes reabrir uma proposta retirada no histórico.',
+      )
+      expect(screen.queryByLabelText('O que ofereces em troca?')).not.toBeInTheDocument()
     })
   })
 })

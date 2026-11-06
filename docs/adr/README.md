@@ -73,3 +73,5 @@ Possible statuses:
 ## Index of Decisions
 
 - [ADR-0001: Location Autocomplete Strategy: Local Open-Source Dataset vs. Google Places API](0001-location-autocomplete-strategy.md)
+- [ADR-0002: Adopt a Chat-Centric Negotiation Model](0002-adopt-chat-centric-negotiations.md)
+- [ADR-0003: Allow Reopening Withdrawn Proposals](0003-allow-reopening-withdrawn-proposals.md)
