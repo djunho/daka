@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import NegotiationChatWidget from './NegotiationChatWidget'
 import { useNegotiationChat } from '../hooks/useNegotiationChat'
+import { formatDate } from '../types/negotiation'
 import type { UseNegotiationChatReturn } from '../hooks/useNegotiationChat'
 
 vi.mock('../hooks/useNegotiationChat', () => ({
@@ -157,6 +158,30 @@ describe('NegotiationChatWidget', () => {
 
     expect(screen.getByText('Primeira mensagem recebida')).toBeInTheDocument()
     expect(screen.getByText('Minha resposta enviada')).toBeInTheDocument()
+    // Both on the same day: a single day separator above the first one
+    expect(screen.getAllByText(formatDate('2026-10-28T14:30:00Z'))).toHaveLength(1)
+  })
+
+  it('separates messages from different days with the date', () => {
+    vi.mocked(useNegotiationChat).mockReturnValue(
+      mockChat({
+        messages: [
+          { id: 1, negotiationId: 42, senderId: 10, content: 'De ontem', createdAt: '2026-10-27T14:30:00Z', isOwn: false },
+          { id: 2, negotiationId: 42, senderId: 1, content: 'De hoje', createdAt: '2026-10-28T14:31:00Z', isOwn: true },
+          { id: 3, negotiationId: 42, senderId: 10, content: 'Também de hoje', createdAt: '2026-10-28T15:00:00Z', isOwn: false },
+        ],
+      }),
+    )
+
+    render(
+      <NegotiationChatWidget
+        negotiationId={42}
+        interlocutorName="Beatriz"
+      />,
+    )
+
+    expect(screen.getByText(formatDate('2026-10-27T14:30:00Z'))).toBeInTheDocument()
+    expect(screen.getAllByText(formatDate('2026-10-28T14:31:00Z'))).toHaveLength(1)
   })
 
   it('offers to load older messages only while the server has more', () => {

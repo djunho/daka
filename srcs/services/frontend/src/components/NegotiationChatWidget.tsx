@@ -1,9 +1,16 @@
-import { useState, useRef, useEffect, useLayoutEffect, type FormEvent } from 'react'
+import { Fragment, useState, useRef, useEffect, useLayoutEffect, type FormEvent } from 'react'
 import OnlineBadge from './OnlineBadge'
 import ChatMessageBubble from './ChatMessageBubble'
 import { useNegotiationChat } from '../hooks/useNegotiationChat'
+import { formatDate } from '../types/negotiation'
 
 const MAX_MESSAGE_LENGTH = 250
+
+// Calendar day in the viewer's timezone: a separator goes where it changes.
+function dayKey(iso: string): string {
+  const date = new Date(iso)
+  return isNaN(date.getTime()) ? iso : `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+}
 
 export interface NegotiationChatWidgetProps {
   negotiationId: number
@@ -177,15 +184,25 @@ export default function NegotiationChatWidget({
                     {isLoadingOlder ? 'A carregar…' : 'Ver mensagens anteriores'}
                   </button>
                 )}
-                {messages.map((msg) => (
-                  <ChatMessageBubble
-                    key={msg.id}
-                    content={msg.content}
-                    createdAt={msg.createdAt}
-                    isOwn={msg.isOwn}
-                    senderName={msg.isOwn ? undefined : interlocutorName}
-                  />
-                ))}
+                {messages.map((msg, index) => {
+                  const previous = messages[index - 1]
+                  const startsDay = !previous || dayKey(previous.createdAt) !== dayKey(msg.createdAt)
+                  return (
+                    <Fragment key={msg.id}>
+                      {startsDay && (
+                        <div className="self-center text-[10px] font-medium text-muted bg-surface border border-line rounded-full px-2 py-0.5 select-none">
+                          {formatDate(msg.createdAt)}
+                        </div>
+                      )}
+                      <ChatMessageBubble
+                        content={msg.content}
+                        createdAt={msg.createdAt}
+                        isOwn={msg.isOwn}
+                        senderName={msg.isOwn ? undefined : interlocutorName}
+                      />
+                    </Fragment>
+                  )
+                })}
               </>
             )}
             <div ref={messagesEndRef} />

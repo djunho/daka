@@ -1,11 +1,8 @@
 /**
- * Helper to format timestamp into PT-PT local time (HH:mm).
- * Supports both pre-formatted time strings ("14:32") and ISO-8601 timestamps.
+ * Helper to format an ISO-8601 timestamp into PT-PT local time (HH:mm).
+ * Falls back to the raw value when it is not a valid date.
  */
 function formatMessageTime(value: string): string {
-  if (/^\d{1,2}:\d{2}$/.test(value)) {
-    return value
-  }
   const date = new Date(value)
   if (isNaN(date.getTime())) {
     return value
