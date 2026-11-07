@@ -3,13 +3,13 @@
 from datetime import datetime, timedelta
 import logging
 
-from sqlalchemy import or_
+from sqlalchemy import exists, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import settings
-from app.models import User
+from app.models import User, UserSession
 from app.security import utcnow
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,10 @@ def touch_last_seen(
             .filter(
                 User.id == user_id,
                 or_(User.last_seen.is_(None), User.last_seen < cutoff),
+                exists().where(
+                    UserSession.user_id == User.id,
+                    UserSession.expires_at > current_time,
+                ),
             )
             .update(
                 {
