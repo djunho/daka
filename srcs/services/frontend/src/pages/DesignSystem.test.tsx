@@ -4,6 +4,15 @@ import { MemoryRouter } from 'react-router-dom'
 import DesignSystem from './DesignSystem'
 import { ICON_NAMES } from '../components/Icon'
 
+// The sample cards have a favorites heart, which reads the session and the
+// favorites. A visitor with nothing saved: the page itself needs no API.
+vi.mock('../context/AuthContext', () => ({
+  useAuth: () => ({ user: null, loading: false, logout: vi.fn() }),
+}))
+vi.mock('../context/FavoritesContext', () => ({
+  useFavorites: () => ({ ready: true, isFavorite: () => false, isPending: () => false, toggleFavorite: vi.fn() }),
+}))
+
 function renderPage() {
   return render(
     <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>

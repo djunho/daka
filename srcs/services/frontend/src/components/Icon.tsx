@@ -30,6 +30,7 @@ export const ICON_NAMES = [
   'eye',
   'eye-off',
   'user',
+  'heart',
 ] as const
 
 export type IconName = (typeof ICON_NAMES)[number]
@@ -102,6 +103,11 @@ const PATHS: Record<IconName, ReactNode> = {
       <circle cx="12" cy="8" r="4" />
       <path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" />
     </>
+  ),
+  // Favorites. Outline when not saved; a saved listing fills it with the
+  // fill-current class (see FavoriteButton), so there is one heart, not two.
+  heart: (
+    <path d="M12 20s-7.5-4.6-9.2-9.4C1.7 7.4 3.9 4.5 7.2 4.5c2 0 3.7 1.1 4.8 2.8 1.1-1.7 2.8-2.8 4.8-2.8 3.3 0 5.5 2.9 4.4 6.1C19.5 15.4 12 20 12 20Z" />
   ),
 }
 

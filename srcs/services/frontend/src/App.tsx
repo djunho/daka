@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ChatProvider } from './context/ChatContext'
+import { FavoritesProvider } from './context/FavoritesContext'
 import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
 import Home from './pages/Home'
@@ -17,6 +18,7 @@ import EditListing from './pages/EditListing'
 import Negotiation from './pages/Negotiation'
 import Negotiations from './pages/Negotiations'
 import Friends from './pages/Friends'
+import Favorites from './pages/Favorites'
 
 // The style guide is only opened on purpose (footer link), so it is loaded on
 // demand and does not grow the bundle every other page downloads.
@@ -38,6 +40,8 @@ export default function App() {
       }}
     >
       <AuthProvider>
+        {/* Inside AuthProvider: it reads the user's favorites after each login. */}
+        <FavoritesProvider>
         <ChatProvider>
           <Routes>
           <Route element={<Layout />}>
@@ -94,11 +98,17 @@ export default function App() {
                     <Friends />
                 </RequireAuth>
             } />
+            <Route path="/favorites" element={
+                <RequireAuth>
+                    <Favorites />
+                </RequireAuth>
+            } />
 
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
         </ChatProvider>
+        </FavoritesProvider>
       </AuthProvider>
     </BrowserRouter>
   )

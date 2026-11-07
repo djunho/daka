@@ -181,6 +181,14 @@ function UserMenu({
             Meus anúncios
           </Link>
           <Link
+            to="/favorites"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2.5 text-sm text-ink hover:bg-paper transition-colors"
+          >
+            Favoritos
+          </Link>
+          <Link
             to="/negotiations"
             role="menuitem"
             onClick={() => setOpen(false)}
