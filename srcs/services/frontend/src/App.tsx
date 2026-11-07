@@ -58,7 +58,9 @@ export default function App() {
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="/design-system" element={
-                <Suspense fallback={null}>
+                // While the page's chunk loads (a few milliseconds), only screen
+                // readers hear something: a visible "loading" would just flash.
+                <Suspense fallback={<p role="status" className="sr-only">A carregar…</p>}>
                     <DesignSystem />
                 </Suspense>
             } />
