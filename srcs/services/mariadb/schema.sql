@@ -52,6 +52,10 @@ CREATE TABLE sessions (
 	-- stores exactly what we write. We always write UTC (see
 	-- app/security.py:utcnow), so what comes back out is the same instant.
 	expires_at		DATETIME NOT NULL,
+	-- Last activity through this session (UTC), written at most once a
+	-- minute. Logout uses it to tell a device still in use from a session
+	-- nobody has touched for days (see app/routers/auth.py:logout).
+	last_seen_at	DATETIME NULL DEFAULT NULL,
 	created_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
 	-- ON DELETE CASCADE: deleting a user takes their sessions with them.

@@ -123,6 +123,58 @@ class PresenceTestCase(unittest.TestCase):
         self.assertIs(resolved, self.user)
         self.assertIsNotNone(self.user.last_seen)
 
+    def add_session(self, token: str, expires_in: timedelta = timedelta(hours=1)) -> UserSession:
+        session = UserSession(
+            user_id=self.user.id,
+            token_hash=hash_session_token(token),
+            expires_at=utcnow() + expires_in,
+        )
+        self.db.add(session)
+        self.db.commit()
+        return session
+
+    def test_request_records_activity_on_its_session_once_per_minute(self) -> None:
+        session = self.add_session("device")
+        first_now = utcnow()
+
+        self.assertTrue(touch_last_seen(self.db, self.user, first_now, session=session))
+        self.assertEqual(session.last_seen_at, first_now)
+
+        touch_last_seen(self.db, self.user, first_now + timedelta(seconds=30), session=session)
+        self.assertEqual(session.last_seen_at, first_now)
+
+        second_now = first_now + timedelta(seconds=61)
+        touch_last_seen(self.db, self.user, second_now, session=session)
+        self.db.refresh(session)
+        self.assertEqual(session.last_seen_at, second_now)
+
+    def test_session_activity_is_recorded_while_another_device_keeps_the_user_online(self) -> None:
+        # The other device wrote users.last_seen a moment ago.
+        now = utcnow()
+        self.user.last_seen = now - timedelta(seconds=10)
+        self.db.commit()
+        session = self.add_session("second-device")
+
+        self.assertFalse(touch_last_seen(self.db, self.user, now, session=session))
+
+        self.db.refresh(session)
+        self.assertEqual(session.last_seen_at, now)
+        self.assertEqual(self.user.last_seen, now - timedelta(seconds=10))
+
+    def test_logged_out_or_expired_session_does_not_bring_the_user_back_online(self) -> None:
+        # A request that was already running when its session ended.
+        deleted = self.add_session("logged-out")
+        self.db.delete(deleted)
+        self.db.commit()
+        self.assertFalse(touch_last_seen(self.db, self.user, utcnow(), session=deleted))
+        self.assertIsNone(self.user.last_seen)
+
+        expired = self.add_session("expired", expires_in=timedelta(hours=-1))
+        self.assertFalse(touch_last_seen(self.db, self.user, utcnow(), session=expired))
+        self.db.refresh(expired)
+        self.assertIsNone(self.user.last_seen)
+        self.assertIsNone(expired.last_seen_at)
+
     def test_presence_write_failure_does_not_expire_request_user(self) -> None:
         user_id = self.user.id
         with patch(
