@@ -911,9 +911,10 @@ def logout(
             .first()
         )
         if session is not None:
+            user_id = session.user_id
             user = (
                 db.query(User)
-                .filter(User.id == session.user_id)
+                .filter(User.id == user_id)
                 .populate_existing()
                 .with_for_update()
                 .first()
@@ -922,7 +923,7 @@ def logout(
             db.flush()
             has_active_session = db.query(
                 exists().where(
-                    UserSession.user_id == session.user_id,
+                    UserSession.user_id == user_id,
                     UserSession.expires_at > utcnow(),
                 )
             ).scalar()
