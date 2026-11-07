@@ -363,6 +363,18 @@ class ImageOut(BaseModel):
     image_path: str
     is_primary: bool
 
+
+# --- Documents ---
+class DocumentOut(BaseModel):
+    """What anyone may see of a listing's PDF. The file itself needs a session
+    (GET /listings/{id}/documents/{doc_id}/file); its name on disk is never sent."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    original_name: str
+    size_bytes: int
+    page_count: int
+    created_at: datetime
+
 # --- Ad Entries ---
 class ListingCreateIn(BaseModel):
     title: str = Field(min_length=3, max_length=150)
@@ -499,6 +511,7 @@ class ListingDetailOut(ListingSummaryOut):
     """Detailed version with full description and images."""
     listing_dsc: str | None
     images: list[ImageOut] = Field(default_factory=list)
+    documents: list[DocumentOut] = Field(default_factory=list)
     is_favorited: bool = False
 
 

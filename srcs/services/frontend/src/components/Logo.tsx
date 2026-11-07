@@ -1,48 +1,46 @@
-// Daka wordmark, recreated as inline SVG so it stays crisp at any size and
-// adapts to dark mode. Colors come from the site's palette:
-// "da" uses the ink color, "ka" the brand teal, and the two arrows in the
-// middle are the swap signature (teal on top, coral on the bottom).
-export default function Logo({ height = 34 }: { height?: number }) {
+// The Daka logo mark: two arrows going opposite ways on the brand square, the
+// trade in one picture (what you have goes out, what you want comes back).
+//
+// One component for every place the mark appears, so its drawing and colors
+// live in one place. Colors are design tokens: the white arrow uses
+// --color-surface and the red one --color-logo-accent, the brand's original
+// red. The logo keeps that brighter red because it is a graphic, not text, so
+// the 4.5:1 text contrast rule does not apply to it (design-system.md).
+
+// Tailwind only generates classes written out in full, so each size is
+// spelled out here instead of being built from numbers.
+const SIZES = {
+  md: { box: 'w-9 h-9 rounded-[10px]', icon: 22 }, // header
+  lg: { box: 'w-11 h-11 rounded-xl', icon: 26 },   // login card
+}
+
+type LogoMarkProps = {
+  size?: keyof typeof SIZES
+}
+
+// Decorative: it always sits next to the "daka" name or inside a link that
+// is already named, so screen readers skip it.
+export default function LogoMark({ size = 'md' }: LogoMarkProps) {
+  const { box, icon } = SIZES[size]
+
   return (
-    <svg
-      height={height}
-      viewBox="0 0 132 44"
-      role="img"
-      aria-label="Daka"
-      style={{ display: 'block' }}
-    >
-      {/* "da" — the side the person gives */}
-      <text
-        x="52"
-        y="34"
-        textAnchor="end"
-        fontFamily="'Bricolage Grotesque', system-ui, sans-serif"
-        fontWeight="700"
-        fontSize="40"
-        letterSpacing="-0.03em"
-        fill="var(--color-ink)"
+    <span className={`inline-flex items-center justify-center bg-brand shrink-0 ${box}`}>
+      <svg
+        width={icon}
+        height={icon}
+        viewBox="0 0 24 24"
+        fill="none"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        focusable="false"
       >
-        da
-      </text>
-
-      {/* the swap: top arrow points right (teal), bottom arrow points left (coral) */}
-      <path d="M58 17 L78 17" stroke="var(--color-brand)" strokeWidth="4" strokeLinecap="round" fill="none" />
-      <path d="M72 11 L78 17 L72 23" stroke="var(--color-brand)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <path d="M78 30 L58 30" stroke="var(--color-accent)" strokeWidth="4" strokeLinecap="round" fill="none" />
-      <path d="M64 24 L58 30 L64 36" stroke="var(--color-accent)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-
-      {/* "ka" — the side the person receives */}
-      <text
-        x="84"
-        y="34"
-        fontFamily="'Bricolage Grotesque', system-ui, sans-serif"
-        fontWeight="700"
-        fontSize="40"
-        letterSpacing="-0.03em"
-        fill="var(--color-brand)"
-      >
-        ka
-      </text>
-    </svg>
+        <path d="M4 9 H17" stroke="var(--color-surface)" />
+        <path d="M14 6 L17 9 L14 12" stroke="var(--color-surface)" />
+        <path d="M20 15 H7" stroke="var(--color-logo-accent)" />
+        <path d="M10 12 L7 15 L10 18" stroke="var(--color-logo-accent)" />
+      </svg>
+    </span>
   )
 }

@@ -126,6 +126,23 @@ CREATE TABLE images (
 		REFERENCES listings(id)
 );
 
+-- PDF documents attached to a listing (manual, invoice, warranty...). The file
+-- lives in the backend's private "documents" volume, never under /media/.
+-- IF NOT EXISTS: tools/130-listing-documents.sql creates the same table for
+-- existing volumes and also runs on a new one, right after this file.
+CREATE TABLE IF NOT EXISTS documents (
+	id 				INT AUTO_INCREMENT PRIMARY KEY,
+	listing_id 		INT NOT NULL,
+	file_name		VARCHAR(64) NOT NULL,
+	original_name	VARCHAR(150) NOT NULL,
+	size_bytes		INT NOT NULL,
+	page_count		SMALLINT NOT NULL,
+	created_at 		TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+	FOREIGN KEY (listing_id)
+		REFERENCES listings(id)
+);
+
 -- One conversation between an interested user and the owner of a requested
 -- listing. The unique key prevents the chat history from being fragmented
 -- across duplicate negotiations.

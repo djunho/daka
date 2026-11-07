@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
+import Icon from '../components/Icon'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
 import MessageCard from '../components/MessageCard'
@@ -461,7 +462,7 @@ export default function Negotiation() {
               }
             }}
           >
-            <span aria-hidden="true">💬</span> {chatOpen ? 'Fechar conversa' : 'Conversar'}
+            <Icon name="chat" size={16} /> {chatOpen ? 'Fechar conversa' : 'Conversar'}
           </Button>
           {(stateName === 'Open' || stateName === 'Agreed') && (
             <>
@@ -507,19 +508,19 @@ export default function Negotiation() {
                   onCancel={closeProposalForm}
                 />
               ) : (
-                <button
+                <Button
                   ref={newProposalRef}
-                  type="button"
+                  variant="primary"
+                  size="sm"
                   disabled={busy}
                   onClick={() => {
                     setActionError(null)
                     setNotice(null)
                     setProposalFormOpen(true)
                   }}
-                  className={buttonClasses({ variant: 'primary', size: 'sm' })}
                 >
                   Criar proposta
-                </button>
+                </Button>
               )
             )
           }

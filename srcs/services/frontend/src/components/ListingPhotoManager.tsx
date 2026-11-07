@@ -10,6 +10,8 @@ import { getPortugueseErrorMessage } from '../lib/errors'
 import { validateImage, IMAGE_ACCEPT } from '../lib/images'
 import { MAX_LISTING_PHOTOS } from '../lib/listingForm'
 import ConfirmDialog from './ConfirmDialog'
+import Icon from './Icon'
+import UploadProgress from './UploadProgress'
 
 type ListingPhotoManagerProps = {
   listing: ApiListingDetail
@@ -30,6 +32,8 @@ export default function ListingPhotoManager({ listing, onChange }: ListingPhotoM
   // primary). Cleared when the next action starts, so the same message is
   // announced again.
   const [status, setStatus] = useState<string>('')
+  // The photo being sent and how much of it has left the browser.
+  const [upload, setUpload] = useState<{ label: string; fraction: number } | null>(null)
 
   const [toDelete, setToDelete] = useState<ApiImage | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -78,14 +82,19 @@ export default function ListingPhotoManager({ listing, onChange }: ListingPhotoM
     // fails, the ones before it are already saved and stay.
     try {
       for (let i = 0; i < files.length; i++) {
-        setBusy(`A enviar fotografia ${i + 1} de ${files.length}…`)
-        onChange(await apiUploadListingImage(id, files[i]))
+        const label = `A enviar fotografia ${i + 1} de ${files.length}`
+        setBusy(`${label}…`)
+        setUpload({ label, fraction: 0 })
+        onChange(await apiUploadListingImage(id, files[i], {
+          onProgress: (fraction) => setUpload({ label, fraction }),
+        }))
       }
       setStatus(files.length === 1 ? 'Fotografia adicionada.' : 'Fotografias adicionadas.')
     } catch (err) {
       setError(photoError(err, 'Não foi possível enviar a fotografia. Tenta outra vez.'))
     } finally {
       setBusy(null)
+      setUpload(null)
     }
   }
 
@@ -178,7 +187,7 @@ export default function ListingPhotoManager({ listing, onChange }: ListingPhotoM
                 aria-label={`Apagar foto ${index + 1}`}
                 className="w-6 h-6 rounded-full bg-surface/90 text-accent text-xs border border-line/40 flex items-center justify-center shadow-sm enabled:hover:bg-surface disabled:opacity-40"
               >
-                <span aria-hidden="true">✕</span>
+                <Icon name="close" size={14} />
               </button>
             </div>
           </li>
@@ -193,7 +202,7 @@ export default function ListingPhotoManager({ listing, onChange }: ListingPhotoM
                   : 'hover:border-brand hover:bg-paper hover:text-brand focus-within:border-brand focus-within:text-brand focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2 cursor-pointer'
               }`}
             >
-              <span className="text-2xl leading-none font-light" aria-hidden="true">+</span>
+              <Icon name="plus" size={24} />
               <span className="text-[11px] font-medium mt-1">Adicionar</span>
               <input
                 type="file"
@@ -211,7 +220,11 @@ export default function ListingPhotoManager({ listing, onChange }: ListingPhotoM
         )}
       </ul>
 
-      {busy && !toDelete && <p className="text-xs text-muted">{busy}</p>}
+      {upload ? (
+        <UploadProgress label={upload.label} fraction={upload.fraction} />
+      ) : (
+        busy && !toDelete && <p className="text-xs text-muted">{busy}</p>
+      )}
       {error && (
         <p id="photos-error" role="alert" className="text-xs text-accent">
           {error}
@@ -221,7 +234,7 @@ export default function ListingPhotoManager({ listing, onChange }: ListingPhotoM
       <p role="status" className="text-xs font-semibold text-brand">
         {status && (
           <>
-            <span aria-hidden="true">✓ </span>
+            <Icon name="check" size={14} className="inline-block align-[-2px] mr-1" />
             {status}
           </>
         )}

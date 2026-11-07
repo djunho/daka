@@ -34,12 +34,14 @@ bcrypt() {
 HASH="$(bcrypt "${PROM_USER}" "${PROM_PASSWORD}")"
 [ -n "${HASH}" ] || die "bcrypt hash generation failed"
 
-mkdir -p "${OBS}/prometheus" "${OBS}/mysqld-exporter"
+mkdir -p "${OBS}/prometheus" "${OBS}/alertmanager" "${OBS}/mysqld-exporter"
 
 sed -e "s|__PROM_USER__|${PROM_USER}|" \
     -e "s|__PROM_BCRYPT__|${HASH}|" \
     "${OBS}/prometheus/web.yml.template" > "${OBS}/prometheus/web.yml"
+cp "${OBS}/prometheus/web.yml" "${OBS}/alertmanager/web.yml"
 
+printf '%s' "${PROM_USER}" > "${OBS}/prometheus/scrape_username"
 printf '%s' "${PROM_PASSWORD}" > "${OBS}/prometheus/scrape_password"
 
 cat > "${OBS}/mysqld-exporter/.my.cnf" <<CNF
@@ -49,7 +51,9 @@ password=${EXP_PASSWORD}
 CNF
 
 chmod 644 "${OBS}/prometheus/web.yml" \
+          "${OBS}/alertmanager/web.yml" \
+          "${OBS}/prometheus/scrape_username" \
           "${OBS}/prometheus/scrape_password" \
           "${OBS}/mysqld-exporter/.my.cnf"
 
-echo "gen-secrets: web.yml, scrape_password, .my.cnf generated from $(basename "${ENV_FILE}")"
+echo "gen-secrets: prometheus/alertmanager web.yml, scrape credentials, .my.cnf generated from $(basename "${ENV_FILE}")"

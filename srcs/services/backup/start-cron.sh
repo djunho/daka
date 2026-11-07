@@ -4,8 +4,10 @@ set -euo pipefail
 : "${MYSQL_DATABASE:?MYSQL_DATABASE is required}"
 : "${MYSQL_BACKUP_PASSWORD:?MYSQL_BACKUP_PASSWORD is required}"
 
+export BACKUP_FLOCK_WAIT_SECONDS="${BACKUP_FLOCK_WAIT_SECONDS:-300}"
+
 umask 077
-declare -px MYSQL_DATABASE MYSQL_BACKUP_PASSWORD > /run/daka-backup.env
+declare -px MYSQL_DATABASE MYSQL_BACKUP_PASSWORD BACKUP_FLOCK_WAIT_SECONDS > /run/daka-backup.env
 
 # The expectation outlives the scheduler so a stopped runner can still alert.
 marker=/backup-metrics/backup-enabled.prom

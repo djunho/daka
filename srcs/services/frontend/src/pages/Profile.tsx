@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import ProfileField from '../components/ProfileField'
 import LocationAutocomplete from '../components/LocationAutocomplete'
 import Avatar from '../components/Avatar'
+import UploadProgress from '../components/UploadProgress'
+import Icon from '../components/Icon'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ImagePicker from '../components/ImagePicker'
@@ -30,6 +32,8 @@ export default function Profile() {
   // (shown as a preview); avatarRemoved means "go back to the initial".
   // Hooks stay above the early return (Rules of Hooks).
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  // Share of the new photo sent so far, while it uploads (null otherwise).
+  const [avatarUpload, setAvatarUpload] = useState<number | null>(null)
   const [avatarRemoved, setAvatarRemoved] = useState(false)
   const avatarPreview = useObjectUrl(avatarFile)
 
@@ -130,7 +134,8 @@ export default function Profile() {
         fieldsSaved = true
       }
       if (avatarFile) {
-        await uploadAvatar(avatarFile)
+        setAvatarUpload(0)
+        await uploadAvatar(avatarFile, { onProgress: setAvatarUpload })
       } else if (removeSavedAvatar) {
         await removeAvatar()
       }
@@ -153,6 +158,7 @@ export default function Profile() {
       setError(fieldsSaved ? `O nome e a localização foram guardados, mas a foto não foi alterada. ${reason}` : reason)
     } finally {
         setSaving(false)
+        setAvatarUpload(null)
     }
   }
 
@@ -186,10 +192,10 @@ export default function Profile() {
           <button
             type="button"
             onClick={() => setError(null)}
-            className="text-muted hover:text-ink text-xs font-bold p-1 ml-auto transition-colors"
+            className="text-muted hover:text-ink p-1 ml-auto transition-colors"
             aria-label="Fechar alerta"
           >
-            ✕
+            <Icon name="close" size={14} />
           </button>
         </div>
       }
@@ -225,19 +231,23 @@ export default function Profile() {
                     disabled={saving}
                   />
                   {showsAvatar && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => {
                         setAvatarFile(null)
                         setAvatarRemoved(true)
                       }}
                       disabled={saving}
-                      className={"text-xs font-medium text-muted hover:text-ink px-2.5 py-1 rounded-lg transition-colors" +
-                                " disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted"}
                     >
                       Remover foto
-                    </button>
+                    </Button>
                   )}
+                </div>
+              )}
+              {avatarUpload !== null && (
+                <div className="mt-3 max-w-xs">
+                  <UploadProgress label="A enviar a foto de perfil" fraction={avatarUpload} />
                 </div>
               )}
             </div>
@@ -262,13 +272,9 @@ export default function Profile() {
             </h2>
 
             {!isEditing ? (
-              <button
-                type="button"
-                className="inline-flex items-center min-h-6 py-1 text-xs font-semibold text-brand hover:underline"
-                onClick={() => setIsEditing(true)}
-              >
+              <Button variant="link" size="sm" className="min-h-6 py-1" onClick={() => setIsEditing(true)}>
                 Editar perfil
-              </button>
+              </Button>
             ) : (
               <div className="flex items-center gap-2">
                 <Button variant="ghost" size="sm" disabled={saving} onClick={handleCancel}>

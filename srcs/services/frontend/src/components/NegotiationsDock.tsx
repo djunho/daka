@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import Avatar from './Avatar'
+import Icon from './Icon'
 import { ApiError, apiListNegotiations, type ApiNegotiationPage, type ApiNegotiationSummary } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
@@ -14,7 +15,7 @@ const DOCK_CARDS = 15
 /**
  * NegotiationsDock:
  * Floating dock / drawer pinned at the bottom-right of the viewport.
- * When minimized: displays a compact floating square with a 🤝 icon and active count badge.
+ * When minimized: displays a compact floating square with the swap icon and active count badge.
  * When expanded: displays the active negotiations (Open and Agreed) as cards matching
  * Daniel's wireframe, allowing instant 1-click access to open the chat or navigate to
  * the full negotiation page.
@@ -138,7 +139,7 @@ export default function NegotiationsDock() {
       aria-label="Gaveta de negociações rápidas"
       className="flex items-end"
     >
-      {/* 1. Minimized mode: compact floating trigger button with 🤝 symbol */}
+      {/* 1. Minimized mode: compact floating trigger button with the swap icon */}
       {!isOpen ? (
         <button
           ref={triggerRef}
@@ -152,7 +153,7 @@ export default function NegotiationsDock() {
           title="Ver negociações"
           className="relative mb-3 w-12 h-12 flex items-center justify-center bg-brand hover:opacity-90 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 select-none hover:scale-105 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2"
         >
-          <span className="text-2xl" aria-hidden="true">🤝</span>
+          <Icon name="swap" size={26} />
           {(activeCount === null || activeCount > 0) && (
             // The count is read as part of the button's label: an aria-label on a
             // plain span is ignored by screen readers. "!" marks an unknown count.
@@ -176,7 +177,7 @@ export default function NegotiationsDock() {
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-brand text-white">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-lg" aria-hidden="true">🤝</span>
+              <Icon name="swap" size={18} />
               <h3 className="font-semibold text-sm truncate">As Minhas Negociações</h3>
               {activeCount !== null && activeCount > 0 && (
                 <span className="text-[10px] bg-white/20 text-white font-bold px-2 py-0.5 rounded-full shrink-0">
@@ -192,18 +193,18 @@ export default function NegotiationsDock() {
                 disabled={loading}
                 aria-label="Atualizar negociações"
                 title="Atualizar lista"
-                className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/20 text-white text-xs font-bold transition-colors disabled:opacity-50"
+                className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/20 text-white transition-colors disabled:opacity-50"
               >
-                ↻
+                <Icon name="refresh" size={16} />
               </button>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
                 aria-label="Minimizar negociações"
                 title="Minimizar"
-                className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/20 text-white text-xs font-bold transition-colors"
+                className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/20 text-white transition-colors"
               >
-                ✕
+                <Icon name="close" size={16} />
               </button>
             </div>
           </div>
@@ -224,7 +225,7 @@ export default function NegotiationsDock() {
 
             {!loading && !error && negotiations.length === 0 && (
               <div className="py-8 text-center text-muted px-4">
-                <span className="text-2xl mb-1 block" aria-hidden="true">📭</span>
+                <Icon name="inbox" size={28} className="mx-auto mb-1.5" />
                 <p className="text-xs font-medium text-ink">Sem negociações ativas</p>
                 <p className="text-[11px] text-muted mt-0.5">
                   Não tens negociações em curso. Explora os anúncios para propor trocas!
@@ -285,14 +286,14 @@ export default function NegotiationsDock() {
                           : 'bg-brand hover:opacity-90 text-white'
                       }`}
                     >
-                      <span aria-hidden="true">💬</span>
+                      <Icon name="chat" size={14} />
                       <span>{isCurrentChat ? 'A conversar' : 'Chat'}</span>
                     </button>
                     <Link
                       to={`/negotiations/${neg.id}`}
                       className="flex-1 py-1.5 px-2 bg-paper hover:bg-surface border border-line text-ink text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors no-underline text-center"
                     >
-                      <span aria-hidden="true">📄</span>
+                      <Icon name="document" size={14} />
                       <span>Negociação</span>
                     </Link>
                   </div>
@@ -312,7 +313,7 @@ export default function NegotiationsDock() {
               className="text-xs font-medium text-brand hover:underline inline-flex items-center gap-1"
             >
               <span>Ver todas as negociações</span>
-              <span aria-hidden="true">→</span>
+              <Icon name="arrow-right" size={14} />
             </Link>
           </div>
         </div>
