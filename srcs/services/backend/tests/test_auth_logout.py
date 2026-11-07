@@ -41,38 +41,71 @@ class LogoutTestCase(unittest.TestCase):
         self.db.commit()
         self.client.cookies.set(SESSION_COOKIE_NAME, token)
 
+    def assert_cookie_deleted(self, response) -> None:
+        set_cookie = response.headers.get("set-cookie", "").lower()
+        self.assertIn(f"{SESSION_COOKIE_NAME}=", set_cookie)
+        self.assertIn("max-age=0", set_cookie)
+
     def test_logout_clears_last_seen_after_last_active_session(self) -> None:
         self.open_session("last-device")
 
         response = self.client.post("/auth/logout")
 
         self.assertEqual(response.status_code, 204)
+        self.assert_cookie_deleted(response)
         self.db.refresh(self.user)
         self.assertIsNone(self.user.last_seen)
         self.assertEqual(self.db.query(UserSession).count(), 0)
 
-    def test_logout_preserves_last_seen_when_another_active_session_remains(self) -> None:
+    def test_logout_clears_last_seen_when_another_active_session_remains(self) -> None:
         self.open_session("first-device")
         self.open_session("second-device")
-        last_seen = self.user.last_seen
 
         self.client.cookies.set(SESSION_COOKIE_NAME, "first-device")
         response = self.client.post("/auth/logout")
 
         self.assertEqual(response.status_code, 204)
+        self.assert_cookie_deleted(response)
         self.db.refresh(self.user)
-        self.assertEqual(self.user.last_seen, last_seen)
+        self.assertIsNone(self.user.last_seen)
         self.assertEqual(self.db.query(UserSession).count(), 1)
 
     def test_expired_sessions_do_not_keep_user_online_after_logout(self) -> None:
-        self.open_session("expired-device", expires_in=timedelta(seconds=-1))
+        self.open_session("active-device")
+        self.db.add(
+            UserSession(
+                user_id=self.user.id,
+                token_hash=hash_session_token("expired-device"),
+                expires_at=utcnow() - timedelta(seconds=1),
+            )
+        )
+        self.db.commit()
 
         response = self.client.post("/auth/logout")
 
         self.assertEqual(response.status_code, 204)
+        self.assert_cookie_deleted(response)
         self.db.refresh(self.user)
         self.assertIsNone(self.user.last_seen)
-        self.assertEqual(self.db.query(UserSession).count(), 0)
+        self.assertEqual(self.db.query(UserSession).count(), 1)
+
+    def test_logout_without_cookie_is_successful_and_keeps_user_state(self) -> None:
+        response = self.client.post("/auth/logout")
+
+        self.assertEqual(response.status_code, 204)
+        self.assert_cookie_deleted(response)
+        self.db.refresh(self.user)
+        self.assertIsNotNone(self.user.last_seen)
+
+    def test_logout_with_unknown_cookie_is_successful_and_keeps_user_state(self) -> None:
+        self.client.cookies.set(SESSION_COOKIE_NAME, "unknown-device")
+
+        response = self.client.post("/auth/logout")
+
+        self.assertEqual(response.status_code, 204)
+        self.assert_cookie_deleted(response)
+        self.db.refresh(self.user)
+        self.assertIsNotNone(self.user.last_seen)
 
 
 if __name__ == "__main__":
