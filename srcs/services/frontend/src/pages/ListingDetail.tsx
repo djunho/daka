@@ -17,6 +17,7 @@ import Icon from '../components/Icon'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
 import DocumentItem from '../components/DocumentItem'
+import FavoriteButton from '../components/FavoriteButton'
 import MessageCard from '../components/MessageCard'
 
 // POST /negotiations answers 409 both when the listing can no longer be
@@ -246,13 +247,21 @@ export default function ListingDetail() {
         {/* Right column: listing info and owner card (88d). */}
         <div className="space-y-6">
           <div>
-            <div className="flex flex-wrap gap-2 mb-3">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
               <span className="text-xs font-semibold bg-surface text-label border border-line px-2.5 py-1 rounded-full">
                 {categoryLabel(category)}
               </span>
               <span className="text-xs font-semibold bg-surface text-label border border-line px-2.5 py-1 rounded-full">
                 {conditionLabel(condition)}
               </span>
+              {/* Hidden from the owner and until the session is known. */}
+              <FavoriteButton
+                listingId={listing.id}
+                ownerId={owner.id}
+                title={title}
+                variant="detail"
+                className="relative ml-auto"
+              />
             </div>
             <h1 className="font-display text-3xl font-bold text-ink leading-tight wrap-break-word">
               {title}

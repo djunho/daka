@@ -12,6 +12,10 @@ vi.mock('../lib/api', async (importOriginal) => ({
   apiCreateNegotiation: vi.fn(),
 }))
 vi.mock('../context/AuthContext', () => ({ useAuth: vi.fn() }))
+// Nothing saved: the heart itself is tested in FavoriteButton.test.tsx.
+vi.mock('../context/FavoritesContext', () => ({
+  useFavorites: () => ({ ready: true, isFavorite: () => false, isPending: () => false, toggleFavorite: vi.fn() }),
+}))
 
 const OWNER = { id: 1, user_name: 'Ana', avatar: null, user_location: null, is_online: false }
 const VISITOR = { id: 2, user_name: 'Bia', avatar: null, user_location: null, is_online: false, email: 'b@x.io', created_at: '2026-01-01' }
@@ -87,6 +91,15 @@ describe('Iniciar negociação em ListingDetail', () => {
 
     expect(await screen.findByText('Este é o teu anúncio.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Iniciar negociação' })).not.toBeInTheDocument()
+    // The backend refuses to save your own listing.
+    expect(screen.queryByRole('button', { name: 'Guardar nos favoritos' })).not.toBeInTheDocument()
+  })
+
+  it('offers to save the listing in the favorites to anyone else', async () => {
+    signIn(VISITOR)
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'Guardar nos favoritos' })).toBeInTheDocument()
   })
 
   it('hides the action until the session check finishes', async () => {

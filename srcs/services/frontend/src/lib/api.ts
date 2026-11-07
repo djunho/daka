@@ -230,6 +230,8 @@ export type ApiListingDetail = ApiListingSummary & {
   listing_dsc: string | null
   images: ApiImage[]
   documents: ApiDocument[]
+  // Always false for now: GET /listings/:id is public and the backend does not
+  // look at the session there. FavoritesContext is what knows the user's favorites.
   is_favorited: boolean
 }
 
@@ -421,6 +423,35 @@ export function apiDeleteListingDocument(id: number, documentId: number) {
   return request<ApiListingDetail>(`/listings/${id}/documents/${documentId}`, {
     method: 'DELETE'
   })
+}
+
+// --- Favorites (#89). Every call needs a session. ---
+
+export type ListFavoritesParams = {
+  limit?: number
+  offset?: number
+}
+
+// Only available listings, newest first. `limit` goes up to 100.
+export function apiGetFavorites(params: ListFavoritesParams = {}, signal?: AbortSignal) {
+  const query = new URLSearchParams()
+  // Compare with undefined, because 0 is a valid offset.
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  if (params.offset !== undefined) query.set('offset', String(params.offset))
+
+  const qs = query.toString()
+  return request<ApiListingPage>(qs ? `/listings/favorites?${qs}` : '/listings/favorites', { signal })
+}
+
+// 409 when it is already a favorite or is the user's own listing, 404 when
+// the listing is not available.
+export function apiAddFavorite(listingId: number): Promise<void> {
+  return request<void>(`/listings/${listingId}/favorite`, { method: 'POST' })
+}
+
+// 404 when the listing is not among the user's favorites.
+export function apiRemoveFavorite(listingId: number): Promise<void> {
+  return request<void>(`/listings/${listingId}/favorite`, { method: 'DELETE' })
 }
 
 // Where a logged-in user opens a document. Never link to it without a

@@ -147,6 +147,7 @@ Every icon follows the same rules, so they read as one family:
 | `arrow-right` | "See all" links |
 | `eye` / `eye-off` | Show / hide the password |
 | `user` | Account menu without an avatar |
+| `heart` | Favorites. Outline when not saved; filled with `fill-current` when saved |
 
 ## Usage
 

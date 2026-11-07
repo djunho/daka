@@ -29,6 +29,14 @@ describe('Header', () => {
     expect(screen.getByRole('link', { name: 'Publicar' })).toHaveAttribute('href', '/publish')
   })
 
+  it('links to the favorites from the account menu', async () => {
+    renderHeader(ME)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Menu da conta' }))
+
+    expect(screen.getByRole('menuitem', { name: 'Favoritos' })).toHaveAttribute('href', '/favorites')
+  })
+
   it('closes the account menu with Escape and gives the focus back to the avatar', async () => {
     renderHeader(ME)
     const button = screen.getByRole('button', { name: 'Menu da conta' })
