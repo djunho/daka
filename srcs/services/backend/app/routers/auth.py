@@ -33,8 +33,10 @@ from app.dependencies import (
     get_current_user,
     get_user_from_session_token,
 )
+from app.documents import delete_document
 from app.media import delete_image, save_image
 from app.models import (
+    Document,
     Favorite,
     Friendship,
     Listing,
@@ -583,6 +585,14 @@ def delete_me(
         .order_by(Listing.id)
         .all()
     ]
+    # PDFs attached to those listings: the privacy policy promises that
+    # deleting the account removes personal data, and an invoice may hold some.
+    document_files = [
+        file_name
+        for (file_name,) in db.query(Document.file_name)
+        .filter(Document.listing_id.in_(listing_ids))
+        .all()
+    ]
 
     listing_states = {
         state.state_name: state
@@ -847,6 +857,9 @@ def delete_me(
                 Friendship.friend_id == user_id,
             )
         ).delete(synchronize_session=False)
+        db.query(Document).filter(Document.listing_id.in_(listing_ids)).delete(
+            synchronize_session=False
+        )
         current_user.deleted_at = deleted_at
         current_user.user_name = "Deleted user"
         current_user.email = f"deleted-{user_id}@deleted.daka"
@@ -869,6 +882,8 @@ def delete_me(
     # The account is now inactive, so its private avatar file is no longer
     # needed. File cleanup happens after commit so a rollback keeps the data.
     delete_image(avatar)
+    for file_name in document_files:
+        delete_document(file_name)
 
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,

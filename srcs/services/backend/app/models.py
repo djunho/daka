@@ -231,6 +231,10 @@ class Listing(Base):
     images: Mapped[list["Image"]] = relationship(
         back_populates="listing", order_by="Image.id"
     )
+    # One-to-many: PDF documents attached by the owner, kept in upload order.
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="listing", order_by="Document.id"
+    )
 
     @property
     def cover_image(self) -> str | None:
@@ -255,6 +259,27 @@ class Image(Base):
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
 
     listing: Mapped["Listing"] = relationship(back_populates="images")
+
+
+class Document(Base):
+    """A PDF attached to a listing (manual, invoice, warranty...).
+
+    The file is stored under settings.documents_root with a random name
+    (``file_name``). ``original_name`` is only shown to people and sent in the
+    Content-Disposition header: it never reaches the file system.
+    """
+
+    __tablename__ = "documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("listings.id"))
+    file_name: Mapped[str] = mapped_column(String(64))
+    original_name: Mapped[str] = mapped_column(String(150))
+    size_bytes: Mapped[int] = mapped_column()
+    page_count: Mapped[int] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    listing: Mapped["Listing"] = relationship(back_populates="documents")
 
 
 class Negotiation(Base):

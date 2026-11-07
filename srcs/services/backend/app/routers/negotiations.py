@@ -134,6 +134,9 @@ def _negotiation_options():
         joinedload(Negotiation.requested_listing).joinedload(Listing.category),
         joinedload(Negotiation.requested_listing).joinedload(Listing.condition),
         joinedload(Negotiation.requested_listing).selectinload(Listing.images),
+        # ListingDetailOut includes the documents: load them here instead of
+        # one lazy query per negotiation.
+        joinedload(Negotiation.requested_listing).selectinload(Listing.documents),
         joinedload(Negotiation.interested_user),
         joinedload(Negotiation.state),
         joinedload(Negotiation.cancelled_by),

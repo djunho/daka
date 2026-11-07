@@ -129,6 +129,16 @@ erDiagram
         BOOLEAN is_primary
     }
 
+    DOCUMENTS {
+        INT id PK
+        INT listing_id FK
+        VARCHAR file_name
+        VARCHAR original_name
+        INT size_bytes
+        SMALLINT page_count
+        TIMESTAMP created_at
+    }
+
     MESSAGES {
         INT id PK
         INT negotiation_id FK
@@ -200,6 +210,7 @@ erDiagram
     }
 
     LISTINGS ||--o{ IMAGES : contains
+    LISTINGS ||--o{ DOCUMENTS : attaches
 
     NEGOTIATIONS ||--o{ MESSAGES : contains
     USERS ||--o{ MESSAGES : sends

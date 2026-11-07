@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext'
 import { getPortugueseErrorMessage } from '../lib/errors'
 import ListingFields from '../components/ListingFields'
 import ListingPhotoManager from '../components/ListingPhotoManager'
+import ListingDocumentManager from '../components/ListingDocumentManager'
 import {
   EMPTY_LISTING_FORM,
   changedListingFields,
@@ -95,6 +96,8 @@ export default function EditListing() {
     }
   }, [listingId, validId])
 
+  // Also used by the documents: like the photos, they are saved one action
+  // at a time, and either one means the listing was updated.
   function handlePhotosChange(updated: ApiListingDetail) {
     setListing(updated)
     setPhotosChanged(true)
@@ -209,6 +212,9 @@ export default function EditListing() {
             fields below wait for "Guardar alterações". */}
         <div className="border-b border-line pb-6 mb-6">
           <ListingPhotoManager listing={listing} onChange={handlePhotosChange} />
+        </div>
+        <div className="border-b border-line pb-6 mb-6">
+          <ListingDocumentManager listing={listing} onChange={handlePhotosChange} />
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6" noValidate>

@@ -180,7 +180,7 @@ Every icon follows the same rules, so they read as one family:
 
 Reusable components live in `src/components/`. Each block below says what the component is for, its props and its accessibility notes. All of them except `ListingFields` are rendered on the `/design-system` page.
 
-App-specific pieces (`Header`, `Layout`, `NegotiationChatWidget`, `NegotiationsDock`, `ListingGallery`, `ListingPhotoManager`, `ProposalForm`, `RequireAuth`) are built **from** these components and tokens, but are not part of the design system.
+App-specific pieces (`Header`, `Layout`, `NegotiationChatWidget`, `NegotiationsDock`, `ListingGallery`, `ListingPhotoManager`, `ListingDocumentManager`, `ProposalForm`, `RequireAuth`) are built **from** these components and tokens, but are not part of the design system.
 
 ## Button
 
@@ -311,6 +311,30 @@ Usage examples:
 
 ```tsx
 <ImagePicker label="Alterar foto" onPick={setFile} onError={setError} />
+```
+
+## UploadProgress
+
+- Progress bar of an upload (listing photos, avatar, documents), fed by `uploadWithProgress` in `lib/api.ts` (`XMLHttpRequest`, since `fetch` cannot report upload progress).
+- Props: `label` ("A enviar fotografia 2 de 3"), `fraction` (0 to 1).
+- At 100% it says "A processar…": the bytes have left the browser, but nginx and the backend still validate and store the file.
+- Accessibility: a `progressbar` named by the label, with `aria-valuenow`. Only the start of each file and the processing step are announced (`role="status"`), never every percentage.
+
+```tsx
+<UploadProgress label="A enviar documento 1 de 2" fraction={0.45} />
+```
+
+## DocumentItem
+
+- One PDF in a list: document icon, name, size, page count and its actions. Used on the publish page, the edit page (`ListingDocumentManager`) and the listing detail.
+- Props: `name`, `sizeBytes`, `pageCount` (optional: unknown before the upload), `actions` (links or buttons, e.g. "Abrir", "Remover").
+- Rendered as an `<li>`: put it inside a `<ul>` named by its section heading. Give each action a hidden file name (`sr-only`), so "Abrir" is "Abrir Manual.pdf" for screen readers.
+
+```tsx
+<ul aria-labelledby="documents-heading">
+  <DocumentItem name={doc.original_name} sizeBytes={doc.size_bytes} pageCount={doc.page_count}
+    actions={<a href={listingDocumentUrl(id, doc.id)}>Abrir</a>} />
+</ul>
 ```
 
 ## ListingFields

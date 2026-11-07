@@ -66,6 +66,17 @@ class Settings(BaseSettings):
     # that this check, with its clear error message, is the one that fires.
     max_image_bytes: int = 2 * 1024 * 1024
 
+    # --- Listing documents (PDF) -------------------------------------------
+    # PDFs attached to a listing (manual, invoice, warranty...). They live in
+    # their own Docker volume, mounted ONLY in the backend: nginx cannot see
+    # them, so a document is never a public URL. The backend streams it after
+    # checking the session (GET /listings/{id}/documents/{doc_id}/file).
+    documents_root: str = "/data/documents"
+    # Same limit as images: nginx already accepts 3 MB on /api/.
+    max_document_bytes: int = 2 * 1024 * 1024
+    max_document_pages: int = 50
+    max_documents_per_listing: int = 3
+
     @property
     def database_url(self) -> str:
         """Connection string in the format SQLAlchemy expects."""

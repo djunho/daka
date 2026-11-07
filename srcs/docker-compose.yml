@@ -57,6 +57,9 @@ services:
       # Uploaded images (avatars, listing photos). Kept outside /app, which is
       # the repository itself, so uploads never end up in git.
       - media:/data/media
+      # Listing documents (PDFs). Mounted ONLY here, never in nginx: a
+      # document is served by the backend after checking the session.
+      - documents:/data/documents
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
@@ -294,6 +297,7 @@ volumes:
   grafana_data:
   certs:
   media:
+  documents:
  
 networks:
   daka_edge:
