@@ -38,11 +38,11 @@ def get_current_user(
       2. cookie present but no matching session row -> 401
       3. row found but already expired -> 401 (and delete the dead row)
     """
-    user = get_user_from_session_token(daka_session, db)
-    if user is None:
+    session = get_session_from_session_token(daka_session, db)
+    if session is None:
         raise _unauthorised()
-    touch_last_seen(db, user)
-    return user
+    touch_last_seen(db, session.user, session_id=session.id)
+    return session.user
 
 
 def get_user_from_session_token(token: str | None, db: Session) -> User | None:
@@ -52,11 +52,17 @@ def get_user_from_session_token(token: str | None, db: Session) -> User | None:
     authentication. All invalid cases intentionally collapse to ``None`` so
     callers do not disclose whether a token, session, or account exists.
     """
+    session = get_session_from_session_token(token, db)
+    return session.user if session is not None else None
+
+
+def get_session_from_session_token(
+    token: str | None, db: Session
+) -> UserSession | None:
+    """Resolve an active session row from a raw session token."""
     if not token:
         return None
 
-    # We stored the SHA-256 of the token, never the token itself, so hash the
-    # incoming value before doing the indexed lookup.
     token_hash = hash_session_token(token)
     session = (
         db.query(UserSession)
@@ -82,7 +88,7 @@ def get_user_from_session_token(token: str | None, db: Session) -> User | None:
         db.commit()
         return None
 
-    return session.user
+    return session
 
 
 def _unauthorised() -> HTTPException:
