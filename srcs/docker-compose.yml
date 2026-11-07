@@ -56,6 +56,7 @@ services:
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-}
       MYSQL_BACKUP_PASSWORD: ${MYSQL_BACKUP_PASSWORD:-}
+      BACKUP_FLOCK_WAIT_SECONDS: ${BACKUP_FLOCK_WAIT_SECONDS:-300}
     depends_on:
       db:
         condition: service_healthy

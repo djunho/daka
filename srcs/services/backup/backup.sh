@@ -2,11 +2,16 @@
 set -eu
 
 : "${MYSQL_DATABASE:?MYSQL_DATABASE is required}"
-: "${MYSQL_BACKUP_PASSWORD:?MYSQL_ROOT_PASSWORD is required}"
+: "${MYSQL_BACKUP_PASSWORD:?MYSQL_BACKUP_PASSWORD is required}"
 
 umask 077
 exec 9>/backups/.backup.lock
-flock -x 9
+# Bound the wait so scheduled runs do not pile up behind a stuck backup.
+: "${BACKUP_FLOCK_WAIT_SECONDS:=300}"
+if ! flock -w "$BACKUP_FLOCK_WAIT_SECONDS" -x 9; then
+    echo "backup.sh: could not acquire lock within ${BACKUP_FLOCK_WAIT_SECONDS}s; another backup may be running or hung" >&2
+    exit 1
+fi
 
 started_at=$(date +%s)
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
