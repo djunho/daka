@@ -54,6 +54,12 @@
   }
   img { display: block; max-width: 100%; }
   button { font: inherit; cursor: pointer; }
+  /* Hide Microsoft Edge's native password-reveal and clear buttons: Login
+     renders its own visibility toggle, so Edge would otherwise show two eye icons. */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
 }
 
 /* Kept outside @layer base so it wins over focus:outline-none (@layer utilities)
