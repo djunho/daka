@@ -45,7 +45,6 @@ def touch_last_seen(
         return False
     user_id = user.id
     try:
-        db.rollback()
         session_activity_filter = (
             [
                 exists().where(
