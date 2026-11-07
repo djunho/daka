@@ -99,7 +99,7 @@ Semantic names allow the visual identity to change without affecting component c
 
 - Maintain sufficient contrast between text and background: at least 4.5:1 for normal text and 3:1 for large text (WCAG 2.1 AA).
   - `--color-muted` (`#4B7871`) and `--color-accent` (`#D52E21`) were darkened from `#598E86` and `#DF3D31` to reach 4.5:1 on `--color-paper` (`#F2F9F7`) and `--color-surface` (`#FFFFFF`).
-  - Avoid `text-muted` on `--color-brand-soft` (`#DCEBE8`), where it only reaches about 4.0:1; use `text-label` there.
+  - Avoid `--color-muted` and `--color-accent` text on `--color-brand-soft` (`#DCEBE8`), where they only reach about 4.0:1. For secondary text there, use `--color-label` (`#314A46`).
   - The logo arrow keeps the original `#DF3D31`: it is a graphic, not text, so the text contrast rule does not apply.
 - Do not rely exclusively on color to convey information.
 - Ensure interactive elements have visible hover and focus states.

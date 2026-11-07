@@ -7,7 +7,7 @@
   /* --- Brand --- */
   --color-brand:       #246C5E;   /* buttons, logo background, "has" text */
   --color-brand-soft:  #DCEBE8;   /* active chip fill, photo fallback tint */
-  --color-accent:      #D52E21;   /* the "wants" side of every trade (4.6:1 on paper, WCAG AA) */
+  --color-accent:      #D52E21;   /* the "wants" side of every trade (WCAG AA: 4.6:1 on paper, 4.9:1 on surface) */
 
   /* --- Surfaces --- */
   --color-paper:       #F2F9F7;   /* page background */
@@ -16,7 +16,7 @@
 
   /* --- Ink (text) --- */
   --color-ink:         #15231F;   /* primary text + logo wordmark */
-  --color-muted:       #4B7871;   /* secondary text, placeholders (4.6:1 on paper, WCAG AA) */
+  --color-muted:       #4B7871;   /* secondary text, placeholders (WCAG AA: 4.6:1 on paper, 4.9:1 on surface) */
   --color-label:       #314A46;   /* category labels, unselected toggle text */
 
   /* --- Lines --- */
