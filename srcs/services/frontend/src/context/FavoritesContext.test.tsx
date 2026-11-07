@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FavoritesProvider, useFavorites } from './FavoritesContext'
 import { useAuth } from './AuthContext'
@@ -44,10 +44,13 @@ function signIn(id: number | null) {
 
 // The error the last toggleFavorite threw, if any.
 let lastError: unknown = null
+// The context as the Probe last saw it, to call what has no button.
+let favorites: ReturnType<typeof useFavorites>
 
 // Shows the state of listings 1 and 2, with a button to toggle each.
 function Probe() {
-  const { ready, isFavorite, isPending, toggleFavorite } = useFavorites()
+  favorites = useFavorites()
+  const { ready, isFavorite, isPending, toggleFavorite } = favorites
   if (!ready) return <p>A carregar</p>
   return (
     <>
@@ -207,6 +210,44 @@ describe('FavoritesContext', () => {
     next.resolve(page([2]))
     expect(await screen.findByRole('button', { name: '1: não guardado' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '2: guardado' })).toBeInTheDocument()
+  })
+
+  it('remembers favorites a page fetched, saved after login on another device', async () => {
+    signIn(7)
+    renderProvider()
+    await screen.findByRole('button', { name: '2: não guardado' })
+
+    act(() => favorites.rememberFavorites([2], favorites.snapshotFavorites()))
+
+    expect(screen.getByRole('button', { name: '2: guardado' })).toBeInTheDocument()
+  })
+
+  it('does not bring back a favorite removed after the page asked for its list', async () => {
+    signIn(7)
+    renderProvider()
+    await screen.findByRole('button', { name: '1: guardado' })
+    // The page's request leaves now; its answer still has listing 1.
+    const snapshot = favorites.snapshotFavorites()
+
+    await userEvent.click(screen.getByRole('button', { name: '1: guardado' }))
+    await screen.findByRole('button', { name: '1: não guardado' })
+    act(() => favorites.rememberFavorites([1], snapshot))
+
+    expect(screen.getByRole('button', { name: '1: não guardado' })).toBeInTheDocument()
+  })
+
+  it('does not bring back a favorite while its removal is being sent', async () => {
+    const remove = deferred<void>()
+    vi.mocked(apiRemoveFavorite).mockReturnValue(remove.promise)
+    signIn(7)
+    renderProvider()
+
+    await userEvent.click(await screen.findByRole('button', { name: '1: guardado' }))
+    act(() => favorites.rememberFavorites([1], favorites.snapshotFavorites()))
+
+    expect(screen.getByRole('button', { name: '1: não guardado (a enviar)' })).toBeInTheDocument()
+    remove.resolve()
+    expect(await screen.findByRole('button', { name: '1: não guardado' })).toBeInTheDocument()
   })
 
   it('fails loudly outside its provider', () => {
