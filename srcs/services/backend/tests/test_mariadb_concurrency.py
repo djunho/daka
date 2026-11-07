@@ -166,82 +166,108 @@ class MariaDBConcurrencyTestCase(unittest.TestCase):
         self.assertEqual(updated.user_location, "Lisboa")
         self.assertIsNotNone(updated.last_seen)
 
-    def test_logout_wins_over_waiting_presence_update(self) -> None:
-        token = uuid4().hex
-        self.fixture_session.query(User).filter(User.id == self.owner_id).update(
-            {User.last_seen: utcnow() - timedelta(minutes=2)},
-            synchronize_session=False,
-        )
-        self.fixture_session.add(
-            UserSession(
-                user_id=self.owner_id,
-                token_hash=hash_session_token(token),
-                expires_at=utcnow() + timedelta(hours=1),
+    def test_logout_and_presence_use_the_same_lock_order(self) -> None:
+        for logout_first in (False, True):
+            token = uuid4().hex
+            self.fixture_session.query(User).filter(
+                User.id == self.owner_id
+            ).update(
+                {User.last_seen: utcnow() - timedelta(minutes=2)},
+                synchronize_session=False,
             )
-        )
-        self.fixture_session.commit()
-        self.fixture_session.rollback()
+            self.fixture_session.add(
+                UserSession(
+                    user_id=self.owner_id,
+                    token_hash=hash_session_token(token),
+                    expires_at=utcnow() + timedelta(hours=1),
+                )
+            )
+            self.fixture_session.commit()
+            self.fixture_session.rollback()
 
-        reached_update = threading.Event()
-        finished = threading.Event()
-        errors: list[BaseException] = []
+            first_reached_update = threading.Event()
+            release_first = threading.Event()
+            second_finished = threading.Event()
+            errors: list[BaseException] = []
+            first_thread: threading.Thread | None = None
 
-        def observe_presence_update(
-            _conn, _cursor, statement, _parameters, _context, _many
-        ) -> None:
-            sql = " ".join(statement.lower().split())
-            if (
-                threading.current_thread() is worker
-                and "update users" in sql
-                and "last_seen" in sql
-            ):
-                reached_update.set()
+            def pause_first_user_update(
+                _conn, _cursor, statement, _parameters, _context, _executemany
+            ) -> None:
+                sql = " ".join(statement.lower().split())
+                if (
+                    threading.current_thread() is first_thread
+                    and "update users" in sql
+                    and "last_seen" in sql
+                ):
+                    first_reached_update.set()
+                    if not release_first.wait(timeout=10):
+                        raise TimeoutError("second operation did not start")
 
-        def touch() -> None:
-            with SessionLocal() as presence_db:
+            def touch() -> None:
                 try:
-                    presence_user = presence_db.get(User, self.owner_id)
-                    touch_last_seen(presence_db, presence_user, utcnow())
+                    with SessionLocal() as presence_db:
+                        presence_user = presence_db.get(User, self.owner_id)
+                        touch_last_seen(presence_db, presence_user, utcnow())
                 except BaseException as exc:
                     errors.append(exc)
-                finally:
-                    finished.set()
 
-        request = Request(
-            {
-                "type": "http",
-                "method": "POST",
-                "path": "/auth/logout",
-                "headers": [(b"cookie", f"daka_session={token}".encode())],
-                "query_string": b"",
-            }
-        )
-        with SessionLocal() as logout_db:
-            logout_user = logout_db.get(User, self.owner_id, with_for_update=True)
-            self.assertIsNotNone(logout_user)
-            event.listen(engine, "before_cursor_execute", observe_presence_update)
-            worker = threading.Thread(target=touch, daemon=True)
-            try:
-                worker.start()
-                self.assertTrue(
-                    reached_update.wait(timeout=10),
-                    "presence update never reached the locked user row",
+            def run_logout() -> None:
+                request = Request(
+                    {
+                        "type": "http",
+                        "method": "POST",
+                        "path": "/auth/logout",
+                        "headers": [(b"cookie", f"daka_session={token}".encode())],
+                        "query_string": b"",
+                    }
                 )
-                self.assertFalse(finished.wait(timeout=0.2))
-                logout(request, Response(), logout_db)
-            finally:
-                event.remove(engine, "before_cursor_execute", observe_presence_update)
-                worker.join(timeout=10)
+                try:
+                    with SessionLocal() as logout_db:
+                        logout(request, Response(), logout_db)
+                except BaseException as exc:
+                    errors.append(exc)
 
-        self.assertFalse(worker.is_alive(), "presence update deadlocked")
-        self.assertEqual(errors, [])
-        self.assertIsNone(self.fixture_session.get(User, self.owner_id).last_seen)
-        self.assertEqual(
-            self.fixture_session.query(UserSession)
-            .filter(UserSession.token_hash == hash_session_token(token))
-            .count(),
-            0,
-        )
+            first_target = run_logout if logout_first else touch
+            second_target = touch if logout_first else run_logout
+
+            def run_second() -> None:
+                try:
+                    second_target()
+                finally:
+                    second_finished.set()
+
+            first_thread = threading.Thread(target=first_target, daemon=True)
+            second_thread = threading.Thread(target=run_second, daemon=True)
+            event.listen(engine, "after_cursor_execute", pause_first_user_update)
+            try:
+                first_thread.start()
+                self.assertTrue(
+                    first_reached_update.wait(timeout=10),
+                    "first operation never updated the user",
+                )
+                second_thread.start()
+                self.assertFalse(
+                    second_finished.wait(timeout=0.2),
+                    "second operation bypassed the user lock",
+                )
+                release_first.set()
+                first_thread.join(timeout=10)
+                second_thread.join(timeout=10)
+            finally:
+                release_first.set()
+                event.remove(engine, "after_cursor_execute", pause_first_user_update)
+
+            self.assertFalse(first_thread.is_alive(), "first operation deadlocked")
+            self.assertFalse(second_thread.is_alive(), "second operation deadlocked")
+            self.assertEqual(errors, [])
+            self.assertIsNone(self.fixture_session.get(User, self.owner_id).last_seen)
+            self.assertEqual(
+                self.fixture_session.query(UserSession)
+                .filter(UserSession.token_hash == hash_session_token(token))
+                .count(),
+                0,
+            )
 
     def test_message_waits_for_state_change_and_rejects_read_only_negotiation(self):
         """A send waiting on the room lock must observe the committed terminal state."""
