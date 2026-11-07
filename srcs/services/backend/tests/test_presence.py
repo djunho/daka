@@ -27,6 +27,14 @@ class PresenceTestCase(unittest.TestCase):
         )
         self.db.add(self.user)
         self.db.commit()
+        self.db.add(
+            UserSession(
+                user_id=self.user.id,
+                token_hash=hash_session_token("presence-session"),
+                expires_at=utcnow() + timedelta(hours=1),
+            )
+        )
+        self.db.commit()
 
     def tearDown(self) -> None:
         self.db.close()
