@@ -1,6 +1,7 @@
 """HTTP tests for POST /auth/login: one answer for every failure, never a 500."""
 
 import unittest
+from datetime import timedelta
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -9,7 +10,7 @@ from app.database import get_db
 from app.dependencies import SESSION_COOKIE_NAME
 from app.main import app
 from app.models import User, UserSession
-from app.security import hash_password, utcnow, verify_password
+from app.security import hash_password, hash_session_token, utcnow, verify_password
 from tests.helpers import make_memory_session
 
 PASSWORD = "correct-horse-battery"
@@ -106,6 +107,63 @@ class LoginTestCase(unittest.TestCase):
         self.assertEqual(response.json()["email"], self.user.email)
         self.assertIn(SESSION_COOKIE_NAME, response.cookies)
         self.assertEqual(self.session_count(), 1)
+
+    def test_logout_clears_last_seen_for_an_active_session(self) -> None:
+        self.user.last_seen = utcnow()
+        self.db.commit()
+        self.open_session("active")
+
+        response = self.client.post("/auth/logout")
+
+        self.assertEqual(response.status_code, 204)
+        self.db.refresh(self.user)
+        self.assertIsNone(self.user.last_seen)
+        self.assertEqual(self.session_count(), 0)
+
+    def test_logout_removes_expired_session_without_changing_last_seen(self) -> None:
+        original_last_seen = utcnow()
+        self.user.last_seen = original_last_seen
+        self.db.commit()
+        self.open_session("expired", expires_in=timedelta(hours=-1))
+
+        response = self.client.post("/auth/logout")
+
+        self.assertEqual(response.status_code, 204)
+        self.db.refresh(self.user)
+        self.assertEqual(self.user.last_seen, original_last_seen)
+        self.assertEqual(self.session_count(), 0)
+
+    def test_logout_clears_last_seen_even_when_another_session_remains(self) -> None:
+        self.user.last_seen = utcnow()
+        self.open_session("active")
+        self.db.add(
+            UserSession(
+                user_id=self.user.id,
+                token_hash=hash_session_token("other-device"),
+                expires_at=utcnow() + timedelta(hours=1),
+            )
+        )
+        self.db.commit()
+
+        response = self.client.post("/auth/logout")
+
+        self.assertEqual(response.status_code, 204)
+        self.db.refresh(self.user)
+        self.assertIsNone(self.user.last_seen)
+        self.assertEqual(self.session_count(), 1)
+
+    def open_session(
+        self, token: str, expires_in: timedelta = timedelta(hours=1)
+    ) -> None:
+        self.db.add(
+            UserSession(
+                user_id=self.user.id,
+                token_hash=hash_session_token(token),
+                expires_at=utcnow() + expires_in,
+            )
+        )
+        self.db.commit()
+        self.client.cookies.set(SESSION_COOKIE_NAME, token)
 
 
 if __name__ == "__main__":
