@@ -15,7 +15,7 @@ import threading
 import unittest
 from uuid import uuid4
 
-from fastapi import HTTPException, Response
+from fastapi import HTTPException, Request, Response
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
@@ -34,10 +34,11 @@ from app.models import (
     UserSession,
 )
 from app.message_processing import MessageProcessingError, persist_message
+from app.presence import touch_last_seen
 from app.schemas import MessageSendEvent
 from app.security import hash_session_token, utcnow
 from app.dependencies import get_current_user
-from app.routers.auth import delete_me, update_me
+from app.routers.auth import delete_me, logout, update_me
 from app.routers.listings import create_listing, delete_listing
 from app.routers.negotiations import (
     accept_proposal,
@@ -164,6 +165,83 @@ class MariaDBConcurrencyTestCase(unittest.TestCase):
 
         self.assertEqual(updated.user_location, "Lisboa")
         self.assertIsNotNone(updated.last_seen)
+
+    def test_logout_wins_over_waiting_presence_update(self) -> None:
+        token = uuid4().hex
+        self.fixture_session.query(User).filter(User.id == self.owner_id).update(
+            {User.last_seen: utcnow() - timedelta(minutes=2)},
+            synchronize_session=False,
+        )
+        self.fixture_session.add(
+            UserSession(
+                user_id=self.owner_id,
+                token_hash=hash_session_token(token),
+                expires_at=utcnow() + timedelta(hours=1),
+            )
+        )
+        self.fixture_session.commit()
+        self.fixture_session.rollback()
+
+        reached_update = threading.Event()
+        finished = threading.Event()
+        errors: list[BaseException] = []
+
+        def observe_presence_update(
+            _conn, _cursor, statement, _parameters, _context, _many
+        ) -> None:
+            sql = " ".join(statement.lower().split())
+            if (
+                threading.current_thread() is worker
+                and "update users" in sql
+                and "last_seen" in sql
+            ):
+                reached_update.set()
+
+        def touch() -> None:
+            with SessionLocal() as presence_db:
+                try:
+                    presence_user = presence_db.get(User, self.owner_id)
+                    touch_last_seen(presence_db, presence_user, utcnow())
+                except BaseException as exc:
+                    errors.append(exc)
+                finally:
+                    finished.set()
+
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/auth/logout",
+                "headers": [(b"cookie", f"daka_session={token}".encode())],
+                "query_string": b"",
+            }
+        )
+        with SessionLocal() as logout_db:
+            logout_user = logout_db.get(User, self.owner_id, with_for_update=True)
+            self.assertIsNotNone(logout_user)
+            event.listen(engine, "before_cursor_execute", observe_presence_update)
+            worker = threading.Thread(target=touch, daemon=True)
+            try:
+                worker.start()
+                self.assertTrue(
+                    reached_update.wait(timeout=10),
+                    "presence update never reached the locked user row",
+                )
+                self.assertFalse(finished.wait(timeout=0.2))
+                logout(request, Response(), logout_db)
+            finally:
+                event.remove(engine, "before_cursor_execute", observe_presence_update)
+                worker.join(timeout=10)
+
+        self.assertFalse(worker.is_alive(), "presence update deadlocked")
+        self.assertEqual(errors, [])
+        self.assertIsNone(self.fixture_session.get(User, self.owner_id).last_seen)
+        self.assertEqual(
+            self.fixture_session.query(UserSession)
+            .filter(UserSession.token_hash == hash_session_token(token))
+            .count(),
+            0,
+        )
 
     def test_message_waits_for_state_change_and_rejects_read_only_negotiation(self):
         """A send waiting on the room lock must observe the committed terminal state."""
