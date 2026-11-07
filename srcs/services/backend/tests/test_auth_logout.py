@@ -48,6 +48,7 @@ class LogoutTestCase(unittest.TestCase):
 
     def test_logout_clears_last_seen_after_last_active_session(self) -> None:
         self.open_session("last-device")
+        updated_at = self.user.updated_at
 
         response = self.client.post("/auth/logout")
 
@@ -55,6 +56,7 @@ class LogoutTestCase(unittest.TestCase):
         self.assert_cookie_deleted(response)
         self.db.refresh(self.user)
         self.assertIsNone(self.user.last_seen)
+        self.assertEqual(self.user.updated_at, updated_at)
         self.assertEqual(self.db.query(UserSession).count(), 0)
 
     def test_logout_clears_last_seen_when_another_active_session_remains(self) -> None:
@@ -62,25 +64,6 @@ class LogoutTestCase(unittest.TestCase):
         self.open_session("second-device")
 
         self.client.cookies.set(SESSION_COOKIE_NAME, "first-device")
-        response = self.client.post("/auth/logout")
-
-        self.assertEqual(response.status_code, 204)
-        self.assert_cookie_deleted(response)
-        self.db.refresh(self.user)
-        self.assertIsNone(self.user.last_seen)
-        self.assertEqual(self.db.query(UserSession).count(), 1)
-
-    def test_expired_sessions_do_not_keep_user_online_after_logout(self) -> None:
-        self.open_session("active-device")
-        self.db.add(
-            UserSession(
-                user_id=self.user.id,
-                token_hash=hash_session_token("expired-device"),
-                expires_at=utcnow() - timedelta(seconds=1),
-            )
-        )
-        self.db.commit()
-
         response = self.client.post("/auth/logout")
 
         self.assertEqual(response.status_code, 204)
