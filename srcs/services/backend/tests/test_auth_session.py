@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -76,6 +77,25 @@ class SessionCheckTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), NO_SESSION)
         self.assert_cookie_untouched(response)
+        self.assertEqual(self.db.query(UserSession).count(), 0)
+
+    def test_session_expiring_now_answers_no_user(self) -> None:
+        token = "expires-now"
+        expiry = utcnow()
+        self.db.add(
+            UserSession(
+                user_id=self.user.id,
+                token_hash=hash_session_token(token),
+                expires_at=expiry,
+            )
+        )
+        self.db.commit()
+
+        with patch("app.security.utcnow", return_value=expiry):
+            response = self.check(token)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), NO_SESSION)
         self.assertEqual(self.db.query(UserSession).count(), 0)
 
     def test_deactivated_account_answers_no_user(self) -> None:

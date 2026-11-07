@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.database import SessionLocal
 from app.models import Listing, Message, Negotiation, NegotiationState, User, UserSession
 from app.schemas import MessageSendEvent, PersistedMessage, WebSocketErrorData, WebSocketErrorEvent
-from app.security import hash_session_token, utcnow
+from app.security import hash_session_token, is_session_active
 from app.negotiation_access import is_participant
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ def persist_message(
                 .with_for_update()
                 .one_or_none()
             )
-            if session is None or session.expires_at <= utcnow():
+            if session is None or not is_session_active(session.expires_at):
                 raise MessageProcessingError("unauthenticated", close_code=4401)
 
             negotiation = db.get(Negotiation, negotiation_id, with_for_update=True)
@@ -143,7 +143,7 @@ def persist_message(
             if listing is None or not is_participant(negotiation, sender_id):
                 raise MessageProcessingError("forbidden", close_code=4403)
             # A lock wait can outlast the session's remaining lifetime.
-            if session.expires_at <= utcnow():
+            if not is_session_active(session.expires_at):
                 raise MessageProcessingError("unauthenticated", close_code=4401)
             state = db.get(NegotiationState, negotiation.negotiation_state_id)
             if state is None or state.state_name not in ("Open", "Agreed"):
