@@ -166,5 +166,20 @@ deactivation permanently removes that user's friendship rows.
   statement from that file in the application database using your normal
   database client.
 
+- Session activity adds `sessions.last_seen_at`: the last request made through
+  each session, written at most once a minute. On logout, the user stays
+  online only if another session was used within the online window, not just
+  because an old session has not expired yet. New databases receive the
+  column from `schema.sql`. Existing volumes must apply
+  `tools/140-session-last-seen.sql` **before** running a backend that uses it:
+  without the column, every authenticated request answers 500. The migration
+  only adds a nullable column and is safe to run again.
+
+  ```sh
+  docker compose -f srcs/docker-compose.yml exec -T db sh -c \
+    'mariadb -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' \
+    < srcs/services/mariadb/tools/140-session-last-seen.sql
+  ```
+
 License
 - Follow the repository LICENSE in the project root.

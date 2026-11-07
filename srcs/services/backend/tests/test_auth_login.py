@@ -107,6 +107,8 @@ class LoginTestCase(unittest.TestCase):
         self.assertEqual(response.json()["email"], self.user.email)
         self.assertIn(SESSION_COOKIE_NAME, response.cookies)
         self.assertEqual(self.session_count(), 1)
+        # Logging in counts as this device's activity (see logout).
+        self.assertIsNotNone(self.db.query(UserSession).one().last_seen_at)
 
     def test_logout_clears_last_seen_for_an_active_session(self) -> None:
         self.user.last_seen = utcnow()
@@ -133,7 +135,7 @@ class LoginTestCase(unittest.TestCase):
         self.assertEqual(self.user.last_seen, original_last_seen)
         self.assertEqual(self.session_count(), 0)
 
-    def test_logout_preserves_last_seen_when_another_session_remains(self) -> None:
+    def test_logout_preserves_last_seen_when_another_device_is_in_use(self) -> None:
         original_last_seen = utcnow()
         self.user.last_seen = original_last_seen
         self.open_session("active")
@@ -142,6 +144,7 @@ class LoginTestCase(unittest.TestCase):
                 user_id=self.user.id,
                 token_hash=hash_session_token("other-device"),
                 expires_at=utcnow() + timedelta(hours=1),
+                last_seen_at=utcnow() - timedelta(minutes=1),
             )
         )
         self.db.commit()
@@ -152,6 +155,36 @@ class LoginTestCase(unittest.TestCase):
         self.db.refresh(self.user)
         self.assertEqual(self.user.last_seen, original_last_seen)
         self.assertEqual(self.session_count(), 1)
+
+    def test_logout_ignores_other_sessions_nobody_used_recently(self) -> None:
+        # Valid for days, but idle: a session from yesterday on another
+        # computer, and one from before sessions recorded their activity.
+        self.user.last_seen = utcnow()
+        self.open_session("active")
+        self.db.add_all(
+            [
+                UserSession(
+                    user_id=self.user.id,
+                    token_hash=hash_session_token("yesterday"),
+                    expires_at=utcnow() + timedelta(days=6),
+                    last_seen_at=utcnow() - timedelta(days=1),
+                ),
+                UserSession(
+                    user_id=self.user.id,
+                    token_hash=hash_session_token("never-recorded"),
+                    expires_at=utcnow() + timedelta(days=6),
+                    last_seen_at=None,
+                ),
+            ]
+        )
+        self.db.commit()
+
+        response = self.client.post("/auth/logout")
+
+        self.assertEqual(response.status_code, 204)
+        self.db.refresh(self.user)
+        self.assertIsNone(self.user.last_seen)
+        self.assertEqual(self.session_count(), 2)
 
     def test_logout_ignores_expired_other_sessions(self) -> None:
         self.user.last_seen = utcnow()

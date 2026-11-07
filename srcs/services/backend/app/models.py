@@ -112,6 +112,10 @@ class UserSession(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     token_hash: Mapped[str] = mapped_column(CHAR(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
+    # Last activity through this session, written by touch_last_seen at most
+    # once a minute. Logout keeps the user online only while another session
+    # was used within the online window.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="sessions")

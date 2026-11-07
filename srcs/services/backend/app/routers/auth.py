@@ -48,7 +48,7 @@ from app.models import (
     User,
     UserSession,
 )
-from app.presence import touch_last_seen
+from app.presence import ONLINE_WINDOW, touch_last_seen
 from app.schemas import LoginIn, ProfileUpdate, RegisterIn, SessionOut, UserOut
 from app.security import (
     generate_session_token,
@@ -301,6 +301,9 @@ def _open_session(db: Session, user: User, response: Response) -> None:
             user_id=user.id,
             token_hash=hash_session_token(raw_token),
             expires_at=session_expiry(),
+            # Logging in is this device's first activity: another device
+            # logging out right after must not put the user offline.
+            last_seen_at=utcnow(),
         )
     )
     db.commit()
@@ -443,7 +446,7 @@ def get_session(
         # one and log that tab out. Logging out is what clears it.
         return SessionOut(user=None)
     # Opening the site is activity, as with every authenticated request.
-    touch_last_seen(db, session.user, session_id=session.id)
+    touch_last_seen(db, session.user, session=session)
     return SessionOut(user=UserOut.model_validate(session.user))
 
 
@@ -951,12 +954,17 @@ def logout(
                 session_was_active = is_session_active(session.expires_at, now=now)
                 db.delete(session)
                 db.flush()
-                has_other_active_session = (
+                # Another device keeps the user online only if it was used
+                # within the online window. A session is valid for days, and
+                # one left open on a computer nobody uses must not keep the
+                # user online for 3 more minutes after every logout.
+                has_other_recent_session = (
                     db.query(UserSession)
                     .filter(
                         UserSession.user_id == user_id,
                         UserSession.id != session.id,
                         UserSession.expires_at > now,
+                        UserSession.last_seen_at >= now - ONLINE_WINDOW,
                     )
                     .first()
                     is not None
@@ -964,7 +972,7 @@ def logout(
                 if (
                     user is not None
                     and session_was_active
-                    and not has_other_active_session
+                    and not has_other_recent_session
                 ):
                     db.query(User).filter(User.id == user_id).update(
                         {
