@@ -1,7 +1,11 @@
-FROM alpine:3.22
+ARG MARIADB_IMAGE=mariadb:11
+FROM ${MARIADB_IMAGE}
 
-RUN apk add --no-cache mariadb mariadb-client flock
-COPY --chmod=0755 backup.sh /usr/local/bin/backup.sh
-COPY --chmod=0600 crontab /etc/crontabs/root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends cron util-linux \
+    && rm -rf /var/lib/apt/lists/*
+COPY --chmod=0755 backup.sh start-cron.sh /usr/local/bin/
+COPY --chmod=0644 crontab /etc/cron.d/daka-backup
 
-CMD ["/usr/local/bin/backup.sh"]
+ENTRYPOINT []
+CMD ["/usr/local/bin/start-cron.sh"]

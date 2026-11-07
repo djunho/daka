@@ -7,19 +7,22 @@ to another machine.
 
 ## Scheduled application backups
 
-From the repository root, prepare the Compose environment and the private host
-directory. The backup profile runs daily at 03:00 UTC.
+Set `MYSQL_BACKUP_PASSWORD` in `srcs/.env` to a separate secret. Generate
+one with `openssl rand -hex 32`. From the repository root, run:
 
 ```bash
-make secrets
-mkdir -p -m 700 ../daka-backups
-docker compose -f srcs/docker-compose.yml --profile backup up -d --build backup
+make backup-up
 ```
+
+This creates or updates the dedicated database account, including on an
+existing database volume, and starts the backup profile at 03:00 UTC daily.
+Run the same target after changing the backup password. The runner uses the
+same MariaDB base image as the database service.
 
 To create the first verified backup immediately, or run one on demand:
 
 ```bash
-docker compose -f srcs/docker-compose.yml run --rm backup /usr/local/bin/backup.sh
+docker compose -f srcs/docker-compose.yml exec -T backup /usr/local/bin/backup.sh
 ```
 
 Each backup directory contains `database.sql` and `media.tar.gz`. The runner
@@ -31,10 +34,20 @@ Copies created before automatic verification and manual SQL files are outside
 this rotation.
 
 The **Daka — Backups** Grafana dashboard shows the last verified backup, its
-age and its duration. Prometheus fires `BackupOverdue` when the last verified
-backup is over 26 hours old, or when it has no success sample in the past
-26 hours. On a fresh monitoring stack the latter condition applies until the
-first successful run.
+age and its duration. The first scheduler start records that backups are
+expected. Prometheus fires `BackupOverdue` after 26 hours without a verified
+backup. A stopped runner still alerts because the expectation persists in
+the metrics volume. A development stack that has never enabled scheduled
+backups has no expectation and does not raise this alert.
+
+To intentionally disable scheduled backups and their alert, stop the runner
+and remove its expectation marker:
+
+```bash
+docker compose -f srcs/docker-compose.yml stop backup
+docker compose -f srcs/docker-compose.yml run --rm --no-deps backup \
+  rm -f /backup-metrics/backup-enabled.prom
+```
 
 The rest of this guide covers manual database-only maintenance.
 

@@ -104,8 +104,13 @@ groups:
     rules:
       - alert: BackupOverdue
         expr: >-
-          (time() - last_over_time(backup_last_success_timestamp{job="node"}[26h]) > 93600)
-          or absent_over_time(backup_last_success_timestamp{job="node"}[26h])
+          (
+            (time() - last_over_time(backup_last_success_timestamp{job="node"}[26h]) > 93600)
+            or (
+              (time() - backup_monitoring_enabled_timestamp{job="node"} > 93600)
+              unless on (job, instance) last_over_time(backup_last_success_timestamp{job="node"}[26h])
+            )
+          ) and on (job, instance) backup_monitoring_enabled_timestamp{job="node"}
         labels:
           severity: critical
         annotations:

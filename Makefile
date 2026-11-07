@@ -12,6 +12,12 @@ secrets:
 up: secrets
 	$(COMPOSE) up -d --build
 
+backup-up: secrets
+	mkdir -p -m 700 ../daka-backups
+	$(COMPOSE) up -d --build --wait db
+	$(COMPOSE) exec -T db sh -ec ': "$${MYSQL_BACKUP_PASSWORD:?Set MYSQL_BACKUP_PASSWORD in srcs/.env}"; exec /docker-entrypoint-initdb.d/11-backup-user.sh'
+	$(COMPOSE) up -d --build backup
+
 build:
 	$(COMPOSE) build
 
@@ -67,4 +73,4 @@ sh-front:
 db:
 	$(COMPOSE) exec db mariadb -u root -p
 
-.PHONY: all secrets up build down stop start rebuild logs status validate clean fclean re sh-back sh-front db
+.PHONY: all secrets up backup-up build down stop start rebuild logs status validate clean fclean re sh-back sh-front db

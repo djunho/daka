@@ -1,3 +1,5 @@
+x-mariadb-image: &mariadb-image mariadb:11
+
 services:
   certgen:
     image: alpine/openssl:3.3.2
@@ -26,6 +28,8 @@ services:
   db:
     build:
       context: ./services/mariadb
+      args:
+        MARIADB_IMAGE: *mariadb-image
     image: daka_db
     container_name: daka_db
     restart: unless-stopped
@@ -46,11 +50,12 @@ services:
     profiles: ["backup"]
     build:
       context: ./services/backup
-    command: ["crond", "-f", "-l", "8", "-L", "/dev/stdout"]
+      args:
+        MARIADB_IMAGE: *mariadb-image
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
+      MYSQL_BACKUP_PASSWORD: ${MYSQL_BACKUP_PASSWORD:-}
     depends_on:
       db:
         condition: service_healthy

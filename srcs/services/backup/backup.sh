@@ -2,7 +2,7 @@
 set -eu
 
 : "${MYSQL_DATABASE:?MYSQL_DATABASE is required}"
-: "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}"
+: "${MYSQL_BACKUP_PASSWORD:?MYSQL_ROOT_PASSWORD is required}"
 
 umask 077
 exec 9>/backups/.backup.lock
@@ -26,8 +26,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 
-MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mariadb-dump \
-    --host=db --user=root \
+MYSQL_PWD="$MYSQL_BACKUP_PASSWORD" mariadb-dump \
+    --host=db --user=daka_backup \
     --single-transaction --routines --triggers --events \
     --databases "$MYSQL_DATABASE" > "$staging_dir/database.sql"
 test -s "$staging_dir/database.sql"
