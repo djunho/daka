@@ -16,13 +16,14 @@ import {
   type ApiFriendPage,
 } from '../lib/api'
 import { getPortugueseErrorMessage } from '../lib/errors'
+import { PRESENCE_POLL_MS } from '../hooks/useUserPresence'
 
 const PAGE_SIZE = 20
 // Same value as MAX_PAGE_OFFSET in the backend's schemas.py.
 const MAX_OFFSET = 1_000_000_000
 // Presence changes over time, so the list is fetched again in the background.
-// The backend counts someone as online for 3 minutes, so once a minute is enough.
-export const FRIENDS_REFRESH_MS = 60_000
+// Same cadence as every other online badge (see useUserPresence).
+export const FRIENDS_REFRESH_MS = PRESENCE_POLL_MS
 
 export default function Friends() {
   const { logout } = useAuth()

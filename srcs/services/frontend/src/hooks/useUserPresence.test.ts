@@ -41,6 +41,20 @@ describe('useUserPresence', () => {
     expect(apiGetPublicProfile).toHaveBeenCalledTimes(2)
   })
 
+  it('with skipFirstPoll, waits a full interval before the first poll', async () => {
+    const { result } = renderHook(() => useUserPresence(2, { skipFirstPoll: true }))
+    await flush()
+    expect(apiGetPublicProfile).not.toHaveBeenCalled()
+    expect(result.current).toBeUndefined()
+
+    vi.mocked(apiGetPublicProfile).mockResolvedValue(profile(false))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PRESENCE_POLL_MS)
+    })
+    expect(apiGetPublicProfile).toHaveBeenCalledTimes(1)
+    expect(result.current).toBe(false)
+  })
+
   it('hides the state when the profile cannot be read and asks nothing without a user', async () => {
     vi.mocked(apiGetPublicProfile).mockRejectedValue(new Error('offline'))
     const { result, rerender } = renderHook(({ id }: { id: number | null }) => useUserPresence(id), { initialProps: { id: 2 as number | null } })

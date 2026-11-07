@@ -252,7 +252,7 @@ describe('Friends', () => {
       vi.useRealTimers()
     })
 
-    it('updates the online state every minute', async () => {
+    it('updates the online state on every refresh', async () => {
       renderPage()
       await advance(0)
       expect(screen.getByText('2 amigos')).toBeInTheDocument()

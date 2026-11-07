@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 import { ACTIVE_NEGOTIATION_STATES, isNegotiationReadOnly } from '../types/negotiation'
 import { DOCK_TRIGGER_ID } from '../types/chat'
+import { PRESENCE_POLL_MS } from '../hooks/useUserPresence'
 
 // Cards per active state. Closed negotiations are not listed here: their
 // read-only chat is reachable from the negotiation page (linked from /negotiations).
@@ -63,12 +64,16 @@ export default function NegotiationsDock() {
     logoutRef.current = logout
   }, [logout])
 
-  const loadNegotiations = useCallback(async () => {
+  // `silent` is the background refresh of the open drawer: no loading state,
+  // and a failure keeps the cards on screen (the next refresh tries again).
+  const loadNegotiations = useCallback(async (silent = false) => {
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
-    setLoading(true)
-    setError(null)
+    if (!silent) {
+      setLoading(true)
+      setError(null)
+    }
     try {
       // The list filter takes one state, so each active state is one request.
       // All are awaited to the end: a 401 on any must sign out, even when
@@ -86,6 +91,7 @@ export default function NegotiationsDock() {
         return
       }
       if (failures.length > 0) {
+        if (silent) return
         // No half-loaded or outdated list under the error message
         setNegotiations([])
         setActiveCount(null)
@@ -106,7 +112,9 @@ export default function NegotiationsDock() {
           .slice(0, DOCK_CARDS),
       )
       setActiveCount(pages.reduce((sum, page) => sum + page.total, 0))
+      setError(null)
     } finally {
+      if (controllerRef.current === controller) controllerRef.current = null
       if (!controller.signal.aborted) setLoading(false)
     }
   }, [])
@@ -122,6 +130,19 @@ export default function NegotiationsDock() {
     }
     return () => controllerRef.current?.abort()
   }, [user, loadNegotiations])
+
+  // The online badges come with the list, so while the drawer is open it is
+  // read again every PRESENCE_POLL_MS, like the friends page. Skipped while
+  // the tab is hidden (every request counts as the viewer's own activity)
+  // and while another load is running.
+  useEffect(() => {
+    if (!user || !isOpen) return
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'hidden' || controllerRef.current) return
+      void loadNegotiations(true)
+    }, PRESENCE_POLL_MS)
+    return () => window.clearInterval(id)
+  }, [user, isOpen, loadNegotiations])
 
   // Don't render anything for unauthenticated visitors
   if (!user) return null
