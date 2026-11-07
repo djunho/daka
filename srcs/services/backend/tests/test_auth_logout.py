@@ -72,6 +72,7 @@ class LogoutTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 204)
         self.db.refresh(self.user)
         self.assertIsNone(self.user.last_seen)
+        self.assertEqual(self.db.query(UserSession).count(), 0)
 
 
 if __name__ == "__main__":
