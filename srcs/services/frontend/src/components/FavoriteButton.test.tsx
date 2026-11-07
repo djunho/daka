@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import FavoriteButton, { FAVORITE_ERROR_MS } from './FavoriteButton'
 import { useAuth } from '../context/AuthContext'
@@ -128,6 +129,38 @@ describe('FavoriteButton', () => {
 
     expect(await screen.findByText('Login, depois /?q=livros')).toBeInTheDocument()
     expect(logout).toHaveBeenCalled()
+  })
+
+  it('on 401 does not go to login again once its page is gone', async () => {
+    // Stands for RequireAuth, which replaces the favorites page with the
+    // login page as soon as logout clears the session.
+    let leavePage!: () => void
+    function Page() {
+      const [shown, setShown] = useState(true)
+      leavePage = () => setShown(false)
+      return shown
+        ? <FavoriteButton listingId={5} ownerId={1} title="Bicicleta" variant="card" />
+        : <p>Outra página</p>
+    }
+    logout.mockImplementationOnce(async () => {
+      act(() => leavePage())
+    })
+    toggleFavorite.mockRejectedValue(new ApiError(401, 'Not authenticated.'))
+    setUp()
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Routes>
+          <Route path="/" element={<Page />} />
+          <Route path="/login" element={<LoginProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await userEvent.click(cardButton())
+
+    expect(await screen.findByText('Outra página')).toBeInTheDocument()
+    expect(logout).toHaveBeenCalled()
+    expect(screen.queryByText(/Login, depois/)).not.toBeInTheDocument()
   })
 
   it('explains a failure in Portuguese, then hides it after a while', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
@@ -30,6 +30,15 @@ export default function FavoriteButton({ listingId, ownerId, title, variant, cla
   const navigate = useNavigate()
   const location = useLocation()
   const [error, setError] = useState<string | null>(null)
+  // False once the button has left the page, e.g. the favorites page that
+  // RequireAuth replaced with the login page when the session was cleared.
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!error) return
@@ -62,6 +71,10 @@ export default function FavoriteButton({ listingId, ownerId, title, variant, cla
         // The session expired after the page loaded. Clear it first, or the
         // login page would see a user and send them straight back here.
         await logout()
+        // Gone with its page: whatever replaced it (RequireAuth's redirect,
+        // or a page the user went to) decides where they are. Navigating
+        // again would add a second /login to the history.
+        if (!mounted.current) return
         goToLogin()
         return
       }

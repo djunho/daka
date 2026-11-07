@@ -38,6 +38,8 @@ const logout = vi.fn().mockResolvedValue(undefined)
 // them and rerender to simulate a heart being emptied.
 let saved = new Set<number>()
 let pending = new Set<number>()
+// What snapshotFavorites answers: bump it to say a favorite changed.
+let snapshot = 0
 // Like the real one: what the page hands over becomes saved.
 const rememberFavorites = vi.fn((ids: number[]) => {
   ids.forEach((id) => saved.add(id))
@@ -49,7 +51,7 @@ function useMockedFavorites() {
     isFavorite: (id: number) => saved.has(id),
     isPending: (id: number) => pending.has(id),
     toggleFavorite: vi.fn(),
-    snapshotFavorites: () => 0,
+    snapshotFavorites: () => snapshot,
     rememberFavorites,
   }))
 }
@@ -74,6 +76,7 @@ describe('Favorites page', () => {
   beforeEach(() => {
     saved = new Set([1, 2])
     pending = new Set()
+    snapshot = 0
     rememberFavorites.mockClear()
     signIn(2)
     useMockedFavorites()
@@ -170,6 +173,28 @@ describe('Favorites page', () => {
     renderPage()
 
     expect(await screen.findByRole('button', { name: 'Carregar mais' })).toBeDisabled()
+  })
+
+  it('asks again for the next page when a card was removed while it was on its way', async () => {
+    let answer!: (value: ApiListingPage) => void
+    vi.mocked(apiGetFavorites)
+      .mockResolvedValueOnce(page([1, 2], 3))
+      .mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+      .mockResolvedValueOnce({ ...page([3], 2), offset: 1 })
+    saved = new Set([1, 2, 3])
+    const { rerender } = renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Carregar mais' }))
+    // Listing 1 is removed meanwhile, and the server reads its list after
+    // that: from offset 2 it skips listing 3.
+    saved = new Set([2, 3])
+    snapshot = 2
+    rerender(page$())
+    answer({ items: [], total: 2, limit: 12, offset: 2 })
+
+    expect(await screen.findByRole('heading', { level: 3, name: 'Anúncio 3' })).toBeInTheDocument()
+    expect(vi.mocked(apiGetFavorites).mock.calls[2][0]).toEqual({ limit: 12, offset: 1 })
+    expect(screen.getByText('2 artigos guardados')).toBeInTheDocument()
   })
 
   it('loads the list again when another account signs in', async () => {
