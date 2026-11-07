@@ -39,6 +39,8 @@ test -s "$staging_dir/database.sql"
 
 tar -czf "$staging_dir/media.tar.gz" -C /data/media .
 tar -tzf "$staging_dir/media.tar.gz" >/dev/null
+tar -czf "$staging_dir/documents.tar.gz" -C /data/documents .
+tar -tzf "$staging_dir/documents.tar.gz" >/dev/null
 
 # Import the dump into a private MariaDB instance with only a local socket.
 verify_dir=$(mktemp -d)

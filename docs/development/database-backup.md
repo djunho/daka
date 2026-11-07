@@ -25,8 +25,9 @@ To create the first verified backup immediately, or run one on demand:
 docker compose -f srcs/docker-compose.yml exec -T backup /usr/local/bin/backup.sh
 ```
 
-Each backup directory contains `database.sql` and `media.tar.gz`. The runner
-checks that the archive can be read and imports the dump into a temporary
+Each backup directory contains `database.sql`, `media.tar.gz`, and
+`documents.tar.gz` for private listing PDFs. The runner checks that both
+archives can be read and imports the dump into a temporary
 MariaDB instance before publishing the backup. Rotation keeps the latest
 verified copy from each of the seven most recent dates and four most recent
 ISO weeks that have a backup, in UTC. The same copy can count toward both.
