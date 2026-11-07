@@ -18,15 +18,19 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.config import settings
+from app.documents import delete_document, document_path, save_document
 from app.media import delete_image, save_image
 from app.models import (
     Category,
     Condition,
+    Document,
     Favorite,
     Image,
     Listing,
@@ -267,6 +271,7 @@ def get_listing(
             joinedload(Listing.category),
             joinedload(Listing.condition),
             selectinload(Listing.images),
+            selectinload(Listing.documents),
         )
         .filter(
             Listing.id == id,
@@ -613,7 +618,22 @@ def delete_listing(
     db.query(Favorite).filter(Favorite.listing_id == listing.id).delete(
         synchronize_session=False
     )
+    # Documents go for good: nobody can open them once the listing is removed,
+    # and an invoice may hold personal data. Photos stay, as before.
+    document_files = [
+        file_name
+        for (file_name,) in db.query(Document.file_name).filter(
+            Document.listing_id == listing.id
+        )
+    ]
+    db.query(Document).filter(Document.listing_id == listing.id).delete(
+        synchronize_session=False
+    )
     db.commit()
+
+    # Only after the commit: until then the listing still used the files.
+    for file_name in document_files:
+        delete_document(file_name)
 
 
 # ---------------------------------------------------------------------------
@@ -757,8 +777,166 @@ def delete_listing_image(
     return _load_listing_detail(db, id)
 
 
+# ---------------------------------------------------------------------------
+# Documents (PDF)
+# ---------------------------------------------------------------------------
+#
+# Same contract as the photos: one file per multipart request, in a field
+# named "file", and every write answers with the whole updated listing.
+#
+# The list of documents (name, size, pages) is public, like the rest of the
+# listing. The file itself is not: it lives in a volume nginx cannot see and is
+# only streamed to a logged-in user (see app/documents.py).
+
+@router.post(
+    "/{id}/documents",
+    response_model=ListingDetailOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Attach a PDF document to a listing",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated."},
+        status.HTTP_403_FORBIDDEN: {"description": "Not the listing's owner."},
+        status.HTTP_404_NOT_FOUND: {"description": "Listing not found."},
+        status.HTTP_409_CONFLICT: {"description": "The listing has too many documents."},
+        status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {"description": "File too large."},
+        status.HTTP_415_UNSUPPORTED_MEDIA_TYPE: {"description": "Not a valid PDF."},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Needs a password, too many pages, active content, "
+            "or invalid request (e.g. no file).",
+        },
+    },
+)
+def add_listing_document(
+    id: int = Path(gt=0, description="The listing identifier."),
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ListingDetailOut:
+    """Validate, store and attach one PDF to the logged-in user's listing."""
+    user_id = current_user.id
+
+    # Cheap checks first, so a request that will fail anyway never pays for
+    # parsing and rewriting a PDF.
+    listing = _get_own_listing(db, id, user_id, what="documents")
+    _check_document_limit(listing)
+
+    # Parsing and rewriting is the slow part, so it runs before the row is
+    # locked (same order as add_listing_image).
+    saved = save_document(file)
+
+    try:
+        # Lock the listing until the commit, so two uploads at once cannot both
+        # pass the limit. The rollback ends the read-only transaction first
+        # (see upload_avatar for the MariaDB snapshot error it avoids).
+        db.rollback()
+        listing = _get_own_listing(db, id, user_id, lock=True, what="documents")
+        _check_document_limit(listing)
+        db.add(Document(
+            listing_id=listing.id,
+            file_name=saved.file_name,
+            original_name=saved.original_name,
+            size_bytes=saved.size_bytes,
+            page_count=saved.page_count,
+        ))
+        db.commit()
+    except Exception:
+        # Nothing in the database points at the new file: remove it.
+        db.rollback()
+        delete_document(saved.file_name)
+        raise
+
+    return _load_listing_detail(db, id)
+
+
+@router.delete(
+    "/{id}/documents/{document_id}",
+    response_model=ListingDetailOut,
+    summary="Remove a document from a listing",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated."},
+        status.HTTP_403_FORBIDDEN: {"description": "Not the listing's owner."},
+        status.HTTP_404_NOT_FOUND: {"description": "Listing or document not found."},
+    },
+)
+def delete_listing_document(
+    id: int = Path(gt=0, description="The listing identifier."),
+    document_id: int = Path(gt=0, description="The document identifier."),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ListingDetailOut:
+    """Delete one document, row and file."""
+    user_id = current_user.id
+    # See add_listing_document: end the read transaction before locking.
+    db.rollback()
+    listing = _get_own_listing(db, id, user_id, lock=True, what="documents")
+    document = _find_document(listing, document_id)
+    file_name = document.file_name
+
+    db.delete(document)
+    db.commit()
+
+    # Only after the commit: until then the listing still used the file.
+    delete_document(file_name)
+    return _load_listing_detail(db, id)
+
+
+@router.get(
+    "/{id}/documents/{document_id}/file",
+    response_class=FileResponse,
+    summary="Open a listing's PDF document",
+    responses={
+        status.HTTP_200_OK: {"content": {"application/pdf": {}}, "description": "The PDF."},
+        status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated."},
+        status.HTTP_404_NOT_FOUND: {"description": "Listing or document not found."},
+    },
+)
+def get_listing_document_file(
+    id: int = Path(gt=0, description="The listing identifier."),
+    document_id: int = Path(gt=0, description="The document identifier."),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Stream one document to a logged-in user.
+
+    Anyone with a session may open the documents of an available listing; the
+    owner may also open them while the listing is in another state (e.g.
+    reserved). Everything else behaves as not found.
+    """
+    document = (
+        db.query(Document)
+        .options(joinedload(Document.listing).joinedload(Listing.state))
+        .filter(Document.id == document_id, Document.listing_id == id)
+        .first()
+    )
+    listing = document.listing if document else None
+    visible = listing is not None and (
+        listing.state.state_name == "Available" or listing.user_id == current_user.id
+    )
+    path = document_path(document.file_name) if document and visible else None
+    if path is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        # inline: the browser shows it in its PDF viewer; the "Descarregar"
+        # link asks for a download with the HTML download attribute.
+        filename=document.original_name,
+        content_disposition_type="inline",
+        headers={
+            # Never let the browser guess another type from the bytes.
+            "X-Content-Type-Options": "nosniff",
+            # Behind a login: no shared or stored copies.
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
 def _get_own_listing(
-    db: Session, id: int, user_id: int, *, lock: bool = False
+    db: Session, id: int, user_id: int, *, lock: bool = False, what: str = "photos"
 ) -> Listing:
     """Return the user's listing, or raise 404 (missing/not available) or 403.
 
@@ -779,7 +957,7 @@ def _get_own_listing(
     if listing.user_id != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only change the photos of your own listings.",
+            detail=f"You can only change the {what} of your own listings.",
         )
     return listing
 
@@ -804,6 +982,26 @@ def _find_image(listing: Listing, image_id: int) -> Image:
     )
 
 
+def _check_document_limit(listing: Listing) -> None:
+    """Raise 409 when the listing already has the maximum number of documents."""
+    if len(listing.documents) >= settings.max_documents_per_listing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A listing can have at most {settings.max_documents_per_listing} documents.",
+        )
+
+
+def _find_document(listing: Listing, document_id: int) -> Document:
+    """Return the listing's document with this id, or raise 404."""
+    for document in listing.documents:
+        if document.id == document_id:
+            return document
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Document not found.",
+    )
+
+
 def _load_listing_detail(db: Session, id: int) -> Listing:
     """Read a listing with every relationship ListingDetailOut needs.
 
@@ -818,6 +1016,7 @@ def _load_listing_detail(db: Session, id: int) -> Listing:
             joinedload(Listing.category),
             joinedload(Listing.condition),
             selectinload(Listing.images),
+            selectinload(Listing.documents),
         )
         .populate_existing()
         .filter(Listing.id == id)

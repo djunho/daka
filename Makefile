@@ -30,7 +30,7 @@ stop:
 start:
 	$(COMPOSE) start
 
-rebuild:
+rebuild: secrets
 	$(COMPOSE) down
 	$(COMPOSE) up -d --build
 
@@ -51,6 +51,12 @@ validate: secrets
 	docker run --rm --entrypoint promtool \
 		-v $(CURDIR)/srcs/services/observability/prometheus:/etc/prometheus:ro \
 		$(PROM_IMG) check rules /etc/prometheus/rules/alerts.yml
+	docker run --rm --entrypoint promtool \
+		-v $(CURDIR)/srcs/services/observability/prometheus:/etc/prometheus:ro \
+		$(PROM_IMG) check web-config /etc/prometheus/web.yml
+	docker run --rm --entrypoint promtool \
+		-v $(CURDIR)/srcs/services/observability/alertmanager:/etc/alertmanager:ro \
+		$(PROM_IMG) check web-config /etc/alertmanager/web.yml
 	docker run --rm --entrypoint amtool \
 		-v $(CURDIR)/srcs/services/observability/alertmanager:/etc/alertmanager:ro \
 		$(AM_IMG) check-config /etc/alertmanager/alertmanager.yml

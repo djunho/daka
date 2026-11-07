@@ -1,13 +1,23 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useParams, Link, useLocation, useNavigate } from 'react-router-dom'
-import { ApiError, apiCreateNegotiation, apiDeleteListing, apiGetListing, type ApiListingDetail } from '../lib/api'
+import {
+  ApiError,
+  apiCreateNegotiation,
+  apiDeleteListing,
+  apiGetListing,
+  listingDocumentUrl,
+  type ApiListingDetail,
+} from '../lib/api'
 import { getPortugueseErrorMessage } from '../lib/errors'
 import { categoryLabel, conditionLabel } from '../types/listing'
 import ListingGallery from '../components/ListingGallery'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
+import Icon from '../components/Icon'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
+import DocumentItem from '../components/DocumentItem'
+import FavoriteButton from '../components/FavoriteButton'
 import MessageCard from '../components/MessageCard'
 
 // POST /negotiations answers 409 both when the listing can no longer be
@@ -237,13 +247,21 @@ export default function ListingDetail() {
         {/* Right column: listing info and owner card (88d). */}
         <div className="space-y-6">
           <div>
-            <div className="flex flex-wrap gap-2 mb-3">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
               <span className="text-xs font-semibold bg-surface text-label border border-line px-2.5 py-1 rounded-full">
                 {categoryLabel(category)}
               </span>
               <span className="text-xs font-semibold bg-surface text-label border border-line px-2.5 py-1 rounded-full">
                 {conditionLabel(condition)}
               </span>
+              {/* Hidden from the owner and until the session is known. */}
+              <FavoriteButton
+                listingId={listing.id}
+                ownerId={owner.id}
+                title={title}
+                variant="detail"
+                className="relative ml-auto"
+              />
             </div>
             <h1 className="font-display text-3xl font-bold text-ink leading-tight wrap-break-word">
               {title}
@@ -251,7 +269,7 @@ export default function ListingDetail() {
             <p className="text-sm text-muted mt-2">
               {listing_location && (
                 <>
-                  <span aria-hidden="true">📍</span> {listing_location} ·{' '}
+                  <Icon name="location" size={14} className="inline-block align-[-2px] mr-0.5" />{listing_location} ·{' '}
                 </>
               )}
               Publicado a {publishedAt}
@@ -262,7 +280,7 @@ export default function ListingDetail() {
             <div className="bg-surface border border-line rounded-xl p-4">
               <span className="block text-xs font-medium text-muted mb-1">Em troca, procura</span>
               <p className="font-semibold text-accent wrap-break-word">
-                <span aria-hidden="true">⇄</span> {wish}
+                <Icon name="swap" size={16} className="inline-block align-[-3px] mr-1" />{wish}
               </p>
             </div>
           )}
@@ -275,6 +293,50 @@ export default function ListingDetail() {
               <p className="text-sm text-muted">O anunciante não escreveu uma descrição.</p>
             )}
           </div>
+
+          {listing.documents.length > 0 && (
+            <div>
+              <h2 id="listing-documents" className="font-display text-lg font-bold text-ink mb-2">Documentos</h2>
+              <ul aria-labelledby="listing-documents" className="space-y-2">
+                {listing.documents.map((doc) => (
+                  <DocumentItem
+                    key={doc.id}
+                    name={doc.original_name}
+                    sizeBytes={doc.size_bytes}
+                    pageCount={doc.page_count}
+                    actions={
+                      // Opening a document needs a session. A visitor gets the
+                      // way to log in instead of a link the backend would
+                      // answer with 401 (an error in the browser console).
+                      currentUser ? (
+                        <>
+                          <a
+                            href={listingDocumentUrl(listing.id, doc.id)}
+                            target="_blank"
+                            rel="noopener"
+                            className={buttonClasses({ variant: 'link', size: 'sm' })}
+                          >
+                            Abrir<span className="sr-only"> {doc.original_name}</span>
+                          </a>
+                          <a
+                            href={listingDocumentUrl(listing.id, doc.id)}
+                            download={doc.original_name}
+                            className={buttonClasses({ variant: 'link', size: 'sm' })}
+                          >
+                            Descarregar<span className="sr-only"> {doc.original_name}</span>
+                          </a>
+                        </>
+                      ) : (
+                        <Button variant="link" size="sm" onClick={goToLogin}>
+                          Inicia sessão para abrir<span className="sr-only"> {doc.original_name}</span>
+                        </Button>
+                      )
+                    }
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Owner card */}
           <div className="bg-surface border border-line rounded-2xl p-4 shadow-sm">
@@ -290,7 +352,7 @@ export default function ListingDetail() {
                 </Link>
                 {owner.user_location && (
                   <p className="text-xs text-muted">
-                    <span aria-hidden="true">📍</span> {owner.user_location}
+                    <Icon name="location" size={12} className="inline-block align-[-1px] mr-0.5" />{owner.user_location}
                   </p>
                 )}
               </div>

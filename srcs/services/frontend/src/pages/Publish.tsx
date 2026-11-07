@@ -6,14 +6,24 @@ import {
   apiListConditions,
   apiCreateListing,
   apiUpdateListing,
+  apiUploadListingDocument,
   apiUploadListingImage,
   type ApiCategory,
   type ApiCondition,
 } from '../lib/api'
 import { getPortugueseErrorMessage } from '../lib/errors'
 import ListingFields from '../components/ListingFields'
+import Icon from '../components/Icon'
+import DocumentItem from '../components/DocumentItem'
+import UploadProgress from '../components/UploadProgress'
 import { useObjectUrl } from '../hooks/useObjectUrl'
 import { validateImage, IMAGE_ACCEPT } from '../lib/images'
+import {
+  DOCUMENT_ACCEPT,
+  MAX_LISTING_DOCUMENTS,
+  getDocumentErrorMessage,
+  validateDocument,
+} from '../lib/documents'
 import {
   EMPTY_LISTING_FORM,
   MAX_LISTING_PHOTOS,
@@ -60,14 +70,30 @@ function PhotoThumbnail({ file, index, disabled = false, onRemove }: PhotoThumbn
           type="button"
           onClick={() => onRemove(index)}
           aria-label={`Remover foto ${index + 1}`}
-          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-surface/90 text-accent hover:bg-surface border border-line/40 flex items-center justify-center text-xs shadow-sm transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-accent"
+          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-surface/90 text-accent hover:bg-surface border border-line/40 flex items-center justify-center shadow-sm transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-accent"
         >
-          ✕
+          <Icon name="close" size={14} />
         </button>
       )}
     </div>
   )
 }
+
+// Opens the chosen PDF in a new tab, before anything is uploaded. The URL
+// lives as long as the row: revoking it right after opening would break the
+// new tab, so useObjectUrl revokes it when the document is removed or the
+// page is left.
+function DocumentPreviewLink({ file }: { file: File }) {
+  const url = useObjectUrl(file)
+  if (!url) return null
+  return (
+    <a href={url} target="_blank" rel="noopener" className={buttonClasses({ variant: 'link', size: 'sm' })}>
+      Pré-visualizar<span className="sr-only"> {file.name}</span>
+    </a>
+  )
+}
+
+type UploadState = { label: string; fraction: number }
 
 export default function Publish() {
   const navigate = useNavigate()
@@ -84,6 +110,13 @@ export default function Publish() {
   const [photos, setPhotos] = useState<File[]>([])
   const [photoError, setPhotoError] = useState<string | null>(null)
 
+  // PDF documents (optional), uploaded after the photos
+  const [documents, setDocuments] = useState<File[]>([])
+  const [documentError, setDocumentError] = useState<string | null>(null)
+
+  // The file being sent and how much of it has left the browser
+  const [upload, setUpload] = useState<UploadState | null>(null)
+
   // Form submission lifecycle state
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submittingStatus, setSubmittingStatus] = useState<string | null>(null)
@@ -92,6 +125,7 @@ export default function Publish() {
   // Track created listing ID and uploaded photos count to prevent duplicate listings on retry
   const createdListingIdRef = useRef<number | null>(null)
   const uploadedPhotosCountRef = useRef(0)
+  const uploadedDocumentsCountRef = useRef(0)
 
   const loadMetadata = useCallback(async () => {
     setIsLoadingMeta(true)
@@ -158,6 +192,45 @@ export default function Publish() {
     setPhotoError(null)
   }
 
+  const handleDocumentSelect = async (e: ChangeEvent<HTMLInputElement>) => {
+    setDocumentError(null)
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (files.length === 0) return
+
+    if (documents.length + files.length > MAX_LISTING_DOCUMENTS) {
+      setDocumentError(`Podes anexar no máximo ${MAX_LISTING_DOCUMENTS} documentos por anúncio.`)
+      return
+    }
+
+    const existingKeys = new Set(documents.map((d) => `${d.name}-${d.size}-${d.lastModified}`))
+    for (const f of files) {
+      const key = `${f.name}-${f.size}-${f.lastModified}`
+      if (existingKeys.has(key)) {
+        setDocumentError(`O documento "${f.name}" já foi adicionado.`)
+        return
+      }
+      existingKeys.add(key)
+
+      const err = await validateDocument(f)
+      if (err) {
+        setDocumentError(`${f.name}: ${err}`)
+        return
+      }
+    }
+
+    setDocuments((prev) => [...prev, ...files])
+  }
+
+  const handleRemoveDocument = (indexToRemove: number) => {
+    // Documents already uploaded on a previous attempt stay.
+    if (indexToRemove < uploadedDocumentsCountRef.current) {
+      return
+    }
+    setDocuments((prev) => prev.filter((_, i) => i !== indexToRemove))
+    setDocumentError(null)
+  }
+
   // Saves the fields that changed and clears their error messages.
   const handleFieldChange = (changes: Partial<ListingFormValues>) => {
     setValues((prev) => ({ ...prev, ...changes }))
@@ -181,6 +254,8 @@ export default function Publish() {
 
     setIsSubmitting(true)
     setSubmittingStatus('A publicar anúncio…')
+    // Which step failed decides the error message.
+    let step: 'listing' | 'photo' | 'document' = 'listing'
 
     try {
       const payload = toListingPayload(values)
@@ -198,28 +273,48 @@ export default function Publish() {
       }
 
       // Sequentially upload remaining photos to POST /api/listings/{id}/images
+      step = 'photo'
       for (let i = uploadedPhotosCountRef.current; i < photos.length; i++) {
-        setSubmittingStatus(`A enviar fotografia ${i + 1} de ${photos.length}…`)
-        await apiUploadListingImage(listingId, photos[i])
+        const label = `A enviar fotografia ${i + 1} de ${photos.length}`
+        setSubmittingStatus(`${label}…`)
+        setUpload({ label, fraction: 0 })
+        await apiUploadListingImage(listingId, photos[i], {
+          onProgress: (fraction) => setUpload({ label, fraction }),
+        })
         uploadedPhotosCountRef.current = i + 1
+      }
+
+      // Then the documents, to POST /api/listings/{id}/documents
+      step = 'document'
+      for (let i = uploadedDocumentsCountRef.current; i < documents.length; i++) {
+        const label = `A enviar documento ${i + 1} de ${documents.length}`
+        setSubmittingStatus(`${label}…`)
+        setUpload({ label, fraction: 0 })
+        await apiUploadListingDocument(listingId, documents[i], {
+          onProgress: (fraction) => setUpload({ label, fraction }),
+        })
+        uploadedDocumentsCountRef.current = i + 1
       }
 
       // Redirect user to the newly created listing page
       navigate(`/listing/${listingId}`)
     } catch (err) {
       setSubmitError(
-        getPortugueseErrorMessage(
-          err,
-          'Não foi possível publicar o anúncio. Por favor, tenta novamente.',
-          {
-            404: 'O anúncio não foi encontrado.',
-            409: `O anúncio já atingiu o limite máximo de ${MAX_LISTING_PHOTOS} fotografias.`,
-          },
-        ),
+        step === 'document'
+          ? getDocumentErrorMessage(err, 'Não foi possível enviar o documento. Por favor, tenta novamente.')
+          : getPortugueseErrorMessage(
+              err,
+              'Não foi possível publicar o anúncio. Por favor, tenta novamente.',
+              {
+                404: 'O anúncio não foi encontrado.',
+                409: `O anúncio já atingiu o limite máximo de ${MAX_LISTING_PHOTOS} fotografias.`,
+              },
+            ),
       )
     } finally {
       setIsSubmitting(false)
       setSubmittingStatus(null)
+      setUpload(null)
     }
   }
 
@@ -246,13 +341,9 @@ export default function Publish() {
         {!isLoadingMeta && metaError && (
           <div className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-center my-4">
             <p className="text-sm text-accent mb-3">{metaError}</p>
-            <button
-              type="button"
-              onClick={loadMetadata}
-              className="px-4 py-2 text-xs font-semibold bg-brand text-surface rounded-full hover:opacity-95 transition-opacity"
-            >
+            <Button variant="primary" size="sm" onClick={loadMetadata}>
               Tentar novamente
-            </button>
+            </Button>
           </div>
         )}
 
@@ -273,10 +364,10 @@ export default function Publish() {
                 <button
                   type="button"
                   onClick={() => setSubmitError(null)}
-                  className="text-accent hover:text-ink text-xs font-bold p-1 transition-colors"
+                  className="text-accent hover:text-ink p-1 transition-colors"
                   aria-label="Fechar alerta"
                 >
-                  ✕
+                  <Icon name="close" size={14} />
                 </button>
               </div>
             )}
@@ -321,7 +412,7 @@ export default function Publish() {
                         : 'hover:border-brand hover:bg-paper hover:text-brand focus-within:border-brand focus-within:text-brand focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2 cursor-pointer'
                     }`}
                   >
-                    <span className="text-2xl leading-none font-light" aria-hidden="true">+</span>
+                    <Icon name="plus" size={24} />
                     <span className="text-[11px] font-medium mt-1">Adicionar</span>
                     <input
                       type="file"
@@ -344,6 +435,75 @@ export default function Publish() {
                 </p>
               )}
             </div>
+
+            {/* Documents (PDF) */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span id="documents-label" className="text-xs uppercase tracking-wider font-bold text-muted">
+                  Documentos <span className="text-muted font-normal lowercase">(opcional)</span>
+                </span>
+                <span className="text-[11px] text-muted">{documents.length}/{MAX_LISTING_DOCUMENTS}</span>
+              </div>
+              <p className="text-xs text-muted mb-3">
+                Manual, fatura ou garantia do artigo, em PDF até 2 MB cada. Só quem tem sessão iniciada os pode abrir.
+              </p>
+
+              {documents.length > 0 && (
+                <ul aria-labelledby="documents-label" className="space-y-2 mb-3">
+                  {documents.map((file, index) => {
+                    const locked = isSubmitting || index < uploadedDocumentsCountRef.current
+                    return (
+                      <DocumentItem
+                        key={`${file.name}-${file.size}-${file.lastModified}`}
+                        name={file.name}
+                        sizeBytes={file.size}
+                        actions={
+                          <>
+                            <DocumentPreviewLink file={file} />
+                            {!locked && (
+                              <Button variant="link" size="sm" className="text-accent" onClick={() => handleRemoveDocument(index)}>
+                                Remover<span className="sr-only"> {file.name}</span>
+                              </Button>
+                            )}
+                          </>
+                        }
+                      />
+                    )
+                  })}
+                </ul>
+              )}
+
+              {documents.length < MAX_LISTING_DOCUMENTS && (
+                <label
+                  className={`${buttonClasses({ variant: 'secondary', size: 'sm' })} ${
+                    isSubmitting
+                      ? 'opacity-40 cursor-not-allowed'
+                      : 'cursor-pointer focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2'
+                  }`}
+                >
+                  <Icon name="plus" size={16} />
+                  Adicionar PDF
+                  <input
+                    type="file"
+                    accept={DOCUMENT_ACCEPT}
+                    multiple
+                    disabled={isSubmitting}
+                    className="sr-only"
+                    aria-invalid={Boolean(documentError)}
+                    aria-describedby={documentError ? 'document-error' : undefined}
+                    onChange={(e) => void handleDocumentSelect(e)}
+                  />
+                </label>
+              )}
+
+              {documentError && (
+                <p id="document-error" className="text-xs text-accent mt-2">
+                  {documentError}
+                </p>
+              )}
+            </div>
+
+            {upload && <UploadProgress label={upload.label} fraction={upload.fraction} />}
 
             {/* Form footer actions */}
             <div className="pt-6 border-t border-line flex flex-col-reverse sm:flex-row items-center justify-end gap-3">

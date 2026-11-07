@@ -10,7 +10,10 @@ rule_files:
 
 alerting:
   alertmanagers:
-    - static_configs:
+    - basic_auth:
+        username_file: /etc/prometheus/scrape_username
+        password_file: /etc/prometheus/scrape_password
+      static_configs:
         - targets:
             - alertmanager:9093
 
@@ -18,7 +21,7 @@ scrape_configs:
   # ---- 1. Prometheus scraping itself -------------------------------------
   - job_name: prometheus
     basic_auth:
-      username: daka
+      username_file: /etc/prometheus/scrape_username
       password_file: /etc/prometheus/scrape_password
     static_configs:
       - targets: ["localhost:9090"]
@@ -77,6 +80,9 @@ scrape_configs:
 
   # ---- 8. Alertmanager ---------------------------------------------------
   - job_name: alertmanager
+    basic_auth:
+      username_file: /etc/prometheus/scrape_username
+      password_file: /etc/prometheus/scrape_password
     static_configs:
       - targets: ["alertmanager:9093"]
 

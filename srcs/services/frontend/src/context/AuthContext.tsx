@@ -17,6 +17,7 @@ import {
   apiSession,
   apiUpdateProfile,
   apiUploadAvatar,
+  type UploadOptions,
   type UpdateProfileData,
   type ApiUser,
 } from '../lib/api'
@@ -45,7 +46,7 @@ type AuthContextValue = {
   syncUser: () => Promise<'same' | 'changed' | 'signedOut' | 'unknown'>
   updateProfile: (data: UpdateProfileData) => Promise<void>
   deleteAccount: () => Promise<void>
-  uploadAvatar: (file: File) => Promise<void>
+  uploadAvatar: (file: File, options?: UploadOptions) => Promise<void>
   removeAvatar: () => Promise<void>
 }
 
@@ -197,8 +198,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Both avatar calls answer with the updated user, so storing it here is
   // enough for every avatar on screen (profile page, header menu) to change.
-  async function uploadAvatar(file: File) {
-    const updated = await apiUploadAvatar(file)
+  async function uploadAvatar(file: File, options?: UploadOptions) {
+    const updated = await apiUploadAvatar(file, options)
     setUser(updated)
   }
 

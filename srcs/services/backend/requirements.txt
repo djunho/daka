@@ -12,3 +12,6 @@ itsdangerous==2.2.0
 httpx==0.28.1
 python-multipart==0.0.20
 Pillow==12.3.0
+# PDF validation for listing documents. Must stay >= 6.0.0: older versions
+# do not limit FlateDecode output (CVE-2025-55197, memory exhaustion).
+pypdf==6.21.4

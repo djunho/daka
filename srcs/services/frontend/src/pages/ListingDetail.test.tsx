@@ -12,6 +12,10 @@ vi.mock('../lib/api', async (importOriginal) => ({
   apiCreateNegotiation: vi.fn(),
 }))
 vi.mock('../context/AuthContext', () => ({ useAuth: vi.fn() }))
+// Nothing saved: the heart itself is tested in FavoriteButton.test.tsx.
+vi.mock('../context/FavoritesContext', () => ({
+  useFavorites: () => ({ ready: true, isFavorite: () => false, isPending: () => false, toggleFavorite: vi.fn() }),
+}))
 
 const OWNER = { id: 1, user_name: 'Ana', avatar: null, user_location: null, is_online: false }
 const VISITOR = { id: 2, user_name: 'Bia', avatar: null, user_location: null, is_online: false, email: 'b@x.io', created_at: '2026-01-01' }
@@ -28,6 +32,7 @@ const LISTING: ApiListingDetail = {
   created_at: '2026-01-01T00:00:00',
   listing_dsc: null,
   images: [],
+  documents: [],
   is_favorited: false,
 }
 
@@ -86,6 +91,15 @@ describe('Iniciar negociação em ListingDetail', () => {
 
     expect(await screen.findByText('Este é o teu anúncio.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Iniciar negociação' })).not.toBeInTheDocument()
+    // The backend refuses to save your own listing.
+    expect(screen.queryByRole('button', { name: 'Guardar nos favoritos' })).not.toBeInTheDocument()
+  })
+
+  it('offers to save the listing in the favorites to anyone else', async () => {
+    signIn(VISITOR)
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'Guardar nos favoritos' })).toBeInTheDocument()
   })
 
   it('hides the action until the session check finishes', async () => {
@@ -219,5 +233,55 @@ describe('Iniciar negociação em ListingDetail', () => {
 
     expect(await screen.findByText('Negociação 20')).toBeInTheDocument()
     expect(apiCreateNegotiation).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Documentos em ListingDetail', () => {
+  const WITH_DOCUMENT: ApiListingDetail = {
+    ...LISTING,
+    documents: [{ id: 9, original_name: 'Manual.pdf', size_bytes: 830 * 1024, page_count: 12, created_at: '2026-01-02T00:00:00' }],
+  }
+
+  beforeEach(() => {
+    vi.mocked(apiGetListing).mockReset().mockResolvedValue(WITH_DOCUMENT)
+  })
+
+  it('lists the documents with their size and pages', async () => {
+    signIn(VISITOR)
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'Documentos' })).toBeInTheDocument()
+    // selector: the name also appears, hidden, in each button's label.
+    expect(screen.getByText('Manual.pdf', { selector: 'p' })).toBeInTheDocument()
+    expect(screen.getByText('PDF · 830 KB · 12 páginas')).toBeInTheDocument()
+  })
+
+  it('links a logged-in user to the file, to open and to download', async () => {
+    signIn(VISITOR)
+    renderPage()
+
+    const open = await screen.findByRole('link', { name: 'Abrir Manual.pdf' })
+    expect(open).toHaveAttribute('href', '/api/listings/5/documents/9/file')
+    expect(open).toHaveAttribute('target', '_blank')
+    expect(screen.getByRole('link', { name: 'Descarregar Manual.pdf' })).toHaveAttribute('download', 'Manual.pdf')
+  })
+
+  it('never links a visitor to the file: it offers to log in instead', async () => {
+    signIn(null)
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Inicia sessão para abrir Manual.pdf' }))
+
+    expect(screen.queryByRole('link', { name: /Abrir/ })).not.toBeInTheDocument()
+    expect(await screen.findByText('Login, depois /listing/5')).toBeInTheDocument()
+  })
+
+  it('has no documents section when there are none', async () => {
+    vi.mocked(apiGetListing).mockResolvedValue(LISTING)
+    signIn(VISITOR)
+    renderPage()
+
+    await findAction()
+    expect(screen.queryByRole('heading', { name: 'Documentos' })).not.toBeInTheDocument()
   })
 })
