@@ -163,11 +163,15 @@ services:
       - --storage.path=/alertmanager
       - --web.external-url=https://${DOMAIN:-localhost}:${NGINX_PORT}/alertmanager/
       - --web.route-prefix=/
+      - --web.config.file=/etc/alertmanager/web.yml
     volumes:
       - ./services/observability/alertmanager:/etc/alertmanager:ro
       - alertmanager_data:/alertmanager
     healthcheck:
-      test: "wget -q -O /dev/null http://localhost:9093/-/healthy || exit 1"
+      test: >-
+        wget -q -O /dev/null
+        --header "Authorization: Basic $$(printf '%s:%s' '${PROM_USER}' '${PROM_PASSWORD}' | base64)"
+        http://localhost:9093/-/healthy || exit 1
       interval: 15s
       timeout: 5s
       retries: 5
