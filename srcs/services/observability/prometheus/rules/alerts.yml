@@ -100,6 +100,18 @@ groups:
           description: "95th percentile API response time is above 1s for >5m (current: {{ printf \"%.2f\" $value }}s)."
 
   # -----------------------------------------------------------------------
+  - name: backups
+    rules:
+      - alert: BackupOverdue
+        expr: >-
+          (time() - last_over_time(backup_last_success_timestamp{job="node"}[26h]) > 93600)
+          or absent_over_time(backup_last_success_timestamp{job="node"}[26h])
+        labels:
+          severity: critical
+        annotations:
+          summary: "No recent verified Daka backup"
+          description: "The last verified backup is more than 26 hours old or no success metric is available."
+
   - name: tls
     rules:
       - alert: TLSCertExpiringSoon

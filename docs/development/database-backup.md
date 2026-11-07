@@ -5,6 +5,39 @@ the database container does not remove that volume, but a backup is still
 required before schema changes, destructive maintenance, or moving the project
 to another machine.
 
+## Scheduled application backups
+
+From the repository root, prepare the Compose environment and the private host
+directory. The backup profile runs daily at 03:00 UTC.
+
+```bash
+make secrets
+mkdir -p -m 700 ../daka-backups
+docker compose -f srcs/docker-compose.yml --profile backup up -d --build backup
+```
+
+To create the first verified backup immediately, or run one on demand:
+
+```bash
+docker compose -f srcs/docker-compose.yml run --rm backup /usr/local/bin/backup.sh
+```
+
+Each backup directory contains `database.sql` and `media.tar.gz`. The runner
+checks that the archive can be read and imports the dump into a temporary
+MariaDB instance before publishing the backup. Rotation keeps the latest
+verified copy from each of the seven most recent dates and four most recent
+ISO weeks that have a backup, in UTC. The same copy can count toward both.
+Copies created before automatic verification and manual SQL files are outside
+this rotation.
+
+The **Daka — Backups** Grafana dashboard shows the last verified backup, its
+age and its duration. Prometheus fires `BackupOverdue` when the last verified
+backup is over 26 hours old, or when it has no success sample in the past
+26 hours. On a fresh monitoring stack the latter condition applies until the
+first successful run.
+
+The rest of this guide covers manual database-only maintenance.
+
 The commands below must be run from the repository root while the `db` service
 is running. They read the database name and credentials from `srcs/.env` inside
 the container, so the password is not copied into the shell history or exposed

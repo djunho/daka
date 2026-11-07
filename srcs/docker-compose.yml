@@ -41,6 +41,30 @@ services:
     networks:
       - daka_data
 
+  # ---- Backup runner (enable with --profile backup) -----------------------
+  backup:
+    profiles: ["backup"]
+    build:
+      context: ./services/backup
+    command: ["crond", "-f", "-l", "8", "-L", "/dev/stdout"]
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - media:/data/media:ro
+      - backup_metrics:/backup-metrics
+      - type: bind
+        source: ../../daka-backups
+        target: /backups
+        bind:
+          create_host_path: false
+    networks:
+      - daka_data
+
   # ---- Backend (Python + FastAPI) -----------------------------------------
   backend:
     build:
@@ -232,10 +256,12 @@ services:
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
       - --path.rootfs=/host/root
+      - --collector.textfile.directory=/backup-metrics
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($$|/)
       - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|cgroup|cgroup2|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$$
     volumes:
       - /proc:/host/proc:ro
+      - backup_metrics:/backup-metrics:ro
       - /sys:/host/sys:ro
       - /:/host/root:ro,rslave
     networks:
@@ -288,6 +314,7 @@ services:
       - daka_obs
  
 volumes:
+  backup_metrics:
   db_data:
   prometheus_data:
   alertmanager_data:
