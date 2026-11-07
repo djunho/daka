@@ -25,6 +25,9 @@ export default function Favorites() {
   const [error, setError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState<boolean>(false)
   const [moreError, setMoreError] = useState<string | null>(null)
+  // Set when a "Carregar mais" answer was dropped because a favorite changed
+  // while it was on its way: the page is asked again with the new offset.
+  const [retryMore, setRetryMore] = useState<boolean>(false)
   // Bumped by "Tentar outra vez" and when every loaded card was removed, to
   // load the first page again.
   const [attempt, setAttempt] = useState<number>(0)
@@ -53,6 +56,7 @@ export default function Favorites() {
     setError(null)
     setLoadingMore(false)
     setMoreError(null)
+    setRetryMore(false)
     const snapshot = snapshotFavorites()
     apiGetFavorites({ limit: PAGE_SIZE }, controller.signal)
       .then((page) => {
@@ -138,6 +142,13 @@ export default function Favorites() {
     apiGetFavorites({ limit: PAGE_SIZE, offset: visible.length })
       .then((page) => {
         if (listRequest.current !== request) return
+        // A card was removed while the request was on its way. The server may
+        // have read its list before or after that removal, so the offset may
+        // be one too far and this page would skip a favorite. Ask again.
+        if (snapshotFavorites() !== snapshot) {
+          setRetryMore(true)
+          return
+        }
         rememberFavorites(page.items.map((listing) => listing.id), snapshot)
         // A favorite saved meanwhile pushes the server's list down by one:
         // skip a card already on screen rather than show it twice.
@@ -156,6 +167,15 @@ export default function Favorites() {
         setLoadingMore(false)
       })
   }
+
+  // Runs the dropped "Carregar mais" again, once no removal is under way.
+  useEffect(() => {
+    if (!retryMore || removing || loadingMore) return
+    setRetryMore(false)
+    loadMore()
+    // loadMore is a new function on every render; these three decide when.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retryMore, removing, loadingMore])
 
   return (
     <main className="px-4 sm:px-6 pt-8 pb-12">
@@ -192,8 +212,8 @@ export default function Favorites() {
       {!loading && !error && visible.length > 0 && visible.length < shownTotal && (
         <div className="flex flex-col items-center gap-2 mt-8">
           {/* Waits for a removal under way: see `removing` above. */}
-          <Button onClick={loadMore} loading={loadingMore} disabled={removing}>
-            {loadingMore ? 'A carregar…' : 'Carregar mais'}
+          <Button onClick={loadMore} loading={loadingMore || retryMore} disabled={removing}>
+            {loadingMore || retryMore ? 'A carregar…' : 'Carregar mais'}
           </Button>
           {moreError && <p role="alert" className="text-sm text-accent">{moreError}</p>}
         </div>
