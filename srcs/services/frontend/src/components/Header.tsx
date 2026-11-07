@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
+import Icon from './Icon'
+import LogoMark from './Logo'
 
 // Site header. Now aware of the session: logged-out shows "Sign in" + "Post";
 // logged-in swaps "Sign in" for an avatar that opens a small menu with logout.
@@ -72,7 +74,7 @@ export default function Header() {
           to="/publish"
           className="flex items-center justify-center gap-1 w-9 h-9 sm:w-auto sm:h-auto sm:px-4 sm:py-2 rounded-full font-semibold bg-brand text-surface hover:opacity-95 transition-opacity"
         >
-          <span aria-hidden="true" className="text-lg leading-none">+</span>
+          <Icon name="plus" size={18} />
           <span className="sr-only sm:not-sr-only">Publicar</span>
         </Link>
       </div>
@@ -147,7 +149,7 @@ function UserMenu({
           <img src={avatar} alt="" className="w-full h-full object-cover" />
         ) : (
           // No photo yet (the common case at first): a generic person icon.
-          <PersonIcon />
+          <Icon name="user" className="text-muted" />
         )}
       </button>
 
@@ -205,30 +207,5 @@ function UserMenu({
         </div>
       )}
     </div>
-  )
-}
-
-// --- Icons ------------------------------------------------------------------
-
-function LogoMark() {
-  return (
-    <span className="inline-flex items-center justify-center w-9 h-9 bg-brand rounded-[10px]">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M4 9 H17" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" />
-        <path d="M14 6 L17 9 L14 12" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M20 15 H7" stroke="#DF3D31" strokeWidth="2.2" strokeLinecap="round" />
-        <path d="M10 12 L7 15 L10 18" stroke="#DF3D31" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </span>
-  )
-}
-
-// Generic person silhouette, shown when a user has no avatar uploaded.
-function PersonIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="8" r="4" stroke="var(--color-muted)" strokeWidth="1.8" />
-      <path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" stroke="var(--color-muted)" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
   )
 }

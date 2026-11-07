@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import ProfileField from '../components/ProfileField'
 import LocationAutocomplete from '../components/LocationAutocomplete'
 import Avatar from '../components/Avatar'
+import Icon from '../components/Icon'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ImagePicker from '../components/ImagePicker'
@@ -186,10 +187,10 @@ export default function Profile() {
           <button
             type="button"
             onClick={() => setError(null)}
-            className="text-muted hover:text-ink text-xs font-bold p-1 ml-auto transition-colors"
+            className="text-muted hover:text-ink p-1 ml-auto transition-colors"
             aria-label="Fechar alerta"
           >
-            ✕
+            <Icon name="close" size={14} />
           </button>
         </div>
       }
@@ -225,18 +226,17 @@ export default function Profile() {
                     disabled={saving}
                   />
                   {showsAvatar && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => {
                         setAvatarFile(null)
                         setAvatarRemoved(true)
                       }}
                       disabled={saving}
-                      className={"text-xs font-medium text-muted hover:text-ink px-2.5 py-1 rounded-lg transition-colors" +
-                                " disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted"}
                     >
                       Remover foto
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}
@@ -262,13 +262,9 @@ export default function Profile() {
             </h2>
 
             {!isEditing ? (
-              <button
-                type="button"
-                className="inline-flex items-center min-h-6 py-1 text-xs font-semibold text-brand hover:underline"
-                onClick={() => setIsEditing(true)}
-              >
+              <Button variant="link" size="sm" className="min-h-6 py-1" onClick={() => setIsEditing(true)}>
                 Editar perfil
-              </button>
+              </Button>
             ) : (
               <div className="flex items-center gap-2">
                 <Button variant="ghost" size="sm" disabled={saving} onClick={handleCancel}>

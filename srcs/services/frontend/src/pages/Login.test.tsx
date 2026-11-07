@@ -83,3 +83,25 @@ describe('Login errors', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível contactar o servidor.')
   })
 })
+
+describe('Login tab toggle', () => {
+  it('tells screen readers which tab is selected', async () => {
+    renderLogin()
+
+    // The footer line has its own "Entrar" button (without aria-pressed),
+    // so the tabs are told apart by their pressed state.
+    expect(screen.getByRole('button', { name: 'Entrar', pressed: true })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Criar conta', pressed: false })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Criar conta' }))
+
+    expect(screen.getByRole('button', { name: 'Criar conta', pressed: true })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Entrar', pressed: false })).toBeInTheDocument()
+
+    // The footer link switches back, and the tabs follow.
+    const footerLink = screen.getAllByRole('button', { name: 'Entrar' }).find((b) => !b.hasAttribute('aria-pressed'))!
+    await userEvent.click(footerLink)
+
+    expect(screen.getByRole('button', { name: 'Entrar', pressed: true })).toBeInTheDocument()
+  })
+})

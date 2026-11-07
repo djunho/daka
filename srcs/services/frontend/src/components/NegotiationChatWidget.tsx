@@ -1,4 +1,5 @@
 import { Fragment, useState, useRef, useEffect, useLayoutEffect, type FormEvent } from 'react'
+import Icon from './Icon'
 import OnlineBadge from './OnlineBadge'
 import ChatMessageBubble from './ChatMessageBubble'
 import { useNegotiationChat } from '../hooks/useNegotiationChat'
@@ -209,18 +210,18 @@ export default function NegotiationChatWidget({
             type="button"
             onClick={() => setIsMinimized(!isMinimized)}
             aria-label={isMinimized ? 'Expandir chat' : 'Minimizar chat'}
-            className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 text-white text-xs font-bold transition-colors"
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 text-white transition-colors"
           >
-            {isMinimized ? '▲' : '—'}
+            <Icon name={isMinimized ? 'chevron-up' : 'minus'} size={14} />
           </button>
           {onClose && (
             <button
               type="button"
               onClick={handleClose}
               aria-label="Fechar chat"
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 text-white text-xs font-bold transition-colors"
+              className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 text-white transition-colors"
             >
-              ✕
+              <Icon name="close" size={14} />
             </button>
           )}
         </div>
@@ -282,7 +283,7 @@ export default function NegotiationChatWidget({
               // or the socket was refused (the notice or the error banner explain)
               historyFailed || connectionRefused ? null : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-muted text-xs select-none">
-                  <span className="text-2xl mb-1">💬</span>
+                  <Icon name="chat" size={28} className="mb-1.5" />
                   {isReadOnly ? (
                     // Nothing can be sent any more: no invitation to start
                     <p className="font-medium text-ink">Sem mensagens nesta negociação</p>
@@ -341,16 +342,17 @@ export default function NegotiationChatWidget({
             {error && (
               <div className="flex items-start justify-between gap-2 text-[11px] text-accent bg-accent/10 px-2.5 py-1.5 rounded-lg select-none leading-tight">
                 {/* For more info about this word break: https://tailwindcss.com/docs/overflow-wrap */}
-                <span className="wrap-break-word" aria-hidden="true">
-                  ⚠️ {error}
+                <span className="flex items-start gap-1.5 min-w-0" aria-hidden="true">
+                  <Icon name="warning" size={13} />
+                  <span className="wrap-break-word min-w-0">{error}</span>
                 </span>
                 <button
                   type="button"
                   onClick={clearError}
                   aria-label="Dispensar aviso de erro"
-                  className="text-accent hover:opacity-80 font-bold px-1 rounded transition-colors shrink-0 -mr-0.5"
+                  className="text-accent hover:opacity-80 p-0.5 rounded transition-colors shrink-0 -mr-0.5"
                 >
-                  ✕
+                  <Icon name="close" size={13} />
                 </button>
               </div>
             )}

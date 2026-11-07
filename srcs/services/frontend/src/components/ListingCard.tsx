@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { categoryLabel, categoryTint, conditionLabel } from '../types/listing'
 import { type ApiListingSummary } from '../lib/api'
+import Icon from './Icon'
 
 export const LISTING_GRID_CLASSES =
   'grid gap-5 grid-cols-[repeat(auto-fill,minmax(150px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
@@ -37,7 +38,8 @@ export default function ListingCard({ listing }: { listing: ApiListingSummary })
 
         {wish && (
           <p className="flex items-baseline gap-1.5 text-sm">
-            <span className="text-accent font-bold" aria-hidden="true">⇄</span>
+            {/* self-center: an SVG has no text baseline to line up with. */}
+            <Icon name="swap" size={16} className="text-accent self-center" />
             <span className="text-muted">quer:</span>
             <span className="text-accent font-semibold">{wish}</span>
           </p>

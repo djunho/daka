@@ -12,6 +12,7 @@ import {
 } from '../lib/api'
 import { getPortugueseErrorMessage } from '../lib/errors'
 import ListingFields from '../components/ListingFields'
+import Icon from '../components/Icon'
 import { useObjectUrl } from '../hooks/useObjectUrl'
 import { validateImage, IMAGE_ACCEPT } from '../lib/images'
 import {
@@ -60,9 +61,9 @@ function PhotoThumbnail({ file, index, disabled = false, onRemove }: PhotoThumbn
           type="button"
           onClick={() => onRemove(index)}
           aria-label={`Remover foto ${index + 1}`}
-          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-surface/90 text-accent hover:bg-surface border border-line/40 flex items-center justify-center text-xs shadow-sm transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-accent"
+          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-surface/90 text-accent hover:bg-surface border border-line/40 flex items-center justify-center shadow-sm transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-accent"
         >
-          ✕
+          <Icon name="close" size={14} />
         </button>
       )}
     </div>
@@ -246,13 +247,9 @@ export default function Publish() {
         {!isLoadingMeta && metaError && (
           <div className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-center my-4">
             <p className="text-sm text-accent mb-3">{metaError}</p>
-            <button
-              type="button"
-              onClick={loadMetadata}
-              className="px-4 py-2 text-xs font-semibold bg-brand text-surface rounded-full hover:opacity-95 transition-opacity"
-            >
+            <Button variant="primary" size="sm" onClick={loadMetadata}>
               Tentar novamente
-            </button>
+            </Button>
           </div>
         )}
 
@@ -273,10 +270,10 @@ export default function Publish() {
                 <button
                   type="button"
                   onClick={() => setSubmitError(null)}
-                  className="text-accent hover:text-ink text-xs font-bold p-1 transition-colors"
+                  className="text-accent hover:text-ink p-1 transition-colors"
                   aria-label="Fechar alerta"
                 >
-                  ✕
+                  <Icon name="close" size={14} />
                 </button>
               </div>
             )}

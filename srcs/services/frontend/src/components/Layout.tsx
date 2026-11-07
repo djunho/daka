@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import Header from './Header'
+import Icon from './Icon'
 import NegotiationChatWidget from './NegotiationChatWidget'
 import NegotiationsDock from './NegotiationsDock'
 import { useChat } from '../context/ChatContext'
@@ -44,15 +45,15 @@ export default function Layout() {
           <div className="px-4 sm:px-6 pt-4">
             {/* w-fit: the box is as wide as its message, no empty stretch. */}
             <div className="w-fit max-w-full flex items-center gap-3 bg-brand text-white rounded-xl pl-4 pr-2 py-2.5 shadow-md">
-              <span aria-hidden="true" className="font-bold">✓</span>
+              <Icon name="check" size={18} />
               <p className="text-sm font-semibold">{notice}</p>
               <button
                 type="button"
                 onClick={() => setNotice(null)}
                 aria-label="Fechar aviso"
-                className="text-white/70 hover:text-white hover:bg-white/15 rounded-lg px-2 py-0.5"
+                className="text-white/70 hover:text-white hover:bg-white/15 rounded-lg p-1.5"
               >
-                <span aria-hidden="true">×</span>
+                <Icon name="close" size={16} />
               </button>
             </div>
           </div>
@@ -63,6 +64,8 @@ export default function Layout() {
         <Link to="/privacy" className="inline-flex items-center min-h-11 px-3 hover:text-brand transition-colors no-underline">Privacidade</Link>
         <span aria-hidden="true">·</span>
         <Link to="/terms" className="inline-flex items-center min-h-11 px-3 hover:text-brand transition-colors no-underline">Termos</Link>
+        <span aria-hidden="true">·</span>
+        <Link to="/design-system" className="inline-flex items-center min-h-11 px-3 hover:text-brand transition-colors no-underline">Design system</Link>
       </footer>
 
       {/* Floating dock container pinned to the bottom-right. The chat widget and

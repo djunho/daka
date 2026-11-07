@@ -180,13 +180,9 @@ export default function Home() {
         {/* Outside the form on purpose: it clears every filter, not just the
             location, and must never trigger the location submit. */}
         {hasFilters && (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="px-3 py-2 text-sm font-medium text-brand hover:underline"
-          >
+          <Button variant="link" onClick={clearFilters} className="px-3 py-2">
             Limpar filtros
-          </button>
+          </Button>
         )}
 
         <label className="flex items-center gap-2 ml-auto text-sm text-muted">

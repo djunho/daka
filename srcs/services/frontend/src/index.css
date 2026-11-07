@@ -2,17 +2,20 @@
 
 /* ============================================================================
    Tailwind v4 design tokens (docs/design/design-system.md)
+   "static": Tailwind normally emits only the variables some class uses. The
+   logo and the /design-system page read tokens with var() and
+   getComputedStyle, so every token here must always exist.
    ========================================================================= */
-@theme {
+@theme static {
   /* --- Brand --- */
   --color-brand:       #246C5E;   /* buttons, logo background, "has" text */
   --color-brand-soft:  #DCEBE8;   /* active chip fill, photo fallback tint */
   --color-accent:      #D52E21;   /* the "wants" side of every trade (WCAG AA: 4.6:1 on paper, 4.9:1 on surface) */
+  --color-logo-accent: #DF3D31;   /* red arrow of the logo mark only: a graphic, never text */
 
   /* --- Surfaces --- */
   --color-paper:       #F2F9F7;   /* page background */
   --color-surface:     #FFFFFF;   /* cards, header, inputs */
-  --color-footer:      #15231F;   /* dark footer band */
 
   /* --- Ink (text) --- */
   --color-ink:         #15231F;   /* primary text + logo wordmark */
