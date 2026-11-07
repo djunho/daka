@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, contains_eager
 from app.database import get_db
 from app.models import User, UserSession
 from app.presence import touch_last_seen
-from app.security import hash_session_token, utcnow
+from app.security import hash_session_token, is_session_active
 
 # Single source of truth for the session cookie name. Routers import this
 # constant, and dependencies use it as the Cookie() alias so changing the name
@@ -75,7 +75,7 @@ def get_user_from_session_token(token: str | None, db: Session) -> User | None:
     # Expiry is enforced here, server-side. The cookie's own max-age is only a
     # hint to the browser; the row's expires_at is the real deadline. Comparing
     # against utcnow() (naive UTC) matches how the column was written.
-    if session.expires_at < utcnow():
+    if not is_session_active(session.expires_at):
         # Tidy up: a session past its deadline is useless, so drop it. This
         # keeps the table from filling with dead rows over time.
         db.delete(session)
