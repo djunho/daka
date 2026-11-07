@@ -138,3 +138,10 @@ def session_expiry() -> datetime:
     and the user can edit it.
     """
     return utcnow() + timedelta(hours=settings.session_ttl_hours)
+
+
+def is_session_active(
+    expires_at: datetime, now: datetime | None = None
+) -> bool:
+    """Return whether a session is still valid at the given UTC instant."""
+    return expires_at > (now or utcnow())
