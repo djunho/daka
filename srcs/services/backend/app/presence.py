@@ -33,7 +33,10 @@ def online_since(now: datetime | None = None):
 
 
 def touch_last_seen(
-    db: Session, user: User, now: datetime | None = None
+    db: Session,
+    user: User,
+    now: datetime | None = None,
+    session_id: int | None = None,
 ) -> bool:
     """Persist activity at most once per minute without changing updated_at."""
     current_time = now or utcnow()
@@ -42,12 +45,22 @@ def touch_last_seen(
         return False
     user_id = user.id
     try:
+        # End the authentication read transaction before waiting on the user
+        # row. MariaDB snapshot isolation otherwise may reject this update
+        # after a concurrent logout changes the same row.
+        db.rollback()
+        session_filter = (
+            UserSession.id == session_id
+            if session_id is not None
+            else UserSession.user_id == User.id
+        )
         updated = (
             db.query(User)
             .filter(
                 User.id == user_id,
                 or_(User.last_seen.is_(None), User.last_seen < cutoff),
                 exists().where(
+                    session_filter,
                     UserSession.user_id == User.id,
                     UserSession.expires_at > current_time,
                 ),
