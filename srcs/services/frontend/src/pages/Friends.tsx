@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Avatar from '../components/Avatar'
+import Icon from '../components/Icon'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { EMPTY_STATE_CLASSES } from '../components/ListingCard'
@@ -281,7 +282,7 @@ function FriendCard({ friend, onRemove }: { friend: ApiFriend; onRemove: () => v
           <OnlineBadge online={is_online} showLabel />
           {user_location && (
             <p className="text-xs text-muted flex items-center gap-1">
-              <span aria-hidden="true">📍</span>
+              <Icon name="location" size={12} />
               <span className="wrap-break-word">{user_location}</span>
             </p>
           )}

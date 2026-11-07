@@ -1,5 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { categoryLabel } from '../types/listing'
+import Icon from './Icon'
 import type { ApiCategory } from '../lib/api'
 
 type CategoryChipsProps = {
@@ -120,9 +121,9 @@ export default function CategoryChips({ categories, active, onToggle }: Category
           {/* The hidden words keep the name clear out of context, e.g. in a
               screen reader's list of buttons. */}
           {expanded ? (
-            <>Ver menos<span className="sr-only"> categorias</span><span aria-hidden="true">▴</span></>
+            <>Ver menos<span className="sr-only"> categorias</span><Icon name="chevron-up" size={16} /></>
           ) : (
-            <>Ver todas<span className="sr-only"> as categorias</span> ({categories.length})<span aria-hidden="true">▾</span></>
+            <>Ver todas<span className="sr-only"> as categorias</span> ({categories.length})<Icon name="chevron-down" size={16} /></>
           )}
         </button>
       )}

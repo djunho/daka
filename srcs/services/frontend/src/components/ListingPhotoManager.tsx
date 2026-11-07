@@ -10,6 +10,7 @@ import { getPortugueseErrorMessage } from '../lib/errors'
 import { validateImage, IMAGE_ACCEPT } from '../lib/images'
 import { MAX_LISTING_PHOTOS } from '../lib/listingForm'
 import ConfirmDialog from './ConfirmDialog'
+import Icon from './Icon'
 
 type ListingPhotoManagerProps = {
   listing: ApiListingDetail
@@ -178,7 +179,7 @@ export default function ListingPhotoManager({ listing, onChange }: ListingPhotoM
                 aria-label={`Apagar foto ${index + 1}`}
                 className="w-6 h-6 rounded-full bg-surface/90 text-accent text-xs border border-line/40 flex items-center justify-center shadow-sm enabled:hover:bg-surface disabled:opacity-40"
               >
-                <span aria-hidden="true">✕</span>
+                <Icon name="close" size={14} />
               </button>
             </div>
           </li>
@@ -221,7 +222,7 @@ export default function ListingPhotoManager({ listing, onChange }: ListingPhotoM
       <p role="status" className="text-xs font-semibold text-brand">
         {status && (
           <>
-            <span aria-hidden="true">✓ </span>
+            <Icon name="check" size={14} className="inline-block align-[-2px] mr-1" />
             {status}
           </>
         )}

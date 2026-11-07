@@ -6,6 +6,7 @@ import { categoryLabel, conditionLabel } from '../types/listing'
 import ListingGallery from '../components/ListingGallery'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
+import Icon from '../components/Icon'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
 import MessageCard from '../components/MessageCard'
@@ -251,7 +252,7 @@ export default function ListingDetail() {
             <p className="text-sm text-muted mt-2">
               {listing_location && (
                 <>
-                  <span aria-hidden="true">📍</span> {listing_location} ·{' '}
+                  <Icon name="location" size={14} className="inline-block align-[-2px] mr-0.5" />{listing_location} ·{' '}
                 </>
               )}
               Publicado a {publishedAt}
@@ -262,7 +263,7 @@ export default function ListingDetail() {
             <div className="bg-surface border border-line rounded-xl p-4">
               <span className="block text-xs font-medium text-muted mb-1">Em troca, procura</span>
               <p className="font-semibold text-accent wrap-break-word">
-                <span aria-hidden="true">⇄</span> {wish}
+                <Icon name="swap" size={16} className="inline-block align-[-3px] mr-1" />{wish}
               </p>
             </div>
           )}
@@ -290,7 +291,7 @@ export default function ListingDetail() {
                 </Link>
                 {owner.user_location && (
                   <p className="text-xs text-muted">
-                    <span aria-hidden="true">📍</span> {owner.user_location}
+                    <Icon name="location" size={12} className="inline-block align-[-1px] mr-0.5" />{owner.user_location}
                   </p>
                 )}
               </div>

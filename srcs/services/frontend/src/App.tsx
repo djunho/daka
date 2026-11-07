@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ChatProvider } from './context/ChatContext'
@@ -16,6 +17,10 @@ import EditListing from './pages/EditListing'
 import Negotiation from './pages/Negotiation'
 import Negotiations from './pages/Negotiations'
 import Friends from './pages/Friends'
+
+// The style guide is only opened on purpose (footer link), so it is loaded on
+// demand and does not grow the bundle every other page downloads.
+const DesignSystem = lazy(() => import('./pages/DesignSystem'))
 
 // The router reads the address bar and decides which page component to show.
 // BrowserRouter enables it; Routes picks the first Route whose path matches.
@@ -52,6 +57,11 @@ export default function App() {
             <Route path="/listing/:id" element={<ListingDetail />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
+            <Route path="/design-system" element={
+                <Suspense fallback={null}>
+                    <DesignSystem />
+                </Suspense>
+            } />
 
             {/* ---- Private routes ----
                 RequireAuth (src/components/RequireAuth.tsx) redirects logged-out

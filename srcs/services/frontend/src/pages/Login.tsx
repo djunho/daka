@@ -3,6 +3,8 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
 import Button from '../components/Button'
+import Icon from '../components/Icon'
+import LogoMark from '../components/Logo'
 import { AccountCreatedError, getPortugueseErrorMessage } from '../lib/errors'
 
 // The authentication screen, now with real state and client-side validation.
@@ -234,16 +236,19 @@ export default function Login() {
 
         {/* Logo lockup above the card */}
         <div className="flex items-center justify-center gap-3 mb-6">
-          <LogoMark />
+          <LogoMark size="lg" />
           <span className="font-display text-3xl font-semibold text-ink">daka</span>
         </div>
 
         <div className="bg-surface border border-line rounded-2xl shadow-[0_1px_2px_rgba(21,35,31,0.04),0_12px_32px_rgba(21,35,31,0.08)] p-7">
 
-          {/* --- Tab toggle --- */}
+          {/* --- Tab toggle ---
+              aria-pressed tells screen readers which half is selected: the
+              white background and the shadow only show it to sighted users. */}
           <div className="flex p-1 bg-paper border border-line rounded-xl mb-6">
             <button
               type="button"
+              aria-pressed={!isSignup}
               onClick={() => switchTab('signin')}
               className={
                 'flex-1 py-2 rounded-lg text-sm font-medium transition-colors ' +
@@ -254,6 +259,7 @@ export default function Login() {
             </button>
             <button
               type="button"
+              aria-pressed={isSignup}
               onClick={() => switchTab('signup')}
               className={
                 'flex-1 py-2 rounded-lg text-sm font-medium transition-colors ' +
@@ -287,7 +293,7 @@ export default function Login() {
                 }
                 aria-label="Fechar mensagem"
               >
-                ✕
+                <Icon name="close" size={16} />
               </button>
             </div>
           )}
@@ -367,7 +373,7 @@ export default function Login() {
                   aria-label={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink transition-colors"
                 >
-                  {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                  <Icon name={showPassword ? 'eye-off' : 'eye'} />
                 </button>
               </div>
             </Field>
@@ -393,13 +399,9 @@ export default function Login() {
         {/* Footer line: flips the tab rather than navigating anywhere. */}
         <p className="text-center text-sm text-muted mt-6">
           {isSignup ? 'Já tens conta? ' : 'Ainda não tens conta? '}
-          <button
-            type="button"
-            onClick={() => switchTab(isSignup ? 'signin' : 'signup')}
-            className="text-brand font-semibold hover:underline"
-          >
+          <Button variant="link" onClick={() => switchTab(isSignup ? 'signin' : 'signup')}>
             {isSignup ? 'Entrar' : 'Regista-te grátis'}
-          </button>
+          </Button>
         </p>
       </div>
     </main>
@@ -448,21 +450,10 @@ function inputClass(hasError: boolean): string {
   )
 }
 
-// --- Icons ------------------------------------------------------------------
-
-function LogoMark() {
-  return (
-    <span className="inline-flex items-center justify-center w-11 h-11 bg-brand rounded-xl">
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M4 9 H17" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" />
-        <path d="M14 6 L17 9 L14 12" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M20 15 H7" stroke="#DF3D31" strokeWidth="2.2" strokeLinecap="round" />
-        <path d="M10 12 L7 15 L10 18" stroke="#DF3D31" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </span>
-  )
-}
-
+// --- Google logo --------------------------------------------------------------
+// The only icon outside components/Icon.tsx, on purpose: it is Google's own
+// multicolor logo, and their sign-in branding rules forbid redrawing or
+// recoloring it (design-system.md, "Icons").
 function GoogleIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
@@ -470,27 +461,6 @@ function GoogleIcon() {
       <path d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.02-3.7H.96v2.34A9 9 0 0 0 9 18z" fill="#34A853" />
       <path d="M3.98 10.72a5.4 5.4 0 0 1 0-3.44V4.96H.96a9 9 0 0 0 0 8.1l3.02-2.34z" fill="#FBBC05" />
       <path d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.96l3.02 2.32C4.68 5.16 6.66 3.58 9 3.58z" fill="#EA4335" />
-    </svg>
-  )
-}
-
-// Open eye = "click to show". Simple two-path outline, no icon library needed.
-function EyeIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
-    </svg>
-  )
-}
-
-// Eye with a slash = "click to hide".
-function EyeOffIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M3 3l18 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M10.6 5.2A9.8 9.8 0 0 1 12 5c6.5 0 10 7 10 7a13.4 13.4 0 0 1-2.4 3.1M6.5 6.5A13.3 13.3 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 4.1-.9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Avatar from '../components/Avatar'
+import Icon from '../components/Icon'
 import Button, { buttonClasses } from '../components/Button'
 import MessageCard from '../components/MessageCard'
 import OnlineBadge from '../components/OnlineBadge'
@@ -255,7 +256,7 @@ export default function UserProfile() {
               <p className="text-sm text-muted">Membro desde {memberSince}</p>
               {profile.user_location && (
                 <p className="text-xs text-muted flex items-center gap-1 mt-1">
-                  <span aria-hidden="true">📍</span>
+                  <Icon name="location" size={12} />
                   <span>{profile.user_location}</span>
                 </p>
               )}
