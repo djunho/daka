@@ -131,6 +131,29 @@ class PresenceTestCase(unittest.TestCase):
         self.assertIs(resolved, self.user)
         self.assertIsNotNone(self.user.last_seen)
 
+    def test_revoked_session_cannot_restore_presence_with_another_session(self) -> None:
+        revoked = self.db.query(UserSession).first()
+        self.db.add(
+            UserSession(
+                user_id=self.user.id,
+                token_hash=hash_session_token("second-presence-session"),
+                expires_at=utcnow() + timedelta(hours=1),
+            )
+        )
+        self.db.delete(revoked)
+        self.db.commit()
+        self.db.refresh(self.user)
+
+        self.assertFalse(
+            touch_last_seen(
+                self.db,
+                self.user,
+                utcnow(),
+                session_id=revoked.id,
+            )
+        )
+        self.assertIsNone(self.user.last_seen)
+
     def test_presence_write_failure_does_not_expire_request_user(self) -> None:
         user_id = self.user.id
         with patch(
