@@ -143,5 +143,5 @@ def session_expiry() -> datetime:
 def is_session_active(
     expires_at: datetime, now: datetime | None = None
 ) -> bool:
-    """Return whether a session is still valid at the given UTC instant."""
+    """Return whether a session is valid strictly before its expiry instant."""
     return expires_at > (now or utcnow())

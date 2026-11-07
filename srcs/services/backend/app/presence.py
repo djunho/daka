@@ -45,31 +45,24 @@ def touch_last_seen(
         return False
     user_id = user.id
     try:
-        session_activity_filter = (
-            [
+        query = db.query(User).filter(
+            User.id == user_id,
+            or_(User.last_seen.is_(None), User.last_seen < cutoff),
+        )
+        if session_id is not None:
+            query = query.filter(
                 exists().where(
                     UserSession.id == session_id,
                     UserSession.user_id == User.id,
                     UserSession.expires_at > current_time,
                 )
-            ]
-            if session_id is not None
-            else []
-        )
-        updated = (
-            db.query(User)
-            .filter(
-                User.id == user_id,
-                or_(User.last_seen.is_(None), User.last_seen < cutoff),
-                *session_activity_filter,
             )
-            .update(
-                {
-                    User.last_seen: current_time,
-                    User.updated_at: User.updated_at,
-                },
-                synchronize_session=False,
-            )
+        updated = query.update(
+            {
+                User.last_seen: current_time,
+                User.updated_at: User.updated_at,
+            },
+            synchronize_session=False,
         )
         db.commit()
         if updated:

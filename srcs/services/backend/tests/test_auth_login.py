@@ -134,7 +134,8 @@ class LoginTestCase(unittest.TestCase):
         self.assertEqual(self.session_count(), 0)
 
     def test_logout_preserves_last_seen_when_another_session_remains(self) -> None:
-        self.user.last_seen = utcnow()
+        original_last_seen = utcnow()
+        self.user.last_seen = original_last_seen
         self.open_session("active")
         self.db.add(
             UserSession(
@@ -149,7 +150,7 @@ class LoginTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 204)
         self.db.refresh(self.user)
-        self.assertIsNotNone(self.user.last_seen)
+        self.assertEqual(self.user.last_seen, original_last_seen)
         self.assertEqual(self.session_count(), 1)
 
     def test_logout_ignores_expired_other_sessions(self) -> None:

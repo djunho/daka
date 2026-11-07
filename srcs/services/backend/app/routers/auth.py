@@ -927,6 +927,9 @@ def logout(
             .scalar()
         )
         if user_id is not None:
+            # End the token lookup transaction before acquiring the user and
+            # session locks; MariaDB snapshot isolation can otherwise reject
+            # the subsequent locking reads after concurrent activity.
             db.rollback()
             user = (
                 db.query(User)
@@ -944,7 +947,8 @@ def logout(
                 .one_or_none()
             )
             if session is not None:
-                session_was_active = is_session_active(session.expires_at)
+                now = utcnow()
+                session_was_active = is_session_active(session.expires_at, now=now)
                 db.delete(session)
                 db.flush()
                 has_other_active_session = (
@@ -952,7 +956,7 @@ def logout(
                     .filter(
                         UserSession.user_id == user_id,
                         UserSession.id != session.id,
-                        UserSession.expires_at > utcnow(),
+                        UserSession.expires_at > now,
                     )
                     .first()
                     is not None
