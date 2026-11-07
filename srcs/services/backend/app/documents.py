@@ -10,8 +10,10 @@ place (the same idea as app/media.py for images):
   - it must open without a password (a PDF protected only against editing is
     accepted and saved without that protection);
   - it must have between 1 and settings.max_document_pages pages;
-  - it must not contain active content: JavaScript, actions that run on open,
-    launch actions, embedded files, multimedia, XFA forms or form submission;
+  - it must not contain active content: JavaScript, actions that run on open
+    or on click (launch a program, submit a form, open another file...),
+    embedded files, multimedia or XFA forms. Every reachable dictionary is
+    checked, however deep; a file too big to check completely is rejected;
   - it is rewritten before being stored, without its metadata (author,
     software, XMP), the same way images are re-encoded without EXIF.
 
@@ -31,26 +33,46 @@ from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
 from pypdf import PdfReader, PdfWriter
-from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject
+from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject, NameObject
 
 from app.config import settings
 
 PDF_MAGIC = b"%PDF-"
 
-# Keys that make a PDF do something by itself when it is opened or clicked.
+# Keys that make a PDF do something by itself when it is opened or clicked,
+# or that carry content a viewer may run or extract.
 ACTIVE_CONTENT_KEYS = frozenset({
-    "/JavaScript", "/JS", "/Launch", "/OpenAction", "/AA", "/EmbeddedFiles",
-    "/RichMedia", "/XFA", "/SubmitForm", "/ImportData",
+    "/JavaScript", "/JS", "/OpenAction", "/AA", "/EmbeddedFiles",
+    "/RichMediaContent", "/XFA",
+})
+
+# An action is a dictionary such as << /S /Launch /F (cmd.exe) >>: its type is
+# the VALUE of /S, not a key, so it is checked separately. Plain links
+# (/URI) and moves inside the document (/GoTo, /Named) stay allowed.
+ACTIVE_ACTION_TYPES = frozenset({
+    "/JavaScript", "/Launch", "/SubmitForm", "/ImportData", "/GoToR", "/GoToE",
+    "/Rendition", "/Sound", "/Movie", "/RichMediaExecute",
+})
+
+# Annotations that embed a file or play media (their /Subtype value).
+ACTIVE_ANNOTATION_SUBTYPES = frozenset({
+    "/FileAttachment", "/RichMedia", "/Screen", "/Sound", "/Movie", "/3D",
 })
 
 # Followed while looking for active content would only lead back up the page
 # tree (/Parent) or into drawing instructions and fonts (/Contents,
-# /Resources), which cannot hold any of the keys above.
+# /Resources), which cannot hold any of the above.
 SKIPPED_KEYS = frozenset({"/Parent", "/Contents", "/Resources"})
 
-# How deep the search goes. Real catalogs are a few levels deep; the limit
-# keeps a crafted file from making the walk endless.
-MAX_WALK_DEPTH = 30
+# How many dictionaries and arrays the check may visit. There is no depth
+# limit: bookmarks are a linked list (/Next), so a manual with 60 bookmarks is
+# already 60 levels deep. A count limit still stops a crafted file from making
+# the check endless, and going over it REJECTS the file (fail-closed): an
+# active key past the limit would otherwise go unseen.
+MAX_WALK_NODES = 200_000
+
+# What _find_active_content returns when it had to stop before the end.
+TOO_COMPLEX = "too complex"
 
 ORIGINAL_NAME_MAX = 150
 DEFAULT_NAME = "documento.pdf"
@@ -97,6 +119,8 @@ def save_document(upload: UploadFile) -> SavedDocument:
         raise _rejected(
             f"The document must have between 1 and {settings.max_document_pages} pages."
         )
+    if active == TOO_COMPLEX:
+        raise _rejected("The document is too complex to be checked.")
     if active:
         raise _rejected(
             "The document must not contain JavaScript, attachments or other active content."
@@ -158,39 +182,54 @@ def sanitize_original_name(name: str | None) -> str:
 
 
 def _find_active_content(root: object) -> str | None:
-    """Walk the document's dictionaries and return the first active key found.
+    """Return why the document has active content, or None if it has none.
 
-    Only dictionaries and arrays are visited: content streams are never
-    decoded, so the walk stays cheap even for a large file.
+    Walks every dictionary and array reachable from the catalog with an
+    explicit stack (no recursion, so no depth limit), visiting each indirect
+    object once. Content streams are never decoded, so the walk stays cheap.
+    Returns TOO_COMPLEX when the document has more than MAX_WALK_NODES
+    containers: the caller rejects it rather than accept what it did not see.
     """
     seen: set[tuple[int, int]] = set()
+    stack: list[object] = [root]
+    visited = 0
 
-    def walk(obj: object, depth: int) -> str | None:
-        if depth > MAX_WALK_DEPTH:
-            return None
+    while stack:
+        obj = stack.pop()
         if isinstance(obj, IndirectObject):
             ref = (obj.idnum, obj.generation)
             if ref in seen:
-                return None
+                continue
             seen.add(ref)
             obj = obj.get_object()
+
         if isinstance(obj, DictionaryObject):
+            visited += 1
+            if visited > MAX_WALK_NODES:
+                return TOO_COMPLEX
             for key, value in obj.items():
                 if key in ACTIVE_CONTENT_KEYS:
                     return str(key)
-                if key in SKIPPED_KEYS:
-                    continue
-                found = walk(value, depth + 1)
-                if found:
-                    return found
+                if key == "/S" and _name(value) in ACTIVE_ACTION_TYPES:
+                    return f"/S {_name(value)}"
+                if key == "/Subtype" and _name(value) in ACTIVE_ANNOTATION_SUBTYPES:
+                    return f"/Subtype {_name(value)}"
+                if key not in SKIPPED_KEYS:
+                    stack.append(value)
         elif isinstance(obj, ArrayObject):
-            for value in obj:
-                found = walk(value, depth + 1)
-                if found:
-                    return found
-        return None
+            visited += 1
+            if visited > MAX_WALK_NODES:
+                return TOO_COMPLEX
+            stack.extend(obj)
 
-    return walk(root, 0)
+    return None
+
+
+def _name(value: object) -> str | None:
+    """The name a value holds, following one indirect reference if needed."""
+    if isinstance(value, IndirectObject):
+        value = value.get_object()
+    return str(value) if isinstance(value, NameObject) else None
 
 
 def _rewrite_without_metadata(reader: PdfReader) -> bytes:

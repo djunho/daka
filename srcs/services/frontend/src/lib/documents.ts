@@ -63,7 +63,7 @@ export function formatPageCount(pages: number): string {
   return pages === 1 ? '1 página' : `${pages} páginas`
 }
 
-// The message for a failed document upload. The backend answers 422 for three
+// The message for a failed document upload. The backend answers 422 for four
 // different reasons, told apart by its (English) detail.
 export function getDocumentErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError && err.status === 422) {
@@ -72,6 +72,9 @@ export function getDocumentErrorMessage(err: unknown, fallback: string): string 
     if (detail.includes('pages')) return 'O PDF tem de ter entre 1 e 50 páginas.'
     if (detail.includes('javascript') || detail.includes('active')) {
       return 'O PDF não pode conter JavaScript, anexos ou outro conteúdo ativo.'
+    }
+    if (detail.includes('complex')) {
+      return 'O PDF é demasiado complexo para ser verificado. Experimenta guardá-lo de novo como PDF simples.'
     }
   }
   return getPortugueseErrorMessage(err, fallback, {

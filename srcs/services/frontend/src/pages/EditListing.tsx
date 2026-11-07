@@ -54,7 +54,7 @@ export default function EditListing() {
   const [saveError, setSaveError] = useState<string | null>(null)
   // Photos are saved one action at a time, not by the form. Remembered so that
   // going back to the listing still tells the owner it was updated.
-  const [photosChanged, setPhotosChanged] = useState<boolean>(false)
+  const [mediaChanged, setMediaChanged] = useState<boolean>(false)
 
   useEffect(() => {
     if (!validId) return
@@ -64,7 +64,7 @@ export default function EditListing() {
     let ignore = false
 
     setListing(null)
-    setPhotosChanged(false)
+    setMediaChanged(false)
     setLoading(true)
     setNotFound(false)
     setError(null)
@@ -96,11 +96,11 @@ export default function EditListing() {
     }
   }, [listingId, validId])
 
-  // Also used by the documents: like the photos, they are saved one action
-  // at a time, and either one means the listing was updated.
-  function handlePhotosChange(updated: ApiListingDetail) {
+  // Photos and documents are saved one action at a time: a change to either
+  // means the listing was updated.
+  function handleMediaChange(updated: ApiListingDetail) {
     setListing(updated)
-    setPhotosChanged(true)
+    setMediaChanged(true)
   }
 
   // Saves the fields that changed and clears their error messages.
@@ -124,7 +124,7 @@ export default function EditListing() {
     if (Object.keys(changes).length === 0) {
       navigate(`/listing/${listing.id}`, {
         replace: true,
-        state: photosChanged ? { notice: 'O teu anúncio foi atualizado.' } : null,
+        state: mediaChanged ? { notice: 'O teu anúncio foi atualizado.' } : null,
       })
       return
     }
@@ -211,10 +211,10 @@ export default function EditListing() {
         {/* Photos first: they are saved one action at a time, while the text
             fields below wait for "Guardar alterações". */}
         <div className="border-b border-line pb-6 mb-6">
-          <ListingPhotoManager listing={listing} onChange={handlePhotosChange} />
+          <ListingPhotoManager listing={listing} onChange={handleMediaChange} />
         </div>
         <div className="border-b border-line pb-6 mb-6">
-          <ListingDocumentManager listing={listing} onChange={handlePhotosChange} />
+          <ListingDocumentManager listing={listing} onChange={handleMediaChange} />
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6" noValidate>

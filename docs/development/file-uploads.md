@@ -43,7 +43,12 @@ How Daka accepts, checks, stores, shows and deletes the files users upload. This
   2. starts with `%PDF-` and pypdf parses it → otherwise **415**;
   3. encrypted: accepted only if it opens with an empty password (protection against editing only) → otherwise **422**;
   4. 1 ≤ pages ≤ 50 → otherwise **422**;
-  5. no `/JavaScript`, `/JS`, `/Launch`, `/OpenAction`, `/AA`, `/EmbeddedFiles`, `/RichMedia`, `/XFA`, `/SubmitForm`, `/ImportData` anywhere in the document's dictionaries → otherwise **422**. Content streams are never decoded;
+  5. no active content anywhere in the document's dictionaries → otherwise **422**:
+     - keys `/JavaScript`, `/JS`, `/OpenAction`, `/AA`, `/EmbeddedFiles`, `/RichMediaContent`, `/XFA`;
+     - actions whose type (the **value** of `/S`) is `/JavaScript`, `/Launch`, `/SubmitForm`, `/ImportData`, `/GoToR`, `/GoToE`, `/Rendition`, `/Sound`, `/Movie` or `/RichMediaExecute`. Plain links (`/URI`) and moves inside the document (`/GoTo`) are allowed;
+     - annotations whose `/Subtype` is `/FileAttachment`, `/RichMedia`, `/Screen`, `/Sound`, `/Movie` or `/3D`.
+
+     The check walks every reachable dictionary and array with an explicit stack, **without a depth limit** (bookmarks are a linked list, so a manual with 60 bookmarks is 60 levels deep). It stops after 200 000 containers and then **rejects** the file (fail-closed, **422** "too complex"). Content streams are never decoded;
   6. rewritten with `PdfWriter(clone_from=…)` without `/Info` and XMP metadata, and without the editing protection.
 
 `pypdf` is pinned to **6.21.4** and must stay **≥ 6.0.0**: older versions do not limit how much a compressed stream expands (CVE-2025-55197), so a small file could exhaust the memory.

@@ -44,7 +44,7 @@ describe('formatFileSize', () => {
 })
 
 describe('getDocumentErrorMessage', () => {
-  it('tells the three 422 reasons apart', () => {
+  it('tells the four 422 reasons apart', () => {
     expect(getDocumentErrorMessage(new ApiError(422, 'The document must open without a password.'), 'x'))
       .toBe('O PDF não pode estar protegido por palavra-passe.')
     expect(getDocumentErrorMessage(new ApiError(422, 'The document must have between 1 and 50 pages.'), 'x'))
@@ -52,6 +52,8 @@ describe('getDocumentErrorMessage', () => {
     expect(getDocumentErrorMessage(
       new ApiError(422, 'The document must not contain JavaScript, attachments or other active content.'), 'x',
     )).toBe('O PDF não pode conter JavaScript, anexos ou outro conteúdo ativo.')
+    expect(getDocumentErrorMessage(new ApiError(422, 'The document is too complex to be checked.'), 'x'))
+      .toBe('O PDF é demasiado complexo para ser verificado. Experimenta guardá-lo de novo como PDF simples.')
   })
 
   it('has its own words for size, type and the limit', () => {
