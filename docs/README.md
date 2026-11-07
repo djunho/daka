@@ -22,15 +22,6 @@ Location: `docs/design/`
 
 ---
 
-## Meetings
-
-Contains meeting notes and decisions discussed by the team.
-
-Location: `docs/meetings/`
-
-
----
-
 ## Development
 
 Contains development workflow, Git conventions, and team practices.

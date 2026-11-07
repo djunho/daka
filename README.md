@@ -4,50 +4,51 @@
 
 ## Description
 
-**Daka** is a web marketplace for exchanging second-hand items without money. List something you no longer use, say what you would like in return, and browse what other people are offering. An interested user can open a private negotiation with the listing owner. They can chat, compare offers, agree on a swap, and record its completion.
+**Daka** is a web marketplace for exchanging second-hand items without money. Users can publish items they no longer need with photos and supporting PDF documents, state what they would like in return, browse and filter the catalog, save favorite listings, and manage friendships. An interested user can open a private negotiation with the listing owner to chat in real time, propose or review offers, agree on a swap, and record its completion.
 
-The interface is in European Portuguese. The catalog is public. Publishing, managing friendships, and negotiating require an account.
+The interface is in European Portuguese. Browsing the catalog is public; publishing, saving favorites, managing friendships, opening attached documents, and negotiating require an account.
 
-# Instructions
+## Instructions
 
-## Requirements
+### Requirements
 
-- Docker Engine or Docker Desktop with the Docker Compose v2 plugin. Check with `docker compose version`.
-- GNU Make and Bash. Docker must be running and accessible to your user.
-- Optional `htpasswd`. If it is unavailable, the secrets script runs it in an `httpd:2.4-alpine` container.
-- Google Chrome for the local interface. The first build needs network access to pull images and install dependencies. Node.js and Python run inside the containers.
+- Docker Engine or Docker Desktop with the Docker Compose v2 plugin (`docker compose version`).
+- GNU Make and Bash, with Docker running and accessible to the current user.
+- Optional `htpasswd` (if unavailable, the secrets script runs it via an `httpd:2.4-alpine` container).
+- The latest stable version of Google Chrome. The first build requires network access to pull container images and install dependencies; Node.js and Python run inside the containers.
 
-## Run locally
+### Run locally
 
-1. Clone the repository and enter its root. Create the local configuration.
+1. Clone the repository, enter its root, and create the local environment file:
 
    ```sh
-   git clone git@github.com:djunho/daka.git
+   git clone https://github.com/djunho/daka.git
    cd daka
    cp .env.example srcs/.env
    ```
 
-2. Edit `srcs/.env`. Set your MariaDB application and root passwords, exporter password, Prometheus credentials, and Grafana admin credentials. Keep the service hostnames and port values from the template for the default local setup. Keep this file private.
+2. Edit `srcs/.env`. Set your MariaDB application, root, and exporter passwords, Prometheus and Alertmanager Basic Auth credentials, and Grafana admin credentials. Keep the default service hostnames and port values from the template for local execution, and keep this file private.
 3. From the repository root, run `make`. It generates the local service secrets and builds and starts the Docker Compose stack.
-4. Run `make status` to check the services, then open [Daka on localhost](https://localhost:8443). The local stack generates a self-signed certificate, so Chrome may show a certificate warning. Create an account with email and password to try publishing and negotiating.
+4. Run `make status` to check service health, then open [Daka on localhost](https://localhost:8443). Because the local stack uses a self-signed TLS certificate, accept the browser certificate warning on first visit. Create an account with email and password to test publishing, favorites, friends, and negotiations.
 
 The default HTTPS port is `8443`.
 
 | Service | Local URL |
 | --- | --- |
 | Daka | [Application](https://localhost:8443/) |
+| Design System | [Live style guide](https://localhost:8443/design-system) |
 | API | [OpenAPI documentation](https://localhost:8443/api/docs) |
-| Grafana | [Dashboards](https://localhost:8443/grafana/) |
+| Grafana | [Dashboards](https://localhost:8443/grafana/) with the configured Grafana admin credentials |
 | Prometheus | [Metrics and alerts](https://localhost:8443/prometheus/) with the configured HTTP Basic credentials |
-| Alertmanager | [Active alerts](https://localhost:8443/alertmanager/) |
+| Alertmanager | [Active alerts](https://localhost:8443/alertmanager/) with the configured HTTP Basic credentials |
 
-For Google sign-in, create a Google OAuth web client, configure the consent screen and test users, and register the exact callback URL. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `OAUTH_STATE_SECRET`, and `FRONTEND_URL` in `srcs/.env`, then run `make` again. See the [Google OAuth setup guide](docs/development/google-authentication.md).
+For Google sign-in, create a Google OAuth web client, configure the consent screen and test users, and register the callback URL. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `OAUTH_STATE_SECRET`, and `FRONTEND_URL` in `srcs/.env`, then run `make` again. See the [Google OAuth setup guide](docs/development/google-authentication.md).
 
-Use `make logs` for troubleshooting, `make stop` to pause the stack, and `make down` to remove its containers while retaining named volumes. `make clean`, `make fclean`, and `make re` remove named volumes, including the database and uploaded media. See the [backup and restore guide](docs/development/database-backup.md) before using them.
+Use `make logs` for troubleshooting, `make stop` to pause the stack, and `make down` to remove containers while retaining named volumes. `make clean`, `make fclean`, and `make re` remove named volumes, including the database and uploaded files. See the [backup and restore guide](docs/development/database-backup.md) before running destructive targets.
 
-## Checks
+### Checks
 
-Run these commands from the repository root with the stack running.
+Run these commands from the repository root with the stack running:
 
 ```sh
 docker compose -f srcs/docker-compose.yml exec -T frontend npm test
@@ -55,107 +56,112 @@ docker compose -f srcs/docker-compose.yml exec -T backend python -m unittest dis
 make validate
 ```
 
-To include MariaDB integration tests, use a local development database initialized with the project schema and seeds.
+To include opt-in MariaDB integration tests against a local development database initialized with the project schema and seeds:
 
 ```sh
 docker compose -f srcs/docker-compose.yml exec -T -e RUN_MARIADB_INTEGRATION=1 backend python -m unittest discover -s tests
 ```
 
-The [WebSocket test guide](docs/development/negotiation-websocket.md#tests) documents the opt-in MariaDB integration tests. The [observability guide](docs/development/observability.md) shows how to inspect metrics, dashboards, and alerts.
+See the [WebSocket test guide](docs/development/negotiation-websocket.md#tests) for integration test details and the [observability guide](docs/development/observability.md) to inspect metrics, dashboards, and alerts.
 
-# Resources
+## Resources
 
 - [React](https://react.dev/learn), [Vite](https://vite.dev/guide/), and [Tailwind CSS](https://tailwindcss.com/docs/installation) for the frontend.
 - [FastAPI](https://fastapi.tiangolo.com/), [SQLAlchemy](https://docs.sqlalchemy.org/en/20/), and [MariaDB](https://mariadb.com/docs/) for the API and database.
-- [MDN WebSocket API](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket) and [Google OAuth for web server applications](https://developers.google.com/identity/protocols/oauth2/web-server) for chat and sign-in.
+- [MDN WebSocket API](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket) and [Google OAuth for web server applications](https://developers.google.com/identity/protocols/oauth2/web-server) for real-time chat and OAuth sign-in.
 - [Docker Compose](https://docs.docker.com/compose/), [Prometheus](https://prometheus.io/docs/introduction/overview/), and [Grafana](https://grafana.com/docs/grafana/latest/) for deployment and monitoring.
-- [Daka documentation](docs/README.md) for development guides and architecture decisions.
+- [Daka documentation](docs/README.md) for development guides, file upload rules, and architecture decisions.
 
-## Use of AI
+### Use of AI
 
-The team used OpenAI Codex, Claude, and Antigravity during development. Codex assisted with reviewing the project against the subject, checking sign-in, catalog search, photo uploads, and chat in the browser, and drafting this README. The documentation was checked against the implementation, Git history, and test results. The commit history also records a GitHub Copilot contribution to handling database integrity errors during account deletion. The team is confirming the specific tasks and verification steps for Claude and Antigravity.
+AI tools were used exclusively to assist with writing automated tests, performing code reviews, drafting project documentation and technical guides, and understanding and investigating bugs and technical problems. All AI-assisted output was reviewed, adapted, and validated by the team against the implementation through automated test suites, manual browser verification, and mandatory peer reviews on pull requests.
 
-# Team Information
+## Team Information
 
 | 42 login | Team member | Roles and responsibilities |
 | --- | --- | --- |
 | `djunho` | Daniel Junho | Technical Lead and developer. Guides architecture and stack choices, implements shared infrastructure and features, and reviews technical changes. |
-| `bfiochi-` | Beatriz Fiochi Soares da Silva | Developer. Builds and tests user-facing workflows and their supporting API changes. |
-| `cmoura-p` | Cláudia Moura Pickett | Project Manager / Scrum Master and developer. Coordinates the work and tracks blockers while developing listings, trade logic, and chat infrastructure. |
+| `bfiochi-` | Beatriz Fiochi Soares da Silva | Developer. Builds and tests user-facing workflows, design system components, and supporting API endpoints. |
+| `cmoura-p` | Cláudia Moura Pickett | Project Manager / Scrum Master and developer. Coordinates work and tracks blockers while developing listings, trade logic, and chat infrastructure. |
 | `alde-alm` | Alex Neves | Product Owner and developer. Prioritizes the backlog, validates features against product needs, and implements account and social features. |
 
-# Project Management
+## Project Management
 
-The team used GitHub Issues to break work into tasks and tracked work by epic in GitHub Projects. Feature and fix branches were reviewed in GitHub pull requests before integration into `dev`. The team's workflow calls for at least one peer review and prohibits self-approval. At the kickoff meeting, the team agreed to group related issues by epic. Issue and pull-request threads were used for task discussion and review. GitHub Actions runs Gitleaks and validates the Compose and observability configuration. Technical decisions about location search, negotiation design, and reopening proposals are recorded in ADRs.
+The team used GitHub Issues to break work into tasks and organized related issues by epic in GitHub Projects. Day-to-day coordination, quick questions, and alignment calls were handled over WhatsApp alongside in-person syncs and discussions on GitHub issue and pull-request threads. Feature and fix branches were reviewed through GitHub pull requests before merging into `dev`, requiring at least one peer review and prohibiting self-approval. GitHub Actions runs Gitleaks and validates the Compose and observability configuration. Key architectural decisions are recorded as ADRs.
 
 See the [development workflow](docs/development/workflow.md), [branch conventions](docs/development/branches.md), and [architecture decisions](docs/adr/README.md).
 
-# Technical Stack
+## Technical Stack
 
 | Layer | Technology and rationale |
 | --- | --- |
-| Frontend | React 18 and TypeScript 5 provide reusable UI components and typed API contracts. React Router 6 handles navigation. Vite 5 serves the frontend, and Vitest 3 with Testing Library runs its tests. Tailwind CSS 4 and Daka's design tokens provide shared styling. |
-| Backend | Python 3.11, FastAPI 0.115, Pydantic 2, and Uvicorn 0.34 provide validated HTTP endpoints and WebSocket connections. bcrypt hashes passwords, Authlib supports Google OAuth, and Pillow normalizes uploaded images to WebP. |
-| Database | MariaDB 11 with SQLAlchemy 2 and PyMySQL. Foreign keys and uniqueness constraints express the relationships between listings, negotiations, and offers. Transactions and row locks protect updates involving multiple records. |
-| Deployment | Docker Compose builds and connects the services. Nginx terminates TLS, proxies HTTP and WebSocket traffic, and serves images from a shared media volume. |
-| Observability | Prometheus collects service metrics, Grafana visualizes them, and Alertmanager groups and routes alerts. node-exporter, cAdvisor, mysqld-exporter, and blackbox-exporter cover host, container, database, and endpoint metrics. FastAPI instrumentation exposes API metrics. |
+| Frontend | React, TypeScript, and React Router provide reusable UI components, client-side routing, and typed API contracts. Vite serves and bundles the frontend, Vitest with Testing Library runs unit and component tests, and Tailwind CSS with Daka's design tokens provides consistent styling. |
+| Backend | Python, FastAPI, Pydantic, and Uvicorn provide validated REST endpoints and WebSocket connections. `bcrypt` hashes passwords, `Authlib` handles Google OAuth, `Pillow` normalizes uploaded images to WebP, and `pypdf` validates uploaded PDF documents. |
+| Database | MariaDB with SQLAlchemy and PyMySQL. MariaDB was chosen because the barter domain is relational and requires strong referential integrity, `UNIQUE` and `CHECK` constraints, and ACID transactions with row-level locks (`SELECT ... FOR UPDATE`) to safely resolve concurrent trade proposals without race conditions, while remaining lightweight in Docker. |
+| Deployment | Docker Compose builds and isolates the services. Nginx terminates HTTPS/TLS, proxies REST and WebSocket traffic, and serves public images from a shared media volume, while private PDF documents stay on a backend-only volume. |
+| Observability | Prometheus scrapes service metrics, Grafana visualizes them in provisioned dashboards, and Alertmanager groups and routes firing alerts. Exporters (`node-exporter`, `cAdvisor`, `mysqld-exporter`, `blackbox-exporter`) and FastAPI instrumentation cover host, container, database, endpoint, and API metrics. |
 
-Database-backed sessions let the server revoke a login immediately when the user signs out. The browser holds an opaque session token and MariaDB stores its hash. Chat uses WebSockets to deliver new messages promptly to both participants. The API handles offers and other trade actions over REST so it can validate each request and apply state changes in a database transaction. See the [negotiation ADR](docs/adr/0002-adopt-chat-centric-negotiations.md).
+Database-backed sessions allow immediate server-side revocation on sign-out or account deletion: the browser holds an opaque cookie token while MariaDB stores only its SHA-256 hash. Real-time chat uses WebSockets for low-latency message delivery, whereas proposals and trade state transitions use transactional REST endpoints. See the [negotiation ADR](docs/adr/0002-adopt-chat-centric-negotiations.md).
 
-# Database Schema
+## Database Schema
 
-Most entity tables use an auto-incrementing `INT` primary key. Foreign keys link the entities below. MariaDB stores image paths and cover flags, while the image files live on the media volume.
+Most entity tables use an auto-incrementing `INT` primary key linked by foreign keys. MariaDB stores metadata and file paths, while public image files live on the `media` volume and private PDF attachments live on the backend-only `documents` volume.
 
 | Tables | Relationships and key fields |
 | --- | --- |
-| `users`, `sessions` | One user can have multiple sessions. Users have a unique `VARCHAR(255)` email, an optional password hash and Google subject, an avatar path, and a `DATETIME` activity timestamp. Sessions store a unique SHA-256 token hash as `CHAR(64)` and `DATETIME` expiry. |
-| `friendships`, `favorites` | Friendships link two users with a composite key, the constraint `user_id < friend_id`, and an `ENUM` status. Favorites link users to listings with a composite key. |
-| `listings`, `images` | Each listing belongs to a user and references a category, condition, and state. It has a `VARCHAR(150)` title and `TEXT` description and exchange preference. A listing can have multiple images, each with a path and `BOOLEAN` cover flag. |
-| `negotiations`, `proposals` | Each listing and interested-user pair has one negotiation. A negotiation can contain multiple proposals. Each proposal references a state and can reference an offered listing. A unique key prevents duplicate offers within one negotiation, including offers without a listing. |
-| `messages` | Each message belongs to one negotiation and has a sender, `VARCHAR(250)` text, and a creation `TIMESTAMP`. |
-| Lookup tables | `categories`, `conditions`, `listings_states`, `negotiation_states`, and `proposal_states` supply the values referenced by listings and trades. |
-| `reports` | Reserved in the schema for reporting users or listings, with a `VARCHAR(250)` reason. The current application has no reporting or moderation workflow. |
+| `users`, `sessions` | One user can have multiple sessions. Users have a unique `VARCHAR(255)` email, optional password hash and Google subject, avatar path, `DATETIME` activity timestamp (`last_seen`), and `DATETIME` soft-deletion timestamp (`deleted_at`). Sessions store a unique SHA-256 token hash as `CHAR(64)` and a `DATETIME` expiry. |
+| `friendships`, `favorites` | Friendships link two users with a composite key, the constraint `user_id < friend_id`, and an `ENUM` status. Favorites link users to listings with a composite key `(user_id, listing_id)`. |
+| `listings`, `images`, `documents` | Each listing belongs to a user and references a category, condition, and state, with a `VARCHAR(150)` title and `TEXT` description and swap preference (`wish`). Listings can have multiple images (`VARCHAR(150)` path and `BOOLEAN` cover flag) and PDF documents (`VARCHAR(64)` stored filename, `VARCHAR(150)` original name, `INT` byte size, and `SMALLINT` page count). |
+| `negotiations`, `proposals` | Each listing and interested-user pair has one unique negotiation. A negotiation contains proposals referencing a state and an optional offered listing. A generated `INT` key (`COALESCE(offered_listing_id, 0)`) and composite `UNIQUE` constraint prevent duplicate offers within a negotiation. |
+| `messages` | Each chat message belongs to one negotiation and stores a sender foreign key, `VARCHAR(250)` content, and creation `TIMESTAMP`. |
+| Lookup tables | `categories`, `conditions`, `listings_states`, `negotiation_states`, and `proposal_states` store the reference states and taxonomies used by listings and trades. |
+| `reports` | Reserved in the schema for reporting users or listings (`VARCHAR(250)` reason); not used by an active moderation workflow. |
 
-See the [entity relationship diagram](srcs/services/mariadb/dakaERD.md), [SQL schema](srcs/services/mariadb/schema.sql) and [database guide](docs/development/database.md).
+See the [entity relationship diagram](srcs/services/mariadb/dakaERD.md), [SQL schema](srcs/services/mariadb/schema.sql), and [database guide](docs/development/database.md).
 
-# Features List
+## Features List
 
 | Feature | What it does | Contributors |
 | --- | --- | --- |
-| Accounts and sessions | Sign up, sign in with email or Google, and sign out. Update or delete an account. | Alex, Daniel, Beatriz |
-| Profiles and avatars | View public profiles and their listings, edit profile details, and preview, upload, or remove an avatar. | Daniel, Beatriz |
-| Friends and presence | Add or remove friends, see the friends list, and check online status. | Alex, Beatriz, Daniel |
-| Catalog | Browse available listings, search by text, filter by category and location, sort results, and load more pages. | Cláudia, Beatriz, Daniel |
-| Favorites API | Authenticated clients can save, list, and remove favorites through the API. The web interface has no favorites controls yet. | Cláudia |
+| Accounts and sessions | Sign up, sign in with email or Google OAuth, sign out, and soft-delete an account with data anonymization. | Alex, Daniel, Beatriz |
+| Profiles and avatars | View public profiles and their active listings, edit profile details and location, and preview, upload, or remove an avatar. | Daniel, Beatriz |
+| Friends and presence | Add or remove friends, browse the friends list, and see activity-based online status. | Alex, Beatriz, Daniel |
+| Catalog and search | Browse available listings, search by text, filter by category and location, sort results, and paginate results. | Cláudia, Beatriz, Daniel |
+| Favorites | Save listings from any card or listing page, and review or remove them on the favorites page. | Cláudia, Beatriz |
 | Listing and photo management | Publish, edit, or remove listings. Add photos, select a cover, remove images, and browse a listing's gallery. | Cláudia, Daniel, Beatriz |
-| Negotiations and offers | Open a negotiation, submit alternative offers, accept, reject, withdraw or reopen proposals, and cancel or complete a trade. | Cláudia, Beatriz, Daniel |
-| Negotiation chat | Exchange messages live, load earlier messages, recover the thread after reconnecting, and read closed conversations. | Cláudia, Daniel |
-| Negotiations dock | Access active negotiations and open their chats from the floating dock. | Daniel |
-| Interface and legal pages | Use shared UI components, responsive layouts, and footer links to the Privacy Policy and Terms of Service. | Daniel, Beatriz |
-| Deployment and monitoring | Start the stack with Make, inspect service health, and monitor metrics and alerts. | Daniel, Cláudia, Beatriz |
+| Listing documents | Attach PDF documents to a listing, follow the upload progress, and open them after signing in. | Beatriz |
+| Negotiations and offers | Open a negotiation, propose or reopen offers, accept, reject, or withdraw proposals, and complete or cancel a swap. | Cláudia, Beatriz, Daniel |
+| Negotiation chat and dock | Exchange real-time messages over WebSockets, load earlier history, recover after reconnects, and access active chats from the floating dock. | Cláudia, Daniel |
+| Design system and legal pages | Use shared accessible components, the `/design-system` live style guide, responsive layouts, and Privacy Policy and Terms of Service pages. | Daniel, Beatriz |
+| Deployment and monitoring | Launch the stack with a single command, validate configurations, and inspect protected Prometheus, Grafana, and Alertmanager interfaces. | Daniel, Cláudia, Beatriz |
 
-# Modules
+## Modules
 
-The proposed evaluation scope totals **14 points** under the subject's scoring rules. OAuth requires a configured Google client and a live demonstration.
+Each **Major** module is worth **2 points** and each **Minor** module is worth **1 point**. The implemented modules below reach the **14 mandatory points** required by the subject plus **bonus modules** (5 Major × 2 pts + 5 Minor × 1 pt = **15 points** from standard modules, plus 2 points from the custom Major module of choice). Note that demonstrating Google OAuth requires a configured Google client.
 
-| Module | Type | Points | Implementation and rationale | Contributors |
+| Module | Type | Points | Justification and implementation | Contributors |
 | --- | --- | ---: | --- | --- |
-| Frontend and backend frameworks | Major | 2 | React organizes the interface into reusable components. FastAPI provides routing and schema validation for the API. | Daniel, Beatriz, Cláudia, Alex |
-| Real-time features | Major | 2 | Authenticated WebSockets broadcast committed messages to the negotiation room. Connection cleanup, retry, and history recovery let users continue after a disconnect. | Cláudia, Daniel |
-| User interaction | Major | 2 | Private negotiation chat, public profiles, and friendship management let users communicate and find people they know. | Cláudia, Daniel, Alex, Beatriz |
-| Standard user management and authentication | Major | 2 | Account holders can edit their profile, upload an avatar or use the default, view profiles, add friends, and see online status. | Daniel, Beatriz, Alex |
-| ORM | Minor | 1 | SQLAlchemy maps the MariaDB tables and relations and manages queries and transactions. | Daniel, Cláudia, Alex, Beatriz |
-| Custom design system | Minor | 1 | Daka defines its own palette, typography, icons, and shared React components including `Avatar`, `Button`, `CategoryChips`, `ConfirmDialog`, `ImagePicker`, `ListingCard`, `ListingGallery`, `LocationAutocomplete`, `MessageCard`, and `OnlineBadge`. | Daniel, Beatriz |
-| Advanced search | Minor | 1 | Catalog filters, sort options, and server-side pagination help users find relevant listings as the catalog grows. | Cláudia, Beatriz, Daniel |
-| Remote authentication with OAuth 2.0 | Minor | 1 | Google sign-in offers a second authentication method and returns users to their intended page. | Alex, Daniel |
-| Monitoring with Prometheus and Grafana | Major | 2 | Exporters expose metrics, a custom Grafana dashboard brings them together, and alert rules flag service and resource problems. Grafana uses authenticated access. | Daniel |
-| **Total** | | **14** | Five Major modules and four Minor modules. | |
+| Frontend and backend frameworks | Major | 2 | Chosen to structure a multi-page SPA and a validated API cleanly. Implemented with React, TypeScript, and React Router on the frontend, and FastAPI with Pydantic on the backend. | Daniel, Beatriz, Cláudia, Alex |
+| Real-time features using WebSockets | Major | 2 | Chosen so negotiation participants receive chat messages immediately without polling. Implemented with cookie-authenticated FastAPI WebSockets proxied by Nginx, room broadcasting after DB commit, graceful disconnect cleanup, and history recovery on reconnect. | Cláudia, Daniel |
+| Allow users to interact with other users | Major | 2 | Chosen because bartering relies on direct communication and trust between members. Implemented via real-time negotiation chat, public user profiles with active listings, and a mutual friendship system. | Cláudia, Daniel, Alex, Beatriz |
+| Standard user management and authentication | Major | 2 | Chosen to provide secure account lifecycle and social identity. Implemented with `bcrypt` password hashing, SHA-256 database sessions, profile editing, WebP avatar uploads with default initials fallback, friendships, and `last_seen` online presence. | Daniel, Beatriz, Alex |
+| Monitoring system with Prometheus and Grafana | Major | 2 | Chosen to give visibility into container, host, database, and API health. Implemented with Prometheus scraping FastAPI and four exporters (`node`, `cadvisor`, `mysqld`, `blackbox`), provisioned Grafana dashboards, Alertmanager rules, and authenticated web access. | Daniel |
+| Use an ORM for the database | Minor | 1 | Chosen to keep database queries composable and transactional in Python. Implemented with SQLAlchemy mapped models, relationships, and transactional session management. | Daniel, Cláudia, Alex, Beatriz |
+| Custom-made design system | Minor | 1 | Chosen to keep visual consistency and WCAG AA contrast without external UI or icon libraries. Implemented with Tailwind theme tokens, Fraunces/Outfit typography, a custom SVG icon set, a [live style guide](docs/design/design-system.md) (`/design-system`), and over 10 reusable React components (including `Avatar`, `Button`, `CategoryChips`, `ChatMessageBubble`, `ConfirmDialog`, `DocumentItem`, `Icon`, `ImagePicker`, `ListingCard`, `LocationAutocomplete`, `LogoMark`, `MessageCard`, `OnlineBadge`, `ProfileField`, and `UploadProgress`). | Daniel, Beatriz |
+| Advanced search functionality | Minor | 1 | Chosen so users can quickly narrow down items to swap. Implemented with combined text search, category and location filters, multiple sort orders, and paginated backend queries. | Cláudia, Beatriz, Daniel |
+| File upload and management system | Minor | 1 | Chosen so listings can include item photos and supporting PDF documents (manuals, warranties, receipts). Avatars, listing photos, and PDF documents are validated by type and size on the client and server, stored outside the repository, previewed, and removable; uploads show progress and PDFs are served only to signed-in users. | Beatriz, Daniel |
+| Remote authentication with OAuth 2.0 | Minor | 1 | Chosen to offer frictionless sign-in alongside email and password. Implemented with Google OAuth 2.0 via `Authlib`, signed state cookies, account linking, and post-login redirect preservation. | Alex, Daniel |
+| **Subtotal (Standard Modules)** | | **15** | **5 Major (10 pts) + 5 Minor (5 pts) — 14 mandatory points + 1 bonus point.** | |
 
-The negotiation lifecycle is an additional candidate for a **2-point Major module of choice**, outside the 14-point total above. It solves the marketplace-specific problem of coordinating competing offers for the same items. Transactions, row locks, and state transitions reserve the agreed listings and handle conflicting negotiations while preserving the offer history. This lets users agree on a swap without reserving the same item twice. Cláudia implemented and tested the trade lifecycle, Beatriz developed the negotiation UI and proposal reopening, and Daniel contributed to the chat-centered design. See the [negotiation ADR](docs/adr/0002-adopt-chat-centric-negotiations.md) and [proposal reopening ADR](docs/adr/0003-allow-reopening-withdrawn-proposals.md).
+### Custom Module of Choice (Bonus — Major, 2 points): Multi-Party Barter Negotiation Lifecycle
 
-# Individual Contributions
+- **Why we chose this module:** Unlike a standard e-commerce cart, a barter marketplace has no currency; users negotiate item-for-item swaps where multiple people may compete for the same listing or offer the same item across different conversations.
+- **Technical challenges addressed:** Preventing double-reservation and race conditions when concurrent requests accept, withdraw, reopen, or cancel proposals touching the same listings, while keeping chat and offer histories intact.
+- **How it adds value and why it deserves Major status (2 points):** Implemented as a transactional state machine across `listings`, `negotiations`, and `proposals` using row-level database locks, a generated uniqueness key for empty or item-backed offers, automatic cancellation of competing negotiations upon trade completion, and full frontend workflow integration. Contributed by Cláudia, Beatriz, and Daniel. See [ADR-0002](docs/adr/0002-adopt-chat-centric-negotiations.md) and [ADR-0003](docs/adr/0003-allow-reopening-withdrawn-proposals.md).
 
-- **Daniel Junho** built shared frontend components, the publication flow, profile and location interfaces, legal pages, OAuth integration, and the observability stack. He built the chat widget and handled reconnection by reloading and deduplicating message history.
-- **Beatriz Fiochi Soares da Silva** developed avatar and listing photo management, sorting, responsive layouts, friends UI, session checks, and negotiation actions. She addressed stale proposal choices by refreshing after conflicts and allowing withdrawn offers to reopen through a dedicated endpoint.
-- **Cláudia Moura Pickett** implemented listing operations, browsing, favorites, and the trade API and lifecycle. She implemented the Nginx WebSocket proxy, session authorization, connection management, message persistence, broadcast, and history. Transaction and concurrency tests exercise races between chat messages, offer acceptance, and changes to listing or negotiation state.
-- **Alex Neves** implemented Google authentication and its setup guide, friendship persistence and API endpoints, and activity-based online status. He addressed duplicate friendship pairs by normalizing their order and enforcing that ordering in the schema.
+## Individual Contributions
+
+- **Daniel Junho (`djunho`):** Built shared frontend components, the listing publication flow, profile and location autocomplete interfaces, legal pages, OAuth frontend/backend integration, the real-time chat widget and negotiations dock, and the Prometheus/Grafana/Alertmanager observability stack. He resolved chat reconnection races by reloading and deduplicating message history on socket recovery, and hardened observability endpoints with HTTP Basic Auth and internal-only metric routes.
+- **Beatriz Fiochi Soares da Silva (`bfiochi-`):** Built the catalog interface (home feed, search, filters, and sorting), the listing pages (detail with gallery, editing, and removal), public profiles, favorites, and the friends and presence UI. She designed the reusable image pipeline for avatars and listing photos, and added PDF documents to listings with upload progress. She developed the negotiation interface and its actions, completed the design system (icon set, logo, `/design-system` page, WCAG AA contrast), and made the layout responsive. She hardened login so every failure gets the same answer, and addressed stale proposal choices by refreshing after conflicts and allowing withdrawn offers to reopen through a dedicated endpoint.
+- **Cláudia Moura Pickett (`cmoura-p`):** Implemented listing CRUD and browsing APIs, favorites endpoints, and the negotiation and proposal state-transition engine. She built the Nginx WebSocket proxy configuration, cookie session authorization, connection registry, message persistence, real-time broadcasting, and cursor-based message history, along with transaction and concurrency tests covering races between chat delivery and trade state changes.
+- **Alex Neves (`alde-alm`):** Implemented authentication routes, Google OAuth 2.0 authentication and its setup documentation, friendship persistence and REST endpoints, and activity-based online presence tracking (including immediate presence cleanup on sign-out). He prevented duplicate or inverted friendship records by normalizing user ID pairs and enforcing the ordering with a database `CHECK` constraint.
