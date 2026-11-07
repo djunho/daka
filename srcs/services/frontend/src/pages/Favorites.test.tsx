@@ -223,6 +223,20 @@ describe('Favorites page', () => {
     expect(screen.queryByRole('button', { name: 'Carregar mais' })).not.toBeInTheDocument()
   })
 
+  it('cancels a "Carregar mais" still on its way when leaving the page', async () => {
+    vi.mocked(apiGetFavorites)
+      .mockResolvedValueOnce(page([1, 2], 3))
+      .mockReturnValueOnce(new Promise(() => {}))
+    const { unmount } = renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Carregar mais' }))
+    const signal = vi.mocked(apiGetFavorites).mock.calls[1][1]!
+    expect(signal.aborted).toBe(false)
+
+    unmount()
+    expect(signal.aborted).toBe(true)
+  })
+
   it('explains a failure and lets the user try again', async () => {
     vi.mocked(apiGetFavorites).mockRejectedValueOnce(new ApiError(429, 'Too many requests.'))
     renderPage()

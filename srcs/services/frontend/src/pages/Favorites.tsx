@@ -34,6 +34,8 @@ export default function Favorites() {
   // Bumped when the list starts over, so a late "Carregar mais" answer that
   // belongs to the previous list is dropped (same idea as the Home feed).
   const listRequest = useRef(0)
+  // The "Carregar mais" request on its way, aborted with the list it belongs to.
+  const moreController = useRef<AbortController | null>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
   // Read by screen readers when a card leaves the list.
@@ -80,6 +82,7 @@ export default function Favorites() {
       // Leaving the page or starting over: this answer is no longer wanted.
       listRequest.current += 1
       controller.abort()
+      moreController.current?.abort()
     }
     // userId: another account signed in (in another tab) gets its own list.
     // handleError only uses logout, which does not change what is requested.
@@ -117,7 +120,8 @@ export default function Favorites() {
     const index = before.findIndex((listing) => listing.id === gone[0].id)
     const next = visible[Math.min(index, visible.length - 1)]
     const card = next && gridRef.current?.querySelector(`a[href="/listing/${next.id}"]`)?.parentElement
-    const target = card?.querySelector<HTMLElement>('button') ?? card?.querySelector<HTMLElement>('a')
+    // aria-pressed: only the heart has it, whatever other buttons a card gets.
+    const target = card?.querySelector<HTMLElement>('button[aria-pressed]') ?? card?.querySelector<HTMLElement>('a')
     ;(target ?? headingRef.current)?.focus()
     // visibleIds stands for `visible`, which is a new array on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,13 +137,15 @@ export default function Favorites() {
     // A second click before the page arrives would ask for the same offset.
     if (loadingMore || removing) return
     const request = listRequest.current
+    const controller = new AbortController()
+    moreController.current = controller
 
     setLoadingMore(true)
     setMoreError(null)
     const snapshot = snapshotFavorites()
     // Removed favorites are gone from the server's list too, so the next page
     // starts after the cards still on screen.
-    apiGetFavorites({ limit: PAGE_SIZE, offset: visible.length })
+    apiGetFavorites({ limit: PAGE_SIZE, offset: visible.length }, controller.signal)
       .then((page) => {
         if (listRequest.current !== request) return
         // A card was removed while the request was on its way. The server may
