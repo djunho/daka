@@ -61,7 +61,7 @@ export async function request<T>(
     // fetch only rejects on a network-level failure (server down, no
     // connection) -- not on a 4xx/5xx, which resolve normally. Give the UI a
     // status 0 it can recognise as "could not reach the server".
-    throw new ApiError(0, 'Could not reach the server. Check your connection.')
+    throw new ApiError(0, NETWORK_ERROR_MESSAGE)
   }
 
   // 204 No Content (our logout) has no body to parse. Return early.
@@ -74,16 +74,99 @@ export async function request<T>(
   const data = await res.json().catch(() => null)
 
   if (!res.ok) {
-    // FastAPI puts the message in "detail". Fall back to a generic line if the
-    // shape is unexpected, so the user never sees "[object Object]".
-    const detail =
-      data && typeof data.detail === 'string'
-        ? data.detail
-        : 'Something went wrong. Please try again.'
-    throw new ApiError(res.status, detail)
+    throw errorFromResponse(res.status, data)
   }
 
   return data as T
+}
+
+const NETWORK_ERROR_MESSAGE = 'Could not reach the server. Check your connection.'
+
+// FastAPI puts the message in "detail". Fall back to a generic line if the
+// shape is unexpected, so the user never sees "[object Object]".
+function errorFromResponse(status: number, data: unknown): ApiError {
+  const detail =
+    data && typeof (data as { detail?: unknown }).detail === 'string'
+      ? (data as { detail: string }).detail
+      : 'Something went wrong. Please try again.'
+  return new ApiError(status, detail)
+}
+
+export type UploadOptions = {
+  // Called with the share of the file sent so far, from 0 to 1. It reaches 1
+  // when the last byte left the browser: the server may still be working
+  // (checking, re-encoding) for a moment after that.
+  onProgress?: (fraction: number) => void
+  signal?: AbortSignal
+}
+
+// Sends one file as multipart/form-data, in a field named "file", reporting
+// the upload progress. fetch cannot report upload progress, so this uses
+// XMLHttpRequest, and answers exactly like request() does: the same /api
+// prefix, the session cookie, ApiError(0) when the server cannot be reached,
+// ApiError(status, detail) on a non-2xx, an AbortError when cancelled.
+export function uploadWithProgress<T>(
+  path: string,
+  method: 'POST' | 'PUT',
+  file: File,
+  { onProgress, signal }: UploadOptions = {},
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abortError = () => new DOMException('The upload was cancelled.', 'AbortError')
+    if (signal?.aborted) {
+      reject(abortError())
+      return
+    }
+
+    const xhr = new XMLHttpRequest()
+    xhr.open(method, API_BASE + path)
+    // Same origin already sends the cookie; this keeps the intent explicit,
+    // like credentials: 'include' in request().
+    xhr.withCredentials = true
+
+    const onAbortSignal = () => xhr.abort()
+    signal?.addEventListener('abort', onAbortSignal)
+    const done = () => signal?.removeEventListener('abort', onAbortSignal)
+
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total)
+      }
+    }
+
+    xhr.onload = () => {
+      done()
+      // 204 No Content has no body to parse.
+      if (xhr.status === 204) {
+        resolve(undefined as T)
+        return
+      }
+      let data: unknown = null
+      try {
+        data = JSON.parse(xhr.responseText)
+      } catch {
+        // Not JSON: fall back to null, as request() does.
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(errorFromResponse(xhr.status, data))
+        return
+      }
+      resolve(data as T)
+    }
+    xhr.onerror = () => {
+      done()
+      reject(new ApiError(0, NETWORK_ERROR_MESSAGE))
+    }
+    xhr.ontimeout = xhr.onerror
+    xhr.onabort = () => {
+      done()
+      reject(abortError())
+    }
+
+    const form = new FormData()
+    form.append('file', file)
+    xhr.send(form)
+  })
 }
 
 // The user shapes the backend returns. Kept here next to the client so the
@@ -121,6 +204,16 @@ export type ApiImage = {
   is_primary: boolean
 }
 
+// A PDF attached to a listing. Anyone sees this description; opening the
+// file needs a session (listingDocumentUrl).
+export type ApiDocument = {
+  id: number
+  original_name: string
+  size_bytes: number
+  page_count: number
+  created_at: string
+}
+
 export type ApiListingSummary = {
   id: number
   title: string
@@ -136,6 +229,7 @@ export type ApiListingSummary = {
 export type ApiListingDetail = ApiListingSummary & {
   listing_dsc: string | null
   images: ApiImage[]
+  documents: ApiDocument[]
   is_favorited: boolean
 }
 
@@ -218,10 +312,8 @@ export function apiUpdateProfile(data: UpdateProfileData) {
 
 // The avatar has its own endpoints. The file travels as multipart/form-data
 // in a field named "file", which is the name the backend's UploadFile expects.
-export function apiUploadAvatar(file: File) {
-  const form = new FormData()
-  form.append('file', file)
-  return request<ApiUser>('/auth/me/avatar', { method: 'PUT', body: form })
+export function apiUploadAvatar(file: File, options?: UploadOptions) {
+  return uploadWithProgress<ApiUser>('/auth/me/avatar', 'PUT', file, options)
 }
 
 export function apiDeleteAvatar() {
@@ -305,10 +397,8 @@ export function apiDeleteListing(id: number) {
   return request<void>(`/listings/${id}`, { method: 'DELETE' })
 }
 
-export function apiUploadListingImage(id: number, file: File) {
-  const form = new FormData()
-  form.append('file', file)
-  return request<ApiListingDetail>(`/listings/${id}/images`, { method: 'POST', body: form})
+export function apiUploadListingImage(id: number, file: File, options?: UploadOptions) {
+  return uploadWithProgress<ApiListingDetail>(`/listings/${id}/images`, 'POST', file, options)
 }
 
 export function apiSetPrimaryListingImage(id: number, imageId: number) {
@@ -321,6 +411,22 @@ export function apiDeleteListingImage(id: number, imageId: number) {
   return request<ApiListingDetail>(`/listings/${id}/images/${imageId}`, {
     method: 'DELETE'
   })
+}
+
+export function apiUploadListingDocument(id: number, file: File, options?: UploadOptions) {
+  return uploadWithProgress<ApiListingDetail>(`/listings/${id}/documents`, 'POST', file, options)
+}
+
+export function apiDeleteListingDocument(id: number, documentId: number) {
+  return request<ApiListingDetail>(`/listings/${id}/documents/${documentId}`, {
+    method: 'DELETE'
+  })
+}
+
+// Where a logged-in user opens a document. Never link to it without a
+// session: the backend answers 401, which shows up in the browser console.
+export function listingDocumentUrl(listingId: number, documentId: number) {
+  return `${API_BASE}/listings/${listingId}/documents/${documentId}/file`
 }
 
 // Requires a session: the backend answers 401 without one.

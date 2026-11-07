@@ -1,6 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useParams, Link, useLocation, useNavigate } from 'react-router-dom'
-import { ApiError, apiCreateNegotiation, apiDeleteListing, apiGetListing, type ApiListingDetail } from '../lib/api'
+import {
+  ApiError,
+  apiCreateNegotiation,
+  apiDeleteListing,
+  apiGetListing,
+  listingDocumentUrl,
+  type ApiListingDetail,
+} from '../lib/api'
 import { getPortugueseErrorMessage } from '../lib/errors'
 import { categoryLabel, conditionLabel } from '../types/listing'
 import ListingGallery from '../components/ListingGallery'
@@ -9,6 +16,7 @@ import Avatar from '../components/Avatar'
 import Icon from '../components/Icon'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
+import DocumentItem from '../components/DocumentItem'
 import MessageCard from '../components/MessageCard'
 
 // POST /negotiations answers 409 both when the listing can no longer be
@@ -276,6 +284,50 @@ export default function ListingDetail() {
               <p className="text-sm text-muted">O anunciante não escreveu uma descrição.</p>
             )}
           </div>
+
+          {listing.documents.length > 0 && (
+            <div>
+              <h2 id="listing-documents" className="font-display text-lg font-bold text-ink mb-2">Documentos</h2>
+              <ul aria-labelledby="listing-documents" className="space-y-2">
+                {listing.documents.map((doc) => (
+                  <DocumentItem
+                    key={doc.id}
+                    name={doc.original_name}
+                    sizeBytes={doc.size_bytes}
+                    pageCount={doc.page_count}
+                    actions={
+                      // Opening a document needs a session. A visitor gets the
+                      // way to log in instead of a link the backend would
+                      // answer with 401 (an error in the browser console).
+                      currentUser ? (
+                        <>
+                          <a
+                            href={listingDocumentUrl(listing.id, doc.id)}
+                            target="_blank"
+                            rel="noopener"
+                            className={buttonClasses({ variant: 'link', size: 'sm' })}
+                          >
+                            Abrir<span className="sr-only"> {doc.original_name}</span>
+                          </a>
+                          <a
+                            href={listingDocumentUrl(listing.id, doc.id)}
+                            download={doc.original_name}
+                            className={buttonClasses({ variant: 'link', size: 'sm' })}
+                          >
+                            Descarregar<span className="sr-only"> {doc.original_name}</span>
+                          </a>
+                        </>
+                      ) : (
+                        <Button variant="link" size="sm" onClick={goToLogin}>
+                          Inicia sessão para abrir<span className="sr-only"> {doc.original_name}</span>
+                        </Button>
+                      )
+                    }
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Owner card */}
           <div className="bg-surface border border-line rounded-2xl p-4 shadow-sm">

@@ -4,6 +4,7 @@ import Button from '../components/Button'
 import CategoryChips from '../components/CategoryChips'
 import ChatMessageBubble from '../components/ChatMessageBubble'
 import ConfirmDialog from '../components/ConfirmDialog'
+import DocumentItem from '../components/DocumentItem'
 import Icon, { ICON_NAMES } from '../components/Icon'
 import ImagePicker from '../components/ImagePicker'
 import ListingCard, { LISTING_GRID_CLASSES } from '../components/ListingCard'
@@ -12,6 +13,7 @@ import LogoMark from '../components/Logo'
 import MessageCard from '../components/MessageCard'
 import OnlineBadge from '../components/OnlineBadge'
 import ProfileField from '../components/ProfileField'
+import UploadProgress from '../components/UploadProgress'
 import {
   COLOR_GROUPS,
   DISPLAY_SAMPLES,
@@ -466,6 +468,33 @@ function ComponentsSection() {
           />
           <p role="status" className="text-xs text-muted">{pickerMessage}</p>
         </div>
+      </Specimen>
+
+      <Specimen
+        title="UploadProgress"
+        description="Barra de progresso de um envio (fotografias, foto de perfil, documentos). Em 100% diz “A processar…”, porque o servidor ainda valida o ficheiro. Os leitores de ecrã ouvem o início de cada ficheiro, não cada percentagem."
+        code={`<UploadProgress label="A enviar fotografia 2 de 3" fraction={0.45} />`}
+      >
+        <div className="space-y-4 max-w-md">
+          <UploadProgress label="A enviar fotografia 2 de 3" fraction={0.45} />
+          <UploadProgress label="A enviar documento 1 de 1" fraction={1} />
+        </div>
+      </Specimen>
+
+      <Specimen
+        title="DocumentItem"
+        description="Um PDF numa lista: ícone, nome, tamanho, número de páginas e as ações possíveis. Usado ao publicar, ao editar e no detalhe do anúncio."
+        code={`<DocumentItem name={doc.original_name} sizeBytes={doc.size_bytes} pageCount={doc.page_count}\n  actions={<a href={url}>Abrir</a>} />`}
+      >
+        <ul className="space-y-2 max-w-lg">
+          <DocumentItem
+            name="Manual de instruções.pdf"
+            sizeBytes={850_000}
+            pageCount={12}
+            actions={<span className="text-xs font-semibold text-brand">Abrir</span>}
+          />
+          <DocumentItem name="fatura-2026.pdf" sizeBytes={120_000} />
+        </ul>
       </Specimen>
 
       <Specimen

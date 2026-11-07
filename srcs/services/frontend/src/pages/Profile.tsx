@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import ProfileField from '../components/ProfileField'
 import LocationAutocomplete from '../components/LocationAutocomplete'
 import Avatar from '../components/Avatar'
+import UploadProgress from '../components/UploadProgress'
 import Icon from '../components/Icon'
 import Button, { buttonClasses } from '../components/Button'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -31,6 +32,8 @@ export default function Profile() {
   // (shown as a preview); avatarRemoved means "go back to the initial".
   // Hooks stay above the early return (Rules of Hooks).
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  // Share of the new photo sent so far, while it uploads (null otherwise).
+  const [avatarUpload, setAvatarUpload] = useState<number | null>(null)
   const [avatarRemoved, setAvatarRemoved] = useState(false)
   const avatarPreview = useObjectUrl(avatarFile)
 
@@ -131,7 +134,8 @@ export default function Profile() {
         fieldsSaved = true
       }
       if (avatarFile) {
-        await uploadAvatar(avatarFile)
+        setAvatarUpload(0)
+        await uploadAvatar(avatarFile, { onProgress: setAvatarUpload })
       } else if (removeSavedAvatar) {
         await removeAvatar()
       }
@@ -154,6 +158,7 @@ export default function Profile() {
       setError(fieldsSaved ? `O nome e a localização foram guardados, mas a foto não foi alterada. ${reason}` : reason)
     } finally {
         setSaving(false)
+        setAvatarUpload(null)
     }
   }
 
@@ -238,6 +243,11 @@ export default function Profile() {
                       Remover foto
                     </Button>
                   )}
+                </div>
+              )}
+              {avatarUpload !== null && (
+                <div className="mt-3 max-w-xs">
+                  <UploadProgress label="A enviar a foto de perfil" fraction={avatarUpload} />
                 </div>
               )}
             </div>

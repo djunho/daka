@@ -147,5 +147,24 @@ friend_id`). Adding a friendship creates or reactivates the row with
 the row. Friend lists include only rows with `status = 'accepted'`. Account
 deactivation permanently removes that user's friendship rows.
 
+- Listing documents (#178) add the `documents` table (PDFs attached to a
+  listing). New databases receive it from `schema.sql`. Existing volumes must
+  apply `tools/130-listing-documents.sql` **before** running a backend that
+  uses this model: without the table, the listing detail and the negotiation
+  detail answer 500. The migration only creates a table and is safe to run
+  again. Do not reload `schema.sql` or delete the volume to apply it.
+
+  From the repository root, with the database credentials of the `db` container:
+
+  ```sh
+  docker compose -f srcs/docker-compose.yml exec -T db sh -c \
+    'mariadb -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' \
+    < srcs/services/mariadb/tools/130-listing-documents.sql
+  ```
+
+  Alternatively, execute the `CREATE TABLE IF NOT EXISTS documents (...)`
+  statement from that file in the application database using your normal
+  database client.
+
 License
 - Follow the repository LICENSE in the project root.
