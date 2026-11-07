@@ -946,7 +946,22 @@ def logout(
             if session is not None:
                 session_was_active = is_session_active(session.expires_at)
                 db.delete(session)
-                if user is not None and session_was_active:
+                db.flush()
+                has_other_active_session = (
+                    db.query(UserSession)
+                    .filter(
+                        UserSession.user_id == user_id,
+                        UserSession.id != session.id,
+                        UserSession.expires_at > utcnow(),
+                    )
+                    .first()
+                    is not None
+                )
+                if (
+                    user is not None
+                    and session_was_active
+                    and not has_other_active_session
+                ):
                     db.query(User).filter(User.id == user_id).update(
                         {
                             User.last_seen: None,
