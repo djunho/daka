@@ -22,7 +22,7 @@ from fastapi import (
     status,
 )
 from starlette.responses import RedirectResponse
-from sqlalchemy import exists, or_
+from sqlalchemy import delete, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -905,30 +905,16 @@ def logout(
     raw_token = request.cookies.get(SESSION_COOKIE_NAME)
     if raw_token:
         token_hash = hash_session_token(raw_token)
-        session = (
-            db.query(UserSession)
-            .filter(UserSession.token_hash == token_hash)
-            .first()
-        )
-        if session is not None:
-            user_id = session.user_id
-            user = (
-                db.query(User)
-                .filter(User.id == user_id)
-                .populate_existing()
-                .with_for_update()
-                .first()
+        user_id = db.execute(
+            delete(UserSession)
+            .where(UserSession.token_hash == token_hash)
+            .returning(UserSession.user_id)
+        ).scalar_one_or_none()
+        if user_id is not None:
+            db.query(User).filter(User.id == user_id).update(
+                {User.last_seen: None},
+                synchronize_session=False,
             )
-            db.delete(session)
-            db.flush()
-            has_active_session = db.query(
-                exists().where(
-                    UserSession.user_id == user_id,
-                    UserSession.expires_at > utcnow(),
-                )
-            ).scalar()
-            if user is not None and not has_active_session:
-                user.last_seen = None
             db.commit()
 
     # Clearing the cookie must use the SAME attributes it was set with (path,
