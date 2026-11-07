@@ -26,6 +26,8 @@ function setUp({
     isFavorite: () => saved,
     isPending: () => false,
     toggleFavorite,
+    snapshotFavorites: () => 0,
+    rememberFavorites: vi.fn(),
   })
 }
 

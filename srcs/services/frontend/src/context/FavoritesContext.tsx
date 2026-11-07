@@ -29,6 +29,13 @@ type FavoritesContextValue = {
   // Changes the heart at once, then asks the backend. On failure the heart
   // goes back to how it was and the ApiError is thrown to the caller.
   toggleFavorite: (listingId: number) => Promise<void>
+  // The ids are read once per login, so a listing saved later on another
+  // device or tab is missing. A page that fetched favorites from the backend
+  // hands them over with rememberFavorites, passing the snapshot it took
+  // just before the request: a listing added or removed here since then is
+  // skipped, as the response may predate that change.
+  snapshotFavorites: () => number
+  rememberFavorites: (listingIds: number[], snapshot: number) => void
 }
 
 const FavoritesContext = createContext<FavoritesContextValue | null>(null)
@@ -75,9 +82,14 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   // Bumped when the account changes: a request of the previous account that
   // ends afterwards must not touch the new account's hearts.
   const generation = useRef(0)
+  // A counter bumped when a toggle starts and when it ends, and the value it
+  // had for each listing: what rememberFavorites compares a snapshot with.
+  const changeCount = useRef(0)
+  const changedAt = useRef(new Map<number, number>())
 
   useEffect(() => {
     generation.current += 1
+    changedAt.current = new Map()
     pendingRef.current = new Set()
     setPending(new Set())
     setFavorites(null)
@@ -127,6 +139,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
 
     function setBusy(busy: boolean) {
       if (generation.current !== gen) return
+      changedAt.current.set(listingId, ++changeCount.current)
       if (busy) {
         pendingRef.current.add(listingId)
       } else {
@@ -160,8 +173,26 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const snapshotFavorites = useCallback(() => changeCount.current, [])
+
+  const rememberFavorites = useCallback((listingIds: number[], snapshot: number) => {
+    // Not loaded yet (or it failed): the hearts are hidden, and the load
+    // brings the backend's own list.
+    if (favoritesRef.current === null) return
+    const fresh = listingIds.filter(
+      (id) =>
+        !favoritesRef.current!.ids.has(id) &&
+        !pendingRef.current.has(id) &&
+        (changedAt.current.get(id) ?? 0) <= snapshot,
+    )
+    if (fresh.length === 0) return
+    setFavorites((prev) => prev && { ...prev, ids: new Set([...prev.ids, ...fresh]) })
+  }, [])
+
   return (
-    <FavoritesContext.Provider value={{ ready, isFavorite, isPending, toggleFavorite }}>
+    <FavoritesContext.Provider
+      value={{ ready, isFavorite, isPending, toggleFavorite, snapshotFavorites, rememberFavorites }}
+    >
       {children}
     </FavoritesContext.Provider>
   )
