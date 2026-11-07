@@ -31,7 +31,7 @@ from app.database import get_db
 from app.dependencies import (
     SESSION_COOKIE_NAME,
     get_current_user,
-    get_user_from_session_token,
+    get_session_from_session_token,
 )
 from app.documents import delete_document
 from app.media import delete_image, save_image
@@ -54,6 +54,7 @@ from app.security import (
     generate_session_token,
     hash_password,
     hash_session_token,
+    is_session_active,
     session_expiry,
     utcnow,
     verify_password,
@@ -435,15 +436,15 @@ def get_session(
     would show up in red in the browser console. The same checks as get_current_user apply, so a
     missing, unknown, expired or deactivated session all read as no session.
     """
-    user = get_user_from_session_token(daka_session, db)
-    if user is None:
+    session = get_session_from_session_token(daka_session, db)
+    if session is None:
         # The cookie is left alone. Another tab may be logging in while this
         # answer travels back: clearing the cookie here would delete the new
         # one and log that tab out. Logging out is what clears it.
         return SessionOut(user=None)
     # Opening the site is activity, as with every authenticated request.
-    touch_last_seen(db, user)
-    return SessionOut(user=UserOut.model_validate(user))
+    touch_last_seen(db, session.user, session_id=session.id)
+    return SessionOut(user=UserOut.model_validate(session.user))
 
 
 @router.get(
@@ -920,13 +921,58 @@ def logout(
     raw_token = request.cookies.get(SESSION_COOKIE_NAME)
     if raw_token:
         token_hash = hash_session_token(raw_token)
-        session = (
-            db.query(UserSession)
+        user_id = (
+            db.query(UserSession.user_id)
             .filter(UserSession.token_hash == token_hash)
-            .first()
+            .scalar()
         )
-        if session is not None:
-            db.delete(session)
+        if user_id is not None:
+            # End the token lookup transaction before acquiring the user and
+            # session locks; MariaDB snapshot isolation can otherwise reject
+            # the subsequent locking reads after concurrent activity.
+            db.rollback()
+            user = (
+                db.query(User)
+                .filter(User.id == user_id)
+                .with_for_update()
+                .one_or_none()
+            )
+            session = (
+                db.query(UserSession)
+                .filter(
+                    UserSession.token_hash == token_hash,
+                    UserSession.user_id == user_id,
+                )
+                .with_for_update()
+                .one_or_none()
+            )
+            if session is not None:
+                now = utcnow()
+                session_was_active = is_session_active(session.expires_at, now=now)
+                db.delete(session)
+                db.flush()
+                has_other_active_session = (
+                    db.query(UserSession)
+                    .filter(
+                        UserSession.user_id == user_id,
+                        UserSession.id != session.id,
+                        UserSession.expires_at > now,
+                    )
+                    .first()
+                    is not None
+                )
+                if (
+                    user is not None
+                    and session_was_active
+                    and not has_other_active_session
+                ):
+                    db.query(User).filter(User.id == user_id).update(
+                        {
+                            User.last_seen: None,
+                            User.updated_at: User.updated_at,
+                        },
+                        synchronize_session=False,
+                    )
             db.commit()
 
     # Clearing the cookie must use the SAME attributes it was set with (path,

@@ -3,13 +3,13 @@
 from datetime import datetime, timedelta
 import logging
 
-from sqlalchemy import or_
+from sqlalchemy import exists, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import settings
-from app.models import User
+from app.models import User, UserSession
 from app.security import utcnow
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,10 @@ def online_since(now: datetime | None = None):
 
 
 def touch_last_seen(
-    db: Session, user: User, now: datetime | None = None
+    db: Session,
+    user: User,
+    now: datetime | None = None,
+    session_id: int | None = None,
 ) -> bool:
     """Persist activity at most once per minute without changing updated_at."""
     current_time = now or utcnow()
@@ -42,19 +45,24 @@ def touch_last_seen(
         return False
     user_id = user.id
     try:
-        updated = (
-            db.query(User)
-            .filter(
-                User.id == user_id,
-                or_(User.last_seen.is_(None), User.last_seen < cutoff),
+        query = db.query(User).filter(
+            User.id == user_id,
+            or_(User.last_seen.is_(None), User.last_seen < cutoff),
+        )
+        if session_id is not None:
+            query = query.filter(
+                exists().where(
+                    UserSession.id == session_id,
+                    UserSession.user_id == User.id,
+                    UserSession.expires_at > current_time,
+                )
             )
-            .update(
-                {
-                    User.last_seen: current_time,
-                    User.updated_at: User.updated_at,
-                },
-                synchronize_session=False,
-            )
+        updated = query.update(
+            {
+                User.last_seen: current_time,
+                User.updated_at: User.updated_at,
+            },
+            synchronize_session=False,
         )
         db.commit()
         if updated:
