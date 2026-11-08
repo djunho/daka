@@ -75,7 +75,7 @@ See the [WebSocket test guide](docs/development/negotiation-websocket.md#tests) 
 
 ### Use of AI
 
-AI tools were used exclusively to assist with writing automated tests, performing code reviews, drafting project documentation and technical guides, and understanding and investigating bugs and technical problems. All AI-assisted output was reviewed, adapted, and validated by the team against the implementation through automated test suites, manual browser verification, and mandatory peer reviews on pull requests.
+AI tools were used to assist with writing automated tests, performing code reviews, suggesting frontend styles and UI layouts, drafting project documentation and technical guides, and understanding and investigating bugs and technical problems. All AI-assisted output was reviewed, adapted, and validated by the team against the implementation through automated test suites, manual browser verification, and mandatory peer reviews on pull requests.
 
 ## Team Information
 
