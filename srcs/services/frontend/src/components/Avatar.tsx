@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import OnlineBadge from './OnlineBadge'
 
 interface AvatarProps {
@@ -21,10 +22,18 @@ export default function Avatar({
     size = 'lg',
     online,
 }: AvatarProps) {
-    // Photo if available, fallback to the initial letter.
-    const avatarElement = avatar ? (
+    // The address of a photo that failed to load. Kept as the address, not a
+    // boolean, so a new photo (another user, a new upload) is tried again.
+    const [failedSrc, setFailedSrc] = useState<string | null>(null)
+
+    // Photo if available and loadable, fallback to the initial letter.
+    const avatarElement = avatar && avatar !== failedSrc ? (
       <img
         src={avatar}
+        // Google sign-in avatars are hosted on Google's servers, which refuse
+        // (429) pictures requested with our page as Referer.
+        referrerPolicy="no-referrer"
+        onError={() => setFailedSrc(avatar)}
         alt={ user_name ? user_name : "" }
         className={`${SIZES[size]} rounded-full object-cover border border-line shrink-0`}
       />

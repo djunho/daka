@@ -7,7 +7,7 @@ export default function Privacy() {
           Política de Privacidade
         </h1>
         <p className="text-sm text-muted">
-          Última atualização: Outubro de 2026 · Plataforma Daka
+          Última atualização: Novembro de 2026 · Plataforma Daka
         </p>
       </header>
       <div className="space-y-4 text-base leading-relaxed">
@@ -26,7 +26,7 @@ export default function Privacy() {
         <p>Trata os dados pessoais para a prossecução do serviço solicitado pelo próprio utilizador, nos termos da alínea b) do n.º 1 do Artigo 6.º do RGPD.</p>
         <h2 className="text-2xl font-bold font-display mt-8 mb-4">Tipologia de Dados Pessoais que Recolhemos</h2>
         <p>No âmbito da plataforma Daka, recolhemos exclusivamente os dados necessários para o registo, gestão de perfil e facilitação das trocas de artigos entre utilizadores:</p>
-        <p className="pl-4"><strong>Dados de Conta:</strong> Nome de utilizador (<em>username</em>), endereço de correio eletrónico e palavra-passe cifrada (armazenada sob forma de hash criptográfico irreversível através do algoritmo <code>bcrypt</code>). Na autenticação através de terceiros (Google OAuth), recolhemos unicamente o identificador de utilizador e o correio eletrónico;</p>
+        <p className="pl-4"><strong>Dados de Conta:</strong> Nome de utilizador (<em>username</em>), endereço de correio eletrónico e palavra-passe cifrada (armazenada sob forma de hash criptográfico irreversível através do algoritmo <code>bcrypt</code>). Na autenticação através de terceiros (Google OAuth), recebemos da Google o identificador da conta, o endereço de correio eletrónico, o nome e o endereço da fotografia de perfil. O nome e a fotografia são usados apenas quando a conta Daka é criada através da Google, como nome de utilizador e avatar iniciais, e podem ser alterados ou removidos a qualquer momento na página de perfil. O Daka não recebe a palavra-passe da conta Google nem tem acesso a outros dados ou serviços dessa conta;</p>
         <p className="pl-4"><strong>Dados de Perfil:</strong> Fotografia de avatar (opcional) e localização aproximada (concelho e freguesia selecionados a partir de dados públicos oficiais, sem recolha de morada postal nem rastreio contínuo por GPS);</p>
         <p className="pl-4"><strong>Anúncios e Propostas de Troca:</strong> Títulos, descrições, categorias, fotografias e estado de conservação dos artigos anunciados, documentos PDF anexados pelo anunciante (por exemplo manuais ou faturas), bem como o histórico de propostas de troca enviadas e recebidas. Os documentos são guardados sem os seus metadados, só podem ser abertos por utilizadores com sessão iniciada e são apagados quando o anúncio é removido ou a conta é eliminada;</p>
         <p className="pl-4"><strong>Mensagens de Troca:</strong> Comunicações trocadas diretamente entre utilizadores no chat interno da plataforma para a coordenação e conclusão das trocas.</p>
@@ -55,6 +55,9 @@ export default function Privacy() {
           </p>
         </div>
         <p>O utilizador pode configurar o seu navegador para bloquear ou eliminar cookies a qualquer momento nas definições do respetivo programa. No entanto, alertamos que o bloqueio de cookies técnicos essenciais impossibilitará a autenticação e o acesso às funcionalidades de publicação e negociação de trocas.</p>
+        <h2 className="text-2xl font-bold font-display mt-8 mb-4">Serviços de Terceiros</h2>
+        <p>Ao escolher iniciar sessão com a Google, o utilizador é redirecionado para a Google (Google LLC), que trata os dados de autenticação de acordo com a sua própria política de privacidade.</p>
+        <p>Quando a conta é criada através da Google, a fotografia de perfil continua alojada nos servidores da Google e é carregada diretamente a partir deles sempre que é apresentada. Para isso, o navegador de quem visualiza a página contacta a Google, que recebe dados técnicos de ligação, como o endereço IP e o tipo de navegador. O Daka não indica à Google em que página a fotografia é apresentada nem lhe transmite qualquer outro dado. O titular da conta pode substituir ou remover esta fotografia na página de perfil. A partir desse momento passa a ser apresentada uma fotografia guardada nos servidores do Daka, ou a inicial do nome.</p>
         <h2 className="text-2xl font-bold font-display mt-8 mb-4">Atualizações à Política de Privacidade</h2>
         <p>A presente Política de Privacidade pode ser atualizada pontualmente para refletir melhorias funcionais da plataforma ou novas exigências legais. Quaisquer alterações serão publicadas nesta página com a indicação da respetiva data de atualização.</p>
       </div>
