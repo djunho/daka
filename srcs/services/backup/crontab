@@ -1,0 +1,2 @@
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 3 * * * root /bin/bash -c '. /run/daka-backup.env; exec /usr/local/bin/backup.sh' >> /proc/1/fd/1 2>&1

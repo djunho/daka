@@ -1,3 +1,5 @@
+x-mariadb-image: &mariadb-image mariadb:11
+
 services:
   certgen:
     image: alpine/openssl:3.3.2
@@ -26,6 +28,8 @@ services:
   db:
     build:
       context: ./services/mariadb
+      args:
+        MARIADB_IMAGE: *mariadb-image
     image: daka_db
     container_name: daka_db
     restart: unless-stopped
@@ -38,6 +42,33 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - daka_data
+
+  # ---- Backup runner (enable with --profile backup) -----------------------
+  backup:
+    profiles: ["backup"]
+    build:
+      context: ./services/backup
+      args:
+        MARIADB_IMAGE: *mariadb-image
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-}
+      MYSQL_BACKUP_PASSWORD: ${MYSQL_BACKUP_PASSWORD:-}
+      BACKUP_FLOCK_WAIT_SECONDS: ${BACKUP_FLOCK_WAIT_SECONDS:-300}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - media:/data/media:ro
+      - documents:/data/documents:ro
+      - backup_metrics:/backup-metrics
+      - type: bind
+        source: ../../daka-backups
+        target: /backups
+        bind:
+          create_host_path: false
     networks:
       - daka_data
 
@@ -239,10 +270,12 @@ services:
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
       - --path.rootfs=/host/root
+      - --collector.textfile.directory=/backup-metrics
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($$|/)
       - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|cgroup|cgroup2|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$$
     volumes:
       - /proc:/host/proc:ro
+      - backup_metrics:/backup-metrics:ro
       - /sys:/host/sys:ro
       - /:/host/root:ro,rslave
     networks:
@@ -295,6 +328,7 @@ services:
       - daka_obs
  
 volumes:
+  backup_metrics:
   db_data:
   prometheus_data:
   alertmanager_data:

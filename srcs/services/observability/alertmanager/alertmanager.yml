@@ -25,6 +25,7 @@ receivers:
 inhibit_rules:
   - source_matchers:
       - severity = "critical"
+      - alertname != "BackupOverdue"
     target_matchers:
       - severity = "warning"
     equal: ['instance']
