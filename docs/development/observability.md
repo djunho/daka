@@ -131,6 +131,27 @@ grep -E "^(GRAFANA_ADMIN_|PROM_)" srcs/.env
 
 ---
 
+### Service status page
+
+Open **Daka — Service Status** in Grafana. It shows the current state of the
+website, Nginx gateway, API and database using the existing Blackbox probes.
+A failed probe appears as **Unavailable**. A missing probe or failed scrape
+appears as **Unknown**. The probes run inside the Docker stack, so these
+checks cover the HTTPS routes as seen by Blackbox.
+
+To give people access to just this dashboard, sign in as a Grafana admin,
+open **Daka — Service Status** and choose **Share externally** from the
+**Share** menu. Select **Anyone with the link**, accept the prompt and copy
+the resulting URL. Leave annotations disabled. The share is read-only and
+Grafana runs only the queries saved on that dashboard. Anonymous access to
+the Grafana organization is unnecessary.
+
+Open the shared URL in a private browser window to check the four status
+cards. Use **Dashboards → Shared dashboards** to pause or revoke the link.
+After a recovery that recreates `grafana_data`, create and distribute a new
+link using the [recovery runbook](../runbook-dr.md#restore).
+See the [Grafana sharing guide](https://grafana.com/docs/grafana/latest/visualizations/dashboards/share-dashboards-panels/shared-dashboards/).
+
 ## 4. Hands-On Verification & Testing Guide
 
 Use the following practical checks and live scenarios to verify and demonstrate the monitoring stack in action.

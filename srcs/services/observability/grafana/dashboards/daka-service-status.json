@@ -1,0 +1,263 @@
+{
+  "uid": "daka-service-status",
+  "title": "Daka — Service Status",
+  "description": "Availability of Daka services from the stack's HTTPS probes.",
+  "tags": [
+    "daka",
+    "status"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Website",
+      "description": "The public application page responds over HTTPS.",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "daka-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "daka-prometheus"
+          },
+          "expr": "max(probe_success{job=\"blackbox-http\",instance=\"https://nginx/\"} and (up{job=\"blackbox-http\",instance=\"https://nginx/\"} == 1)) or vector(-1)",
+          "instant": true,
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unknown",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red",
+                  "index": 1
+                },
+                "1": {
+                  "text": "Operational",
+                  "color": "green",
+                  "index": 2
+                },
+                "-1": {
+                  "text": "Unknown",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Gateway",
+      "description": "Nginx responds to its health check.",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "daka-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "daka-prometheus"
+          },
+          "expr": "max(probe_success{job=\"blackbox-http\",instance=\"https://nginx/healthz\"} and (up{job=\"blackbox-http\",instance=\"https://nginx/healthz\"} == 1)) or vector(-1)",
+          "instant": true,
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unknown",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red",
+                  "index": 1
+                },
+                "1": {
+                  "text": "Operational",
+                  "color": "green",
+                  "index": 2
+                },
+                "-1": {
+                  "text": "Unknown",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "API",
+      "description": "The backend responds through Nginx.",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "daka-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "daka-prometheus"
+          },
+          "expr": "max(probe_success{job=\"blackbox-http\",instance=\"https://nginx/api/health\"} and (up{job=\"blackbox-http\",instance=\"https://nginx/api/health\"} == 1)) or vector(-1)",
+          "instant": true,
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unknown",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red",
+                  "index": 1
+                },
+                "1": {
+                  "text": "Operational",
+                  "color": "green",
+                  "index": 2
+                },
+                "-1": {
+                  "text": "Unknown",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Database",
+      "description": "The backend can reach MariaDB through its database health check.",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "daka-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "daka-prometheus"
+          },
+          "expr": "max(probe_success{job=\"blackbox-http\",instance=\"https://nginx/api/health/db\"} and (up{job=\"blackbox-http\",instance=\"https://nginx/api/health/db\"} == 1)) or vector(-1)",
+          "instant": true,
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unknown",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red",
+                  "index": 1
+                },
+                "1": {
+                  "text": "Operational",
+                  "color": "green",
+                  "index": 2
+                },
+                "-1": {
+                  "text": "Unknown",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    }
+  ]
+}
