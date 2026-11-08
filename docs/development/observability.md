@@ -148,6 +148,8 @@ the Grafana organization is unnecessary.
 
 Open the shared URL in a private browser window to check the four status
 cards. Use **Dashboards → Shared dashboards** to pause or revoke the link.
+After a recovery that recreates `grafana_data`, create and distribute a new
+link using the [recovery runbook](../runbook-dr.md#restore).
 See the [Grafana sharing guide](https://grafana.com/docs/grafana/latest/visualizations/dashboards/share-dashboards-panels/shared-dashboards/).
 
 ## 4. Hands-On Verification & Testing Guide
