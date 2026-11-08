@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
+import AvatarImage from './AvatarImage'
 import Icon from './Icon'
 import LogoMark from './Logo'
 
@@ -95,8 +96,6 @@ function UserMenu({
   onLogout: () => Promise<void>
 }) {
   const [open, setOpen] = useState(false)
-  // See Avatar.tsx: the address of a photo that failed, so a new one is retried.
-  const [failedSrc, setFailedSrc] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
@@ -145,21 +144,14 @@ function UserMenu({
         aria-expanded={open}
         className="flex items-center justify-center w-9 h-9 rounded-full bg-paper border border-line hover:border-brand transition-colors overflow-hidden"
       >
-        {avatar && avatar !== failedSrc ? (
-          // The profile picture. alt is empty because the button already has
-          // an aria-label naming its purpose. no-referrer: Google sign-in
-          // avatars are refused (429) when requested with our page as Referer.
-          <img
-            src={avatar}
-            alt=""
-            referrerPolicy="no-referrer"
-            onError={() => setFailedSrc(avatar)}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          // No photo, or it failed to load: a generic person icon.
-          <Icon name="user" className="text-muted" />
-        )}
+        {/* alt is empty because the button already has an aria-label naming
+            its purpose. No photo, or one that fails: a generic person icon. */}
+        <AvatarImage
+          src={avatar}
+          alt=""
+          className="w-full h-full object-cover"
+          fallback={<Icon name="user" className="text-muted" />}
+        />
       </button>
 
       {open && (
