@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import Header from './Header'
@@ -67,5 +67,18 @@ describe('Header', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Menu da conta' }))
     await userEvent.click(screen.getByText('Ana'))
     expect(screen.getByRole('menu')).toBeInTheDocument()
+  })
+
+  it('loads the avatar without a Referer and shows the person icon when it fails', () => {
+    const avatar = 'https://lh3.googleusercontent.com/a/photo=s96-c'
+    const { container } = renderHeader({ ...ME, avatar } as unknown as typeof ME)
+    const img = container.querySelector('img')
+
+    expect(img).toHaveAttribute('src', avatar)
+    expect(img).toHaveAttribute('referrerpolicy', 'no-referrer')
+
+    fireEvent.error(img!)
+    expect(container.querySelector('img')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Menu da conta' }).querySelector('svg')).toBeInTheDocument()
   })
 })
