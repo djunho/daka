@@ -14,6 +14,7 @@ import {
   type ApiPublicProfile,
 } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import { PRESENCE_POLL_MS } from '../hooks/useUserPresence'
 
 vi.mock('../lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/api')>()),
@@ -105,6 +106,41 @@ describe('UserProfile friend button', () => {
     renderPage()
     await screen.findByRole('heading', { level: 1, name: 'Bruno' })
     expect(screen.getByText('Offline')).toBeInTheDocument()
+  })
+
+  it('follows the user going offline without reloading the page', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderPage()
+      await screen.findByRole('heading', { level: 1, name: 'Bruno' })
+      expect(screen.getByText('Online')).toBeInTheDocument()
+      // The page read the profile; the badge waits a full interval to ask again.
+      expect(apiGetPublicProfile).toHaveBeenCalledTimes(1)
+
+      vi.mocked(apiGetPublicProfile).mockResolvedValue(profile({ is_online: false }))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PRESENCE_POLL_MS)
+      })
+      expect(screen.getByText('Offline')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not poll the presence on your own profile', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      vi.mocked(apiGetPublicProfile).mockImplementation(async () => profile({ id: 1, user_name: 'Ana' }))
+      renderPage('/users/1')
+      await screen.findByRole('heading', { level: 1, name: 'Ana' })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PRESENCE_POLL_MS * 2)
+      })
+      expect(apiGetPublicProfile).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps the button disabled until the friendship is known', async () => {

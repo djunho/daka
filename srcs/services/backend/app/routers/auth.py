@@ -22,7 +22,7 @@ from fastapi import (
     status,
 )
 from starlette.responses import RedirectResponse
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -48,7 +48,7 @@ from app.models import (
     User,
     UserSession,
 )
-from app.presence import touch_last_seen
+from app.presence import ONLINE_WINDOW, touch_last_seen
 from app.schemas import LoginIn, ProfileUpdate, RegisterIn, SessionOut, UserOut
 from app.security import (
     generate_session_token,
@@ -301,6 +301,9 @@ def _open_session(db: Session, user: User, response: Response) -> None:
             user_id=user.id,
             token_hash=hash_session_token(raw_token),
             expires_at=session_expiry(),
+            # Logging in is this device's first activity: another device
+            # logging out right after must not put the user offline.
+            last_seen_at=utcnow(),
         )
     )
     db.commit()
@@ -443,7 +446,7 @@ def get_session(
         # one and log that tab out. Logging out is what clears it.
         return SessionOut(user=None)
     # Opening the site is activity, as with every authenticated request.
-    touch_last_seen(db, session.user, session_id=session.id)
+    touch_last_seen(db, session.user, session=session)
     return SessionOut(user=UserOut.model_validate(session.user))
 
 
@@ -951,24 +954,26 @@ def logout(
                 session_was_active = is_session_active(session.expires_at, now=now)
                 db.delete(session)
                 db.flush()
-                has_other_active_session = (
-                    db.query(UserSession)
+                # The presence left is the other devices' own: the latest
+                # activity among the sessions still valid, if it is within the
+                # online window. Keeping users.last_seen as it was would count
+                # the device logging out (often the latest activity), and a
+                # session valid for days but idle must not count at all. None
+                # (no other device in use) puts the user offline at once.
+                latest_other_activity = (
+                    db.query(func.max(UserSession.last_seen_at))
                     .filter(
                         UserSession.user_id == user_id,
                         UserSession.id != session.id,
                         UserSession.expires_at > now,
+                        UserSession.last_seen_at >= now - ONLINE_WINDOW,
                     )
-                    .first()
-                    is not None
+                    .scalar()
                 )
-                if (
-                    user is not None
-                    and session_was_active
-                    and not has_other_active_session
-                ):
+                if user is not None and session_was_active:
                     db.query(User).filter(User.id == user_id).update(
                         {
-                            User.last_seen: None,
+                            User.last_seen: latest_other_activity,
                             User.updated_at: User.updated_at,
                         },
                         synchronize_session=False,

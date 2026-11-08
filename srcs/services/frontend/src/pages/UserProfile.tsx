@@ -16,6 +16,7 @@ import {
   type ApiPublicProfile,
 } from '../lib/api'
 import { getPortugueseErrorMessage } from '../lib/errors'
+import { useUserPresence } from '../hooks/useUserPresence'
 
 export default function UserProfile() {
   const { id } = useParams<{ id: string }>()
@@ -36,6 +37,11 @@ export default function UserProfile() {
   // Known before the profile arrives: the route requires a session, so the
   // current user is already loaded. Your own profile has no friend button.
   const isOwnProfile = currentUser?.id === userId
+
+  // The profile says whether the user was online when it was read; this keeps
+  // the badge following logins and logouts without reloading the page. Not
+  // polled on your own profile: you are the one using it.
+  const polledOnline = useUserPresence(validId && !isOwnProfile ? userId : null, { skipFirstPoll: true })
 
   // Friendship with the profile being viewed. null while it is being asked
   // for, so the button never guesses "Adicionar" or "Remover".
@@ -252,7 +258,7 @@ export default function UserProfile() {
               <h1 className="font-display text-2xl font-bold text-ink">
                 {profile.user_name}
               </h1>
-              <OnlineBadge online={profile.is_online} showLabel className="mt-1" />
+              <OnlineBadge online={polledOnline ?? profile.is_online} showLabel className="mt-1" />
               <p className="text-sm text-muted">Membro desde {memberSince}</p>
               {profile.user_location && (
                 <p className="text-xs text-muted flex items-center gap-1 mt-1">

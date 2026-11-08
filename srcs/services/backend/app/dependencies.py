@@ -41,7 +41,7 @@ def get_current_user(
     session = get_session_from_session_token(daka_session, db)
     if session is None:
         raise _unauthorised()
-    touch_last_seen(db, session.user, session_id=session.id)
+    touch_last_seen(db, session.user, session=session)
     return session.user
 
 

@@ -11,6 +11,7 @@ import {
 } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
+import { PRESENCE_POLL_MS } from '../hooks/useUserPresence'
 
 vi.mock('../lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/api')>()),
@@ -328,6 +329,57 @@ describe('NegotiationsDock', () => {
     await flush()
     expect(screen.getByText('Não foi possível carregar as negociações.')).toBeInTheDocument()
     expect(screen.queryByText('Anúncio 7')).not.toBeInTheDocument()
+  })
+
+  it('refreshes the open drawer regularly, so the online badges follow logins and logouts', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderDock()
+      await flush()
+      openDrawer()
+      await flush()
+      expect(screen.getAllByText('Online')).toHaveLength(2)
+
+      const offline = (n: ApiNegotiationSummary) => ({ ...n, other_participant: { ...OTHER, is_online: false } })
+      listByState(
+        pageOf([offline(negotiation(7, 'Open', '2026-03-04T12:00:00'))]),
+        pageOf([offline(negotiation(8, 'Agreed', '2026-03-05T12:00:00'))]),
+      )
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PRESENCE_POLL_MS)
+      })
+      expect(screen.getAllByText('Offline')).toHaveLength(2)
+      // A background refresh, not a reload: the cards never left the screen.
+      expect(screen.queryByText('A carregar negociações...')).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the cards when a background refresh fails, and does not refresh while closed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderDock()
+      await flush()
+      openDrawer()
+      await flush()
+
+      vi.mocked(apiListNegotiations).mockRejectedValue(new ApiError(500, 'boom'))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PRESENCE_POLL_MS)
+      })
+      expect(screen.getByText('Anúncio 7')).toBeInTheDocument()
+      expect(screen.queryByText('Não foi possível carregar as negociações.')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Minimizar negociações' }))
+      const calls = vi.mocked(apiListNegotiations).mock.calls.length
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PRESENCE_POLL_MS * 2)
+      })
+      expect(apiListNegotiations).toHaveBeenCalledTimes(calls)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows an error when the list cannot be loaded', async () => {
