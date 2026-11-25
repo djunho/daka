@@ -1,0 +1,129 @@
+groups:
+  # -----------------------------------------------------------------------
+  - name: availability
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Target {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} (job {{ $labels.job }}) has failed scrapes for >1m."
+
+      - alert: EndpointProbeFailed
+        expr: probe_success == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Probe failed for {{ $labels.instance }}"
+          description: "Blackbox probe of {{ $labels.instance }} has failed for >1m."
+
+      - alert: MariaDBDown
+        expr: mysql_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MariaDB is unreachable"
+          description: "mysqld-exporter reports the database has been down for >1m."
+
+  # -----------------------------------------------------------------------
+  - name: saturation
+    rules:
+      - alert: HostHighCPU
+        expr: >
+          100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU on {{ $labels.instance }}"
+          description: "CPU above 85% for >5m (current: {{ printf \"%.0f\" $value }}%)."
+
+      - alert: HostHighMemory
+        expr: >
+          100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory on {{ $labels.instance }}"
+          description: "Memory above 90% for >5m (current: {{ printf \"%.0f\" $value }}%)."
+
+      - alert: HostLowDisk
+        expr: >
+          100 * (node_filesystem_avail_bytes{mountpoint="/",fstype!=""}
+                 / node_filesystem_size_bytes{mountpoint="/",fstype!=""}) < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk on {{ $labels.instance }}"
+          description: "Less than 15% free on / for >5m (current: {{ printf \"%.0f\" $value }}% free)."
+
+      - alert: ContainerHighMemory
+        expr: >
+          (container_memory_working_set_bytes{name!=""}
+           / (container_spec_memory_limit_bytes{name!=""} > 0)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} near memory limit"
+          description: "{{ $labels.name }} above 90% of its memory limit for >5m."
+
+  # -----------------------------------------------------------------------
+  - name: application
+    rules:
+      - alert: BackendHighErrorRate
+        expr: sum by (instance) (rate(http_requests_total{job="backend",status="5xx"}[5m])) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP 5xx error rate on {{ $labels.instance }}"
+          description: "Backend is returning > 0.1 errors/s for >2m (current: {{ printf \"%.2f\" $value }} req/s)."
+
+      - alert: BackendHighLatencyP95
+        expr: >
+          histogram_quantile(
+            0.95,
+            sum by (instance, le) (rate(http_request_duration_seconds_bucket{job="backend"}[5m]))
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 request latency on {{ $labels.instance }}"
+          description: "95th percentile API response time is above 1s for >5m (current: {{ printf \"%.2f\" $value }}s)."
+
+  # -----------------------------------------------------------------------
+  - name: backups
+    rules:
+      - alert: BackupOverdue
+        expr: >-
+          (
+            (time() - last_over_time(backup_last_success_timestamp{job="node"}[26h]) > 93600)
+            or (
+              (time() - backup_monitoring_enabled_timestamp{job="node"} > 93600)
+              unless on (job, instance) last_over_time(backup_last_success_timestamp{job="node"}[26h])
+            )
+          ) and on (job, instance) backup_monitoring_enabled_timestamp{job="node"}
+        labels:
+          severity: critical
+        annotations:
+          summary: "No recent verified Daka backup"
+          description: "The last verified backup is more than 26 hours old or no success metric is available."
+
+  - name: tls
+    rules:
+      - alert: TLSCertExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 14
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "TLS cert for {{ $labels.instance }} expiring soon"
+          description: "Certificate expires in {{ printf \"%.0f\" $value }} days."

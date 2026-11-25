@@ -1,0 +1,349 @@
+x-mariadb-image: &mariadb-image mariadb:11
+
+services:
+  certgen:
+    image: alpine/openssl:3.3.2
+    container_name: daka_certgen
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ -s /certs/daka.crt ] && [ -s /certs/daka.key ]; then
+          echo "certgen: certificate already present, skipping"
+          exit 0
+        fi
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout /certs/daka.key \
+          -out    /certs/daka.crt \
+          -subj   "/C=PT/ST=Porto/L=Porto/O=Daka/CN=${DOMAIN:-localhost}" \
+          -addext "subjectAltName=DNS:${DOMAIN:-localhost},DNS:nginx,DNS:localhost,IP:127.0.0.1"
+        chmod 644 /certs/daka.crt
+        chmod 640 /certs/daka.key
+        echo "certgen: certificate generated"
+    volumes:
+      - certs:/certs
+
+  # ---- Database (MariaDB) -------------------------------------------------
+  db:
+    build:
+      context: ./services/mariadb
+      args:
+        MARIADB_IMAGE: *mariadb-image
+    image: daka_db
+    container_name: daka_db
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 45s
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - daka_data
+
+  # ---- Backup runner (enable with --profile backup) -----------------------
+  backup:
+    profiles: ["backup"]
+    build:
+      context: ./services/backup
+      args:
+        MARIADB_IMAGE: *mariadb-image
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-}
+      MYSQL_BACKUP_PASSWORD: ${MYSQL_BACKUP_PASSWORD:-}
+      BACKUP_FLOCK_WAIT_SECONDS: ${BACKUP_FLOCK_WAIT_SECONDS:-300}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - media:/data/media:ro
+      - documents:/data/documents:ro
+      - backup_metrics:/backup-metrics
+      - type: bind
+        source: ../../daka-backups
+        target: /backups
+        bind:
+          create_host_path: false
+    networks:
+      - daka_data
+
+  # ---- Backend (Python + FastAPI) -----------------------------------------
+  backend:
+    build:
+      context: ./services/backend
+    image: daka_backend
+    container_name: daka_backend
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./services/backend:/app
+      # Uploaded images (avatars, listing photos). Kept outside /app, which is
+      # the repository itself, so uploads never end up in git.
+      - media:/data/media
+      # Listing documents (PDFs). Mounted ONLY here, never in nginx: a
+      # document is served by the backend after checking the session.
+      - documents:/data/documents
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - daka_data
+      - daka_edge
+      - daka_obs
+
+  # ---- Frontend (React + Vite) --------------------------------------------
+  frontend:
+    build:
+      context: ./services/frontend
+    image: daka_frontend
+    container_name: daka_frontend
+    restart: unless-stopped
+    volumes:
+      - ./services/frontend:/app
+      - /app/node_modules
+    networks:
+      - daka_edge
+
+  # ---- Nginx (TLS + reverse proxy) ----------------------------------------
+  nginx:
+    build:
+      context: ./services/nginx
+    image: daka_nginx
+    container_name: daka_nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT}:443"
+    depends_on:
+      certgen:
+        condition: service_completed_successfully
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+      grafana:
+        condition: service_started
+      prometheus:
+        condition: service_started
+      alertmanager:
+        condition: service_started
+    volumes:
+      - certs:/etc/nginx/certs:ro
+      # Same volume as the backend, read-only: nginx only serves the files.
+      - media:/data/media:ro
+    healthcheck:
+      # 127.0.0.1, not localhost: inside the container localhost resolves to
+      # ::1 first, and nginx listens on IPv4 only (listen 443 ssl), so the
+      # check was refused and the container stayed unhealthy (#169).
+      test: "wget -q -O /dev/null --no-check-certificate https://127.0.0.1/healthz || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - daka_edge
+      - daka_obs
+
+  # =========================================================================
+  # OBSERVABILITY
+  # =========================================================================
+ 
+  # ---- Prometheus ---------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: daka_prometheus
+    restart: unless-stopped
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.external-url=https://${DOMAIN:-localhost}:${NGINX_PORT}/prometheus/
+      - --web.route-prefix=/
+      - --web.config.file=/etc/prometheus/web.yml
+    volumes:
+      - ./services/observability/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: >-
+        wget -q -O /dev/null
+        --header "Authorization: Basic $$(printf '%s:%s' '${PROM_USER}' '${PROM_PASSWORD}' | base64)"
+        http://localhost:9090/-/healthy || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - daka_obs
+ 
+  # ---- Alertmanager -------------------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    container_name: daka_alertmanager
+    restart: unless-stopped
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=https://${DOMAIN:-localhost}:${NGINX_PORT}/alertmanager/
+      - --web.route-prefix=/
+      - --web.config.file=/etc/alertmanager/web.yml
+    volumes:
+      - ./services/observability/alertmanager:/etc/alertmanager:ro
+      - alertmanager_data:/alertmanager
+    healthcheck:
+      test: >-
+        wget -q -O /dev/null
+        --header "Authorization: Basic $$(printf '%s:%s' '${PROM_USER}' '${PROM_PASSWORD}' | base64)"
+        http://localhost:9093/-/healthy || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - daka_obs
+ 
+  # ---- Grafana ------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.5.1
+    container_name: daka_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      PROM_USER: ${PROM_USER}
+      PROM_PASSWORD: ${PROM_PASSWORD}
+      GF_SERVER_ROOT_URL: https://${DOMAIN:-localhost}:${NGINX_PORT}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./services/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./services/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: "wget -q -O /dev/null http://localhost:3000/api/health || exit 1"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - daka_obs
+ 
+  # ---- Blackbox exporter (probes the public endpoint from outside) --------
+  blackbox:
+    image: prom/blackbox-exporter:v0.26.0
+    container_name: daka_blackbox
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ./services/observability/blackbox:/etc/blackbox:ro
+    healthcheck:
+      test: "wget -q -O /dev/null http://localhost:9115/-/healthy || exit 1"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - daka_obs
+ 
+  # ---- node-exporter (HOST-level metrics) ---------------------------------
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: daka_node_exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.textfile.directory=/backup-metrics
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($$|/)
+      - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|cgroup|cgroup2|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$$
+    volumes:
+      - /proc:/host/proc:ro
+      - backup_metrics:/backup-metrics:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    networks:
+      - daka_obs
+ 
+  # ---- cAdvisor (PER-CONTAINER metrics) -----------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: daka_cadvisor
+    restart: unless-stopped
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    command:
+      - --housekeeping_interval=10s
+      - --docker_only=true
+      - --disable_metrics=percpu,sched,tcp,udp,advtcp,process,hugetlb,referenced_memory,cpu_topology,resctrl
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    healthcheck:
+      test: "wget -q -O /dev/null http://localhost:8080/healthz || exit 1"
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - daka_obs
+ 
+  # ---- mysqld-exporter ----------------------------------------------------
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.16.0
+    container_name: daka_mysqld_exporter
+    restart: unless-stopped
+    command:
+      - --config.my-cnf=/cfg/.my.cnf
+      - --mysqld.address=db:3306
+      - --collect.info_schema.innodb_metrics
+      - --collect.global_status
+      - --collect.global_variables
+    volumes:
+      - ./services/observability/mysqld-exporter/.my.cnf:/cfg/.my.cnf:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - daka_data
+      - daka_obs
+ 
+volumes:
+  backup_metrics:
+  db_data:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:
+  certs:
+  media:
+  documents:
+ 
+networks:
+  daka_edge:
+    driver: bridge
+  daka_data:
+    driver: bridge
+    internal: true
+  daka_obs:
+    driver: bridge
+    internal: true
+ 

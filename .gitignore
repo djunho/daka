@@ -1,0 +1,22 @@
+# --- secrets & env (NEVER commit) ---------------------------------------
+srcs/.env
+srcs/services/observability/prometheus/web.yml
+srcs/services/observability/alertmanager/web.yml
+srcs/services/observability/prometheus/scrape_username
+srcs/services/observability/prometheus/scrape_password
+srcs/services/observability/mysqld-exporter/.my.cnf
+
+# --- node / frontend -----------------------------------------------------
+node_modules/
+.vite/
+dist/
+build/
+*.log
+
+# --- python --------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+
+# --- runtime cert material (if ever written to the tree) -----------------
+*.pem

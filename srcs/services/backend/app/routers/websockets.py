@@ -1,0 +1,143 @@
+"""Authenticated and authorised WebSocket entry points.
+
+Close-code contract (validation precedes a technical accept and close):
+
+* 4401: missing, empty, invalid, or expired session; inactive account
+* 4403: authenticated user is not a participant in the negotiation
+* 4404: malformed negotiation id or negotiation not found
+* 4403: missing or unrecognised Origin (cookie-CSRF protection)
+
+Only the authenticated user and validated negotiation id are kept in
+``websocket.state``. The handshake negotiation is not retained by the socket.
+"""
+
+import logging
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.concurrency import run_in_threadpool
+
+from app.config import settings
+from app.connection_manager import manager
+from app.database import SessionLocal
+from app.dependencies import SESSION_COOKIE_NAME
+from app.models import User
+from app.websocket_authorization import authorize_negotiation
+from app.message_processing import (
+    MessageProcessingError, MessageRateLimiter, parse_message_event, persist_message,
+)
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+WS_UNAUTHENTICATED = 4401
+WS_FORBIDDEN = 4403
+WS_NOT_FOUND = 4404
+
+
+async def _reject(websocket: WebSocket, code: int) -> None:
+    """Complete the upgrade so browsers can receive the WebSocket close code.
+
+    This does not register the connection in a room or send private data.
+    Closing before accept would reject the HTTP handshake instead.
+    """
+    await websocket.accept()
+    await websocket.close(code=code)
+
+
+def _origin_is_allowed(websocket: WebSocket) -> bool:
+    origin = websocket.headers.get("origin")
+    if origin is None:
+        return False
+    return origin.rstrip("/").lower() in settings.allowed_websocket_origins
+
+
+def _parse_negotiation_id(raw_id: str) -> int | None:
+    try:
+        negotiation_id = int(raw_id)
+    except (TypeError, ValueError):
+        return None
+    return negotiation_id if negotiation_id > 0 and str(negotiation_id) == raw_id else None
+
+
+def _authorize_negotiation(
+    token: str | None, negotiation_id: int
+) -> User | int:
+    """Return the detached authenticated user or a refusal code.
+
+    Create, use and close the database session within the worker thread.
+    The negotiation is used only here, never passed into the receive loop.
+    """
+    with SessionLocal() as db:
+        # Exiting the session context detaches objects and releases the database
+        # connection before the socket starts its long-lived receive loop.
+        return authorize_negotiation(db, token, negotiation_id)
+
+
+@router.websocket("/ws/negotiations/{negotiation_id}")
+async def negotiation_websocket(websocket: WebSocket, negotiation_id: str) -> None:
+    """Authorise a negotiation room using only the existing session cookie."""
+    if not _origin_is_allowed(websocket):
+        await _reject(websocket, WS_FORBIDDEN)
+        return
+
+    validated_id = _parse_negotiation_id(negotiation_id)
+    if validated_id is None:
+        await _reject(websocket, WS_NOT_FOUND)
+        return
+
+    authorization = await run_in_threadpool(
+        _authorize_negotiation,
+        websocket.cookies.get(SESSION_COOKIE_NAME),
+        validated_id,
+    )
+    if isinstance(authorization, int):
+        await _reject(websocket, authorization)
+        return
+
+    current_user = authorization
+    websocket.state.current_user = current_user
+    websocket.state.negotiation_id = validated_id
+    limiter = MessageRateLimiter()
+    try:
+        await manager.connect(validated_id, websocket)
+        while manager.is_connected(validated_id, websocket):
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                _log_disconnect(validated_id, message.get("code", 1006))
+                return
+            if not manager.is_connected(validated_id, websocket):
+                return
+            try:
+                limiter.check()
+                event = parse_message_event(message.get("text"))
+                persisted_message = await run_in_threadpool(
+                    persist_message, event, validated_id, current_user.id,
+                    websocket.cookies.get(SESSION_COOKIE_NAME),
+                )
+            except MessageProcessingError as exc:
+                sent = await manager.send_error(
+                    validated_id, websocket, exc.as_event(), close_code=exc.close_code,
+                )
+                if not sent or exc.close_code is not None:
+                    return
+                continue
+            if not await manager.broadcast(persisted_message):
+                # A committed message must never be retried/rolled back here.
+                if not await manager.send_error(
+                    validated_id, websocket, MessageProcessingError("delivery_failed").as_event(),
+                ):
+                    return
+    except WebSocketDisconnect as exc:
+        _log_disconnect(validated_id, exc.code)
+    except Exception:
+        # Do not include exception text: it may contain client-supplied data.
+        logger.error("WebSocket loop failed negotiation_id=%s", validated_id)
+        raise
+    finally:
+        limiter.clear()
+        manager.disconnect(validated_id, websocket)
+
+
+def _log_disconnect(negotiation_id: int, code: int) -> None:
+    log = logger.info if code in (1000, 1001) else logger.warning
+    log("WebSocket disconnected negotiation_id=%s code=%s", negotiation_id, code)

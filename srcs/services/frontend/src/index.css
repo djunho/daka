@@ -1,0 +1,70 @@
+@import 'tailwindcss';
+
+/* ============================================================================
+   Tailwind v4 design tokens (docs/design/design-system.md)
+   "static": Tailwind normally emits only the variables some class uses. The
+   logo and the /design-system page read tokens with var() and
+   getComputedStyle, so every token here must always exist.
+   ========================================================================= */
+@theme static {
+  /* --- Brand --- */
+  --color-brand:       #246C5E;   /* buttons, logo background, "has" text */
+  --color-brand-soft:  #DCEBE8;   /* active chip fill, photo fallback tint */
+  --color-accent:      #D52E21;   /* the "wants" side of every trade (WCAG AA: 4.6:1 on paper, 4.9:1 on surface) */
+  --color-logo-accent: #DF3D31;   /* red arrow of the logo mark only: a graphic, never text */
+
+  /* --- Surfaces --- */
+  --color-paper:       #F2F9F7;   /* page background */
+  --color-surface:     #FFFFFF;   /* cards, header, inputs */
+
+  /* --- Ink (text) --- */
+  --color-ink:         #15231F;   /* primary text + logo wordmark */
+  --color-muted:       #4B7871;   /* secondary text, placeholders (WCAG AA: 4.6:1 on paper, 4.9:1 on surface) */
+  --color-label:       #314A46;   /* category labels, unselected toggle text */
+
+  /* --- Lines --- */
+  --color-line:        #BCD7D1;   /* borders and outlines */
+
+  /* --- Typefaces --- */
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Outfit', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* --- Onlinebadge --- */
+  --color-online:      #10B981;   /* online badge */
+  --color-offline:     #A1A1AA;   /* offline badge */
+}
+
+
+/* ============ Base ============ */
+@layer base {
+  * { box-sizing: border-box; }
+  html, body, #root { height: 100%; }
+  /* Always reserve the scrollbar's space. Otherwise a short page (e.g. a filter
+     with few results) loses the scrollbar, gains ~15px, and the listings grid
+     can jump to one more, narrower column. */
+  html { scrollbar-gutter: stable; }
+  html:has(dialog[open]) { overflow: hidden; }
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { display: block; max-width: 100%; }
+  button { font: inherit; cursor: pointer; }
+  /* Hide Microsoft Edge's native password-reveal and clear buttons: Login
+     renders its own visibility toggle, so Edge would otherwise show two eye icons. */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
+}
+
+/* Kept outside @layer base so it wins over focus:outline-none (@layer utilities)
+   when navigating via keyboard (Tab). */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
